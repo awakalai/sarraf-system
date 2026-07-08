@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { supabase } from "./lib/supabase";
+import { createClient } from "@supabase/supabase-js";
 import {
   LayoutDashboard, Vault, ArrowLeftRight, ListOrdered, Users, Handshake,
   TrendingUp, Building2, UserCog, PieChart, History, Plus, Trash2, Pencil,
@@ -238,8 +239,9 @@ export default function App() {
     if (!f.password || f.password.length < 6) { flash("وشەی نهێنی کەمترین ٦ پیت"); return; }
     // ژمارەی مۆبایل وەک ئیمەیل بەکار دەهێنین
     const fakeEmail = f.phone.replace(/\s/g, "") + "@sarraf.local";
-    // ئەکاونتی لۆگین لە Supabase درووست بکە
-    const { data: sd, error: se } = await supabase.auth.signUp({ email: fakeEmail, password: f.password });
+    // کلایێنتێکی کاتی بەکار دەهێنین بۆ ئەوەی سێشنی ئەدمین نەگۆڕدرێت
+    const tempClient = createClient(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_ANON_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+    const { data: sd, error: se } = await tempClient.auth.signUp({ email: fakeEmail, password: f.password });
     if (se && !se.message.includes("already registered")) throw se;
     const authId = sd?.user?.id || null;
     // زانیاری بازرگانی زیاد بکە

@@ -373,8 +373,8 @@ function Login() {
   const [err, setErr] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  // ژمارەی مۆبایل وەک ئیمەیل بەکار دەهێنین: 07701234567 → 07701234567@sarraf.local
-  const toEmail = (p) => p.replace(/\s/g, "") + "@sarraf.local";
+  // گەر @ ی تێدابوو ئیمەیلە (ئەدمین)، ئەگینا ژمارەی مۆبایلە
+  const toEmail = (p) => p.includes("@") ? p.trim() : p.replace(/\s/g, "") + "@sarraf.local";
 
   const go = async () => {
     if (!phone || !pw) { setErr("ژمارە و وشەی نهێنی پێویستە"); return; }
@@ -392,7 +392,7 @@ function Login() {
           <div className="font-bold text-lg text-slate-800">سیستەمی کڕین و فرۆشتنی دراو</div>
           <div className="text-xs text-slate-400">چوونە ژوورەوە</div>
         </div>
-        <div><Lbl>ژمارەی مۆبایل</Lbl><Inp type="tel" dir="ltr" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="07701234567" /></div>
+        <div><Lbl>ژمارەی مۆبایل (یان ئیمەیل بۆ ئەدمین)</Lbl><Inp type="text" dir="ltr" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="07701234567" /></div>
         <div><Lbl>وشەی نهێنی</Lbl><Inp type="password" dir="ltr" value={pw} onChange={(e) => setPw(e.target.value)} onKeyDown={(e) => e.key === "Enter" && go()} /></div>
         {err && <div className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-2">{err}</div>}
         <Btn className="w-full" onClick={go} disabled={loading}>{loading ? "..." : "چوونە ژوورەوە"}</Btn>

@@ -1094,7 +1094,10 @@ function Receipts({ data, cur, usr, flash, A }) {
             method: "POST", headers: { "content-type": "application/json" },
             body: JSON.stringify({ image: img.b64, mediaType: "image/jpeg" }),
           });
-          d = await resp.json();
+          const raw = await resp.text();
+          if (resp.status === 404) throw new Error("فایلی api/read-receipt.js لە Vercel نەدۆزرایەوە");
+          try { d = JSON.parse(raw); }
+          catch { throw new Error(`وەڵامی نەناسراو (${resp.status}): ${raw.slice(0, 120)}`); }
           if (d.error) throw new Error(d.error);
         } catch (e) {
           out.push({ id: uid(), file: f.name, url: img.url, hash: img.hash, status: "error", note: String(e.message || e) });
@@ -1244,6 +1247,20 @@ function Receipts({ data, cur, usr, flash, A }) {
             <Card className="p-4"><div className="text-xs text-slate-500">دووبارە</div><div className={`text-2xl font-bold ${dupCount ? "text-rose-700" : ""}`} style={num}>{dupCount}</div></Card>
             <Card className="p-4"><div className="text-xs text-slate-500">گومانلێکراو</div><div className="text-2xl font-bold text-amber-600" style={num}>{rows.filter((r) => r.status === "suspect").length}</div></Card>
           </div>
+
+          {rows.filter((r) => r.status === "error").length > 0 && (
+            <Card className="p-4 border-rose-300 bg-rose-50/60">
+              <div className="flex items-start gap-2 text-sm text-rose-900">
+                <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                <div>
+                  <div className="font-semibold mb-1">{rows.filter((r) => r.status === "error").length} فیش نەخوێندرایەوە:</div>
+                  {[...new Set(rows.filter((r) => r.status === "error").map((r) => r.note))].map((n, i) => (
+                    <div key={i} className="text-xs mt-0.5" dir="auto">• {n}</div>
+                  ))}
+                </div>
+              </div>
+            </Card>
+          )}
 
           {dupCount > 0 && (
             <Card className="p-4 border-rose-300 bg-rose-50/60">

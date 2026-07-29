@@ -215,8 +215,8 @@ export default function App() {
     const mid = c.buyRate && c.sellRate ? (c.buyRate + c.sellRate) / 2 : (c.buyRate || c.sellRate);
     return mid ? amount / mid : 0;
   };
-  const sumUsd = (map) => data.currencies.reduce((s, c) => s + toUsd(map[c.id] || 0, c.id), 0);
-  const ratesReady = data.currencies.every((c) => c.id === "usd" || c.buyRate || c.sellRate);
+  const sumUsd = (map) => (data?.currencies || []).reduce((s, c) => s + toUsd(map?.[c.id] || 0, c.id), 0);
+  const ratesReady = !!data && data.currencies.every((c) => c.id === "usd" || c.buyRate || c.sellRate);
 
   /* مامناوەندی نرخی کڕین (بۆ حیسابی خێر لە کاتی فرۆشتن) */
   const avgRate = (curId, againstId) => {

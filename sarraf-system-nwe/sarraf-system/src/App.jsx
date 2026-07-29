@@ -412,7 +412,25 @@ export default function App() {
     ["audit", "تۆمار", History],
   ];
 
-  const shared = { data, calc, cur, usr, mySafe, profitAll, profitIn, investorsProfitIn, invShare, invUnpaid, autoRate, avgRate, toUsd, sumUsd, ratesReady };
+  /* بەشی خاوەندارێتی — هەر دراوێک بەپێی سەرمایە دابەش دەبێت */
+  const owners = useMemo(() => {
+    if (!data || !calc) return { list: [], total: 0 };
+    const invs = data.users.filter((u) => u.role === "investor" && !u.deleted);
+    const mine = sumUsd(mySafe);
+    const list = [{ id: "me", name: "خۆم", equity: mine, isMe: true }];
+    invs.forEach((u) => {
+      const cap = sumUsd(calc.invCap[u.id] || {});
+      let unpaid = 0;
+      data.currencies.forEach((c) => { unpaid += toUsd(invUnpaid(u.id, c.id), c.id); });
+      const eq = cap + unpaid;
+      if (eq !== 0) list.push({ id: u.id, name: u.name, equity: eq, cap, unpaid });
+    });
+    const total = list.reduce((s, x) => s + x.equity, 0);
+    list.forEach((x) => (x.share = total > 0 ? x.equity / total : 0));
+    return { list, total };
+  }, [data, calc, mySafe]);
+
+  const shared = { data, calc, cur, usr, mySafe, profitAll, profitIn, investorsProfitIn, invShare, invUnpaid, autoRate, avgRate, toUsd, sumUsd, ratesReady, owners };
 
   return (
     <div dir="rtl" className="min-h-screen bg-[#F6F5F2] text-slate-800" style={{ fontFamily: "'Segoe UI', Tahoma, sans-serif" }}>
@@ -552,7 +570,7 @@ function Login() {
 }
 
 /* ══════════════════ داشبۆرد ══════════════════ */
-function Dashboard({ data, calc, cur, mySafe, profitIn, investorsProfitIn, sumUsd, ratesReady, go }) {
+function Dashboard({ data, calc, cur, mySafe, profitIn, investorsProfitIn, sumUsd, ratesReady, owners, go }) {
   const today = dOnly(new Date().toISOString());
   const todayTxs = data.txs.filter((t) => !t.deleted && dOnly(t.date) === today);
   const pTod = profitIn(today, today);
@@ -628,72 +646,127 @@ function Dashboard({ data, calc, cur, mySafe, profitIn, investorsProfitIn, sumUs
         </Card>
       </div>
 
-      <SafeCards data={data} calc={calc} cur={cur} mySafe={mySafe} sumUsd={sumUsd} ratesReady={ratesReady} go={go} />
+      <SafeCards data={data} calc={calc} cur={cur} mySafe={mySafe} sumUsd={sumUsd} ratesReady={ratesReady} owners={owners} go={go} />
     </div>
   );
 }
 
 /* قاسەی گشتی + دابەشبوونی هەر دراوێک */
-function SafeCards({ data, calc, cur, mySafe, sumUsd, ratesReady, go }) {
+function SafeCards({ data, calc, cur, mySafe, sumUsd, ratesReady, owners, go }) {
   const [open, setOpen] = useState(null);
+  const [view, setView] = useState("where");
   const partners = data.users.filter((u) => u.role === "partner" && !u.deleted);
+  const c = open ? cur(open) : null;
+  const bal = open ? (calc.phys[open] || 0) : 0;
+
   return (
     <Card className="p-5">
       <div className="flex items-center justify-between mb-3">
         <SecLbl>قاسەی گشتی</SecLbl>
         <button onClick={() => go("safes")} className="text-xs text-emerald-700 font-semibold">پارە و خەرجی ←</button>
       </div>
+
       {ratesReady && (
         <div className="grid grid-cols-2 gap-3 mb-4">
           <div className="bg-slate-900 text-white rounded-xl p-4">
             <div className="text-[11px] text-slate-400">کۆی گشتی بە دۆلار</div>
-            <div className="text-2xl font-bold" style={num}>{fmt(sumUsd(calc.phys), 2)} <span className="text-sm text-amber-400">$</span></div>
+            <div className="text-2xl font-bold" style={num}>{fmt(sumUsd(calc.phys), 0)} <span className="text-sm text-amber-400">$</span></div>
           </div>
           <div className="bg-emerald-700 text-white rounded-xl p-4">
             <div className="text-[11px] text-emerald-100">ماڵی خۆم بە دۆلار</div>
-            <div className="text-2xl font-bold" style={num}>{fmt(sumUsd(mySafe), 2)} <span className="text-sm text-amber-300">$</span></div>
+            <div className="text-2xl font-bold" style={num}>{fmt(sumUsd(mySafe), 0)} <span className="text-sm text-amber-300">$</span></div>
           </div>
         </div>
       )}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-        {data.currencies.map((c) => {
-          const isOpen = open === c.id;
+
+      <div className="text-[11px] text-slate-400 mb-2">کلیک لە هەر دراوێک بکە بۆ وردەکاری</div>
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
+        {data.currencies.map((cc) => {
+          const isOpen = open === cc.id;
           return (
-            <button key={c.id} onClick={() => setOpen(isOpen ? null : c.id)}
-              className={`text-right border rounded-xl p-3.5 transition ${isOpen ? "border-emerald-600 bg-emerald-50/40" : "border-stone-200 bg-stone-50/60 hover:border-emerald-400"}`}>
-              <div className="text-xs text-slate-500">{c.name}</div>
-              <div className="text-xl mt-0.5"><Money v={calc.phys[c.id] || 0} dec={c.dec} /> <span className="text-amber-600 text-sm">{c.symbol}</span></div>
-              <div className="text-[11px] text-slate-400 mt-1">هی خۆم: <span style={num}>{fmt(mySafe[c.id] || 0, c.dec)}</span></div>
+            <button key={cc.id} onClick={() => { setOpen(isOpen ? null : cc.id); setView("where"); }}
+              className={`text-right border rounded-xl p-3.5 transition ${isOpen ? "border-emerald-600 bg-emerald-50/60 ring-2 ring-emerald-600/15" : "border-stone-200 bg-stone-50/60 hover:border-emerald-400"}`}>
+              <div className="text-xs text-slate-500">{cc.name}</div>
+              <div className="text-xl mt-0.5"><Money v={calc.phys[cc.id] || 0} dec={0} /> <span className="text-amber-600 text-sm">{cc.symbol}</span></div>
             </button>
           );
         })}
       </div>
+
       {open && (
         <div className="mt-4 border-t border-stone-200 pt-4">
-          <div className="text-sm font-semibold text-slate-700 mb-2">دابەشبوونی {cur(open).name}</div>
-          <div className="space-y-1.5">
-            <div className="flex justify-between text-sm py-1.5 border-b border-stone-100">
-              <span className="text-slate-600">لای خۆم (قاسەی سەرەکی)</span>
-              <Money v={calc.atMe[open] || 0} dec={cur(open).dec} />
-            </div>
-            {partners.map((p) => {
-              const v = (calc.partner[p.id] || {})[open];
-              if (!v) return null;
-              return (
-                <div key={p.id} className="flex justify-between text-sm py-1.5 border-b border-stone-100 last:border-0">
-                  <span className="text-slate-600">لای {p.name}{v < 0 && <span className="text-rose-700 text-xs"> (قەرز)</span>}</span>
-                  <Money v={v} dec={cur(open).dec} />
-                </div>
-              );
-            })}
-            <div className="flex justify-between text-sm pt-2 font-bold">
-              <span>کۆی گشتی</span>
-              <Money v={calc.phys[open] || 0} dec={cur(open).dec} />
-            </div>
+          <div className="flex items-baseline justify-between mb-3">
+            <div className="font-bold text-slate-900">{c.name}</div>
+            <div className="text-xl font-bold text-slate-900" style={num}>{fmt(bal, 0)} <span className="text-sm text-amber-600">{c.symbol}</span></div>
           </div>
+          <CurrencyBreakdown curId={open} data={data} calc={calc} cur={cur} owners={owners} ratesReady={ratesReady} />
         </div>
       )}
     </Card>
+  );
+}
+
+/* وردەکاری دراوێک — لای کێیە و هی کێیە */
+function CurrencyBreakdown({ curId, data, calc, cur, owners, ratesReady }) {
+  const [view, setView] = useState("where");
+  const c = cur(curId);
+  const bal = calc.phys[curId] || 0;
+  const partners = data.users.filter((u) => u.role === "partner" && !u.deleted);
+  return (
+    <div>
+      <div className="flex gap-1 bg-stone-100 rounded-xl p-1 mb-3">
+        {[["where", "لای کێیە؟"], ["whose", "هی کێیە؟"]].map(([k, t]) => (
+          <button key={k} onClick={() => setView(k)}
+            className={`flex-1 py-2 rounded-lg text-sm transition ${view === k ? "bg-white text-emerald-700 font-bold shadow-sm" : "text-slate-500"}`}>{t}</button>
+        ))}
+      </div>
+
+      {view === "where" ? (
+        <div>
+          <div className="flex justify-between items-center py-2.5 border-b border-stone-100">
+            <span className="text-sm text-slate-600">لای خۆم (قاسەی سەرەکی)</span>
+            <Money v={calc.atMe[curId] || 0} dec={0} />
+          </div>
+          {partners.map((p) => {
+            const v = (calc.partner[p.id] || {})[curId];
+            if (!v) return null;
+            return (
+              <div key={p.id} className="flex justify-between items-center py-2.5 border-b border-stone-100">
+                <span className="text-sm text-slate-600">لای {p.name}{v < 0 && <span className="text-rose-700 text-xs mr-1">(قەرز)</span>}</span>
+                <Money v={v} dec={0} />
+              </div>
+            );
+          })}
+          {partners.every((p) => !((calc.partner[p.id] || {})[curId])) && (
+            <div className="text-xs text-slate-400 py-2">هیچی لای هاوبەشەکان نییە</div>
+          )}
+          <div className="flex justify-between items-center pt-3 font-bold">
+            <span className="text-sm">کۆی گشتی</span><Money v={bal} dec={0} />
+          </div>
+        </div>
+      ) : (
+        <div>
+          {!ratesReady && (
+            <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2.5 mb-2">
+              بۆ وردی زیاتر، نرخی هەموو دراوەکان دابنێ
+            </div>
+          )}
+          {!owners || owners.total <= 0 ? <Empty t="هێشتا سەرمایە دانەنراوە" /> :
+            owners.list.map((o) => (
+              <div key={o.id} className="flex justify-between items-center py-2.5 border-b border-stone-100 last:border-0">
+                <div>
+                  <span className={`text-sm ${o.isMe ? "font-bold text-emerald-800" : "text-slate-600"}`}>{o.name}</span>
+                  <span className="text-xs text-slate-400 mr-2" style={num}>{(o.share * 100).toFixed(1)}٪</span>
+                </div>
+                <Money v={bal * o.share} dec={0} pos={o.isMe} />
+              </div>
+            ))}
+          <div className="text-[11px] text-slate-400 mt-2.5">
+            بەشی هەرکەس بەپێی ڕێژەی سەرمایەکەیەتی — چوونکە هەموو دراوەکان بە پارەی هاوبەش کڕدراون
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -798,7 +871,8 @@ function ProfitPage({ data, cur, profitIn, investorsProfitIn, invShare }) {
 }
 
 /* ══════════════════ قاسە و خەرجی ══════════════════ */
-function Safes({ data, calc, cur, usr, mySafe, invUnpaid, addDeposit, addExpense, addCurrency }) {
+function Safes({ data, calc, cur, usr, mySafe, invUnpaid, owners, ratesReady, addDeposit, addExpense, addCurrency }) {
+  const [openCur, setOpenCur] = useState(null);
   const [f, setF] = useState({ dir: "in", owner: "self", curId: data.currencies[0]?.id, amount: "", note: "" });
   const [xf, setXf] = useState({ category: "کرێی شوێن", investorId: "", curId: data.currencies[0]?.id, amount: "", note: "" });
   const [nc, setNc] = useState({ code: "", name: "", symbol: "", dec: 2 });
@@ -813,11 +887,25 @@ function Safes({ data, calc, cur, usr, mySafe, invUnpaid, addDeposit, addExpense
 
       <div className="grid md:grid-cols-2 gap-4">
         <Card className="p-5">
-          <SecLbl>قاسەی گشتی (هەمووی)</SecLbl>
+          <div className="flex items-center justify-between mb-1">
+            <SecLbl>قاسەی گشتی (هەمووی)</SecLbl>
+            <span className="text-[11px] text-slate-400">کلیک بۆ وردەکاری</span>
+          </div>
           {data.currencies.map((c) => (
-            <div key={c.id} className="flex justify-between py-2 border-b border-stone-100 last:border-0">
-              <span className="text-sm text-slate-600">{c.name}</span>
-              <Money v={calc.phys[c.id] || 0} dec={c.dec} />
+            <div key={c.id}>
+              <button onClick={() => setOpenCur(openCur === c.id ? null : c.id)}
+                className={`w-full flex justify-between items-center py-2.5 border-b border-stone-100 transition ${openCur === c.id ? "text-emerald-700" : "hover:text-emerald-700"}`}>
+                <span className="text-sm flex items-center gap-1.5">
+                  <ChevronLeft className={`w-3.5 h-3.5 transition-transform ${openCur === c.id ? "-rotate-90" : "rotate-180"}`} />
+                  {c.name}
+                </span>
+                <Money v={calc.phys[c.id] || 0} dec={0} />
+              </button>
+              {openCur === c.id && (
+                <div className="py-3 px-1 bg-stone-50/70 rounded-xl my-2">
+                  <CurrencyBreakdown curId={c.id} data={data} calc={calc} cur={cur} owners={owners} ratesReady={ratesReady} />
+                </div>
+              )}
             </div>
           ))}
         </Card>

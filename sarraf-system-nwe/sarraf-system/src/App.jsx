@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Vault, ArrowLeftRight, ListOrdered, Users, Handshake,
   TrendingUp, Building2, UserCog, PieChart, History, Plus, Trash2, Pencil,
   CheckCircle2, AlertTriangle, Eye, LogOut, Wallet, ChevronLeft, Coins,
-  Receipt, TrendingDown, ScanLine, Upload, XCircle
+  Receipt, TrendingDown, ScanLine, Upload, XCircle, SlidersHorizontal, MoreHorizontal, X
 } from "lucide-react";
 
 /* ══════════════════ یارمەتیدەرەکان ══════════════════ */
@@ -74,6 +74,7 @@ export default function App() {
   const [editTx, setEditTx] = useState(null);
   const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [more, setMore] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
@@ -148,15 +149,18 @@ export default function App() {
       const atP = Object.values(partner).reduce((s, m) => s + (m[c.id] || 0), 0);
       atMe[c.id] = (phys[c.id] || 0) - atP;
     }
-    // قەرزی چاوەڕوانی نووسینگە
-    const pending = {};
+    // باڵانسی دووسەرەی کڕیارەکان
+    const cust = {};
     for (const t of data.txs) {
       if (t.deleted || t.status !== "pending") continue;
       const key = t.cpId || "name:" + (t.cpName || "");
-      pending[key] = pending[key] || { byCur: {} };
-      pending[key].byCur[t.againstId] = (pending[key].byCur[t.againstId] || 0) + t.total;
+      cust[key] = cust[key] || { owe: {}, due: {}, n: 0 };
+      cust[key].n++;
+      // کڕین چاوەڕوان = من قەرزاری ئەوم | فرۆشتن چاوەڕوان = ئەو قەرزاری منە
+      const side = t.type === "buy" ? "owe" : "due";
+      cust[key][side][t.againstId] = (cust[key][side][t.againstId] || 0) + t.total;
     }
-    return { phys, partner, atMe, invCap, invTotal, selfCap, invPaid, expenses, fees, pending };
+    return { phys, partner, atMe, invCap, invTotal, selfCap, invPaid, expenses, fees, cust, pending: cust };
   }, [data]);
 
   const cur = (id) => data?.currencies.find((c) => c.id === id) || {};
@@ -257,7 +261,7 @@ export default function App() {
       if (t.status === "completed") es.push({ id: uid(), type: "buy", curId: t.againstId, amount: -t.total, partnerId: null, txId: t.id, date: t.date });
     } else {
       es.push({ id: uid(), type: "sell", curId: t.curId, amount: -t.amount, partnerId: t.partnerId || null, txId: t.id, date: t.date });
-      es.push({ id: uid(), type: "sell", curId: t.againstId, amount: +t.total, partnerId: null, txId: t.id, date: t.date });
+      if (t.status === "completed") es.push({ id: uid(), type: "sell", curId: t.againstId, amount: +t.total, partnerId: null, txId: t.id, date: t.date });
     }
     return es;
   };
@@ -270,7 +274,7 @@ export default function App() {
       let profit = null, profitCurId = null;
       if (f.type === "sell") { const av = avgRate(f.curId, f.againstId); if (av !== null) { profit = Math.round(total - av * amount); profitCurId = f.againstId; } }
       const code = existing ? existing.code : Math.max(1000, ...data.txs.map((x) => x.code || 0)) + 1;
-      const t = { id: existing ? existing.id : uid(), code, type: f.type, cpId: f.cpId || null, cpName: f.cpId ? null : f.cpName, curId: f.curId, amount, rate, againstId: f.againstId, total, partnerId: f.partnerId || null, status: f.type === "buy" ? f.status : "completed", paidAt: existing ? existing.paidAt : null, profit, profitCurId, note: f.note || "", date: existing ? existing.date : now(), edited: !!existing };
+      const t = { id: existing ? existing.id : uid(), code, type: f.type, cpId: f.cpId || null, cpName: f.cpId ? null : f.cpName, curId: f.curId, amount, rate, againstId: f.againstId, total, partnerId: f.partnerId || null, status: f.status || "completed", paidAt: existing ? existing.paidAt : null, profit, profitCurId, note: f.note || "", date: existing ? existing.date : now(), edited: !!existing };
       if (existing) {
         let r = await supabase.from("ledger").delete().eq("tx_id", t.id); if (r.error) throw r.error;
         r = await supabase.from("txs").update(TR(t)).eq("id", t.id); if (r.error) throw r.error;
@@ -294,13 +298,19 @@ export default function App() {
     });
   };
 
-  const officePay = (t) => run(async () => {
-    const e = { id: uid(), type: "office_payment", curId: t.againstId, amount: -t.total, txId: t.id, note: "پارەدانی نووسینگە", date: now() };
+  const settle = (t, byOffice) => run(async () => {
+    const isBuy = t.type === "buy";
+    const e = {
+      id: uid(), type: isBuy ? "office_payment" : "customer_payment",
+      curId: t.againstId, amount: isBuy ? -t.total : +t.total, txId: t.id,
+      note: isBuy ? (byOffice ? "پارەدانی نووسینگە" : "پارە درا") : "پارە وەرگیرا", date: now(),
+    };
     let r = await supabase.from("ledger").insert(LR(e)); if (r.error) throw r.error;
     r = await supabase.from("txs").update({ status: "completed", paid_at: now() }).eq("id", t.id); if (r.error) throw r.error;
-    await A("نووسینگە پارەی دا", `#${t.code || "—"} — ${fmt(t.total)} ${cur(t.againstId).code}`);
-    flash("پارەدان تۆمار کرا ✓");
+    await A(isBuy ? (byOffice ? "نووسینگە پارەی دا" : "پارە درا") : "پارە وەرگیرا", `#${t.code || "—"} — ${fmt(t.total)} ${cur(t.againstId).code}`);
+    flash(isBuy ? "پارەدان تۆمار کرا ✓" : "وەرگرتن تۆمار کرا ✓");
   });
+  const officePay = (t) => settle(t, true);
 
   const addExpense = (f) => {
     const amt = Math.abs(+f.amount);
@@ -409,11 +419,11 @@ export default function App() {
       {msg && <div className="fixed top-4 left-4 z-50 bg-slate-900 text-white text-sm px-4 py-2.5 rounded-xl shadow-lg">{msg}</div>}
       {busy && <div className="fixed top-0 right-0 left-0 h-0.5 bg-emerald-600 animate-pulse z-50" />}
 
-      <header className="bg-slate-900 text-white px-4 py-3 flex items-center justify-between flex-wrap gap-2 sticky top-0 z-40">
+      <header className="bg-slate-900 text-white px-3 md:px-4 py-2.5 flex items-center justify-between gap-2 sticky top-0 z-40">
         <div className="flex items-center gap-2.5">
           <Vault className="w-6 h-6 text-amber-400" />
           <div>
-            <div className="font-bold leading-tight">سیستەمی کڕین و فرۆشتنی دراو</div>
+            <div className="font-bold leading-tight text-sm md:text-base">سیستەمی دراو</div>
             <div className="text-[11px] text-slate-400">{profile.name} — {ROLE_KU[profile.role]}</div>
           </div>
         </div>
@@ -433,16 +443,17 @@ export default function App() {
             </button>
           )}
           <button onClick={signOut} className="flex items-center gap-1 text-sm bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-1.5 rounded-lg">
-            <LogOut className="w-4 h-4" /> دەرچوون
+            <LogOut className="w-4 h-4" /> <span className="hidden sm:inline">دەرچوون</span>
           </button>
         </div>
       </header>
 
       {portalUser ? (
-        <main className="p-4 max-w-3xl mx-auto"><Portal user={portalUser} {...shared} officePay={officePay} /></main>
+        <main className="p-4 pb-8 max-w-3xl mx-auto"><Portal user={portalUser} {...shared} officePay={officePay} settle={settle} /></main>
       ) : (
         <div className="flex flex-col md:flex-row">
-          <nav className="md:w-56 bg-white border-b md:border-b-0 md:border-l border-stone-200 md:min-h-screen p-2 flex md:flex-col gap-1 overflow-x-auto">
+          {/* لیستی لاتەنیشت — تەنها لە شاشەی گەورە */}
+          <nav className="hidden md:flex md:w-56 bg-white border-l border-stone-200 md:min-h-screen p-2 flex-col gap-1 sticky top-[57px] self-start">
             {NAV.map(([id, t, Ic]) => (
               <button key={id} onClick={() => { setPage(id); setDetailId(null); setEditTx(null); }}
                 className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-sm whitespace-nowrap transition ${page === id ? "bg-emerald-700 text-white font-semibold shadow-sm" : "hover:bg-stone-100 text-slate-600"}`}>
@@ -450,7 +461,7 @@ export default function App() {
               </button>
             ))}
           </nav>
-          <main className="flex-1 p-4 md:p-6 max-w-5xl">
+          <main className="flex-1 p-3 pb-24 md:p-6 md:pb-6 max-w-5xl w-full mx-auto">
             {page === "dash" && <Dashboard {...shared} go={setPage} />}
             {page === "safes" && <><Back onClick={() => setPage("dash")} t="گەڕانەوە بۆ داشبۆرد" /><Safes {...shared} addDeposit={addDeposit} addExpense={addExpense} addCurrency={addCurrency} /></>}
             {page === "rates" && <><Back onClick={() => setPage("dash")} t="گەڕانەوە بۆ داشبۆرد" /><Rates {...shared} saveRates={saveRates} /></>}
@@ -458,12 +469,43 @@ export default function App() {
             {page === "newtx" && <TxForm {...shared} onSave={saveTx} />}
             {page === "txs" && (editTx
               ? <TxForm {...shared} onSave={saveTx} editing={editTx} onCancel={() => setEditTx(null)} />
-              : <TxList {...shared} onEdit={setEditTx} onDel={delTx} />)}
+              : <TxList {...shared} onEdit={setEditTx} onDel={delTx} settle={settle} />)}
             {page === "receipts" && <Receipts {...shared} flash={flash} A={A} />}
-            {page === "people" && <PeopleHub {...shared} detailId={detailId} setDetailId={setDetailId} onSave={saveTx} transfer={transfer} officePay={officePay} createUser={createUser} deleteUser={deleteUser} setUserRate={setUserRate} flash={flash} />}
+            {page === "people" && <PeopleHub {...shared} detailId={detailId} setDetailId={setDetailId} onSave={saveTx} transfer={transfer} officePay={officePay} settle={settle} createUser={createUser} deleteUser={deleteUser} setUserRate={setUserRate} flash={flash} />}
             {page === "report" && <Report {...shared} />}
             {page === "audit" && <Audit data={data} />}
           </main>
+
+          {/* لیستی خوارەوە — تەنها لە مۆبایل */}
+          <nav className="md:hidden fixed bottom-0 right-0 left-0 z-40 bg-white border-t border-stone-200 flex" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
+            {NAV.slice(0, 4).map(([id, t, Ic]) => (
+              <button key={id} onClick={() => { setPage(id); setDetailId(null); setEditTx(null); setMore(false); }}
+                className={`flex-1 flex flex-col items-center gap-0.5 py-2.5 text-[10px] font-semibold transition ${page === id ? "text-emerald-700" : "text-slate-400"}`}>
+                <Ic className="w-5 h-5" /> {t}
+              </button>
+            ))}
+            <button onClick={() => setMore(!more)}
+              className={`flex-1 flex flex-col items-center gap-0.5 py-2.5 text-[10px] font-semibold ${NAV.slice(4).some(([id]) => id === page) ? "text-emerald-700" : "text-slate-400"}`}>
+              <MoreHorizontal className="w-5 h-5" /> زیاتر
+            </button>
+          </nav>
+
+          {more && (
+            <div className="md:hidden fixed inset-0 z-50 bg-slate-900/40" onClick={() => setMore(false)}>
+              <div className="absolute bottom-0 right-0 left-0 bg-white rounded-t-3xl p-4 pb-8" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="font-bold text-slate-800">بەشەکانی تر</div>
+                  <button onClick={() => setMore(false)} className="p-1.5 text-slate-400"><X className="w-5 h-5" /></button>
+                </div>
+                {NAV.slice(4).map(([id, t, Ic]) => (
+                  <button key={id} onClick={() => { setPage(id); setDetailId(null); setEditTx(null); setMore(false); }}
+                    className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm mb-1 ${page === id ? "bg-emerald-700 text-white font-semibold" : "text-slate-700 hover:bg-stone-100"}`}>
+                    <Ic className="w-5 h-5" /> {t}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -515,7 +557,9 @@ function Dashboard({ data, calc, cur, mySafe, profitIn, investorsProfitIn, sumUs
   const todayTxs = data.txs.filter((t) => !t.deleted && dOnly(t.date) === today);
   const pTod = profitIn(today, today);
   const invTod = investorsProfitIn(pTod);
-  const pendingCount = data.txs.filter((t) => !t.deleted && t.status === "pending").length;
+  const pendBuy = data.txs.filter((t) => !t.deleted && t.status === "pending" && t.type === "buy").length;
+  const pendSell = data.txs.filter((t) => !t.deleted && t.status === "pending" && t.type === "sell").length;
+  const pendingCount = pendBuy + pendSell;
   const noRates = data.currencies.some((c) => c.id !== "usd" && (!c.buyRate || !c.sellRate));
 
   const Stat = ({ t, v, tone }) => (
@@ -541,7 +585,7 @@ function Dashboard({ data, calc, cur, mySafe, profitIn, investorsProfitIn, sumUs
         <Stat t="مامەڵەی ئەمڕۆ" v={todayTxs.length} />
         <Stat t="کڕین" v={todayTxs.filter((t) => t.type === "buy").length} tone="text-emerald-700" />
         <Stat t="فرۆشتن" v={todayTxs.filter((t) => t.type === "sell").length} tone="text-rose-700" />
-        <Stat t="چاوەڕوانی نووسینگە" v={pendingCount} tone={pendingCount ? "text-amber-600" : ""} />
+        <Stat t="چاوەڕوانی پارە" v={pendingCount} tone={pendingCount ? "text-amber-600" : ""} />
       </div>
 
       <div className="grid md:grid-cols-2 gap-4">
@@ -875,7 +919,7 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
       <Card className="p-5 space-y-5">
         <div className="flex gap-2">
           {["buy", "sell"].map((t) => (
-            <button key={t} onClick={() => setF({ ...f, type: t, manualRate: false })}
+            <button key={t} onClick={() => setF({ ...f, type: t, manualRate: false, status: "completed" })}
               className={`flex-1 py-2.5 rounded-xl font-bold text-sm transition ${f.type === t ? (t === "buy" ? "bg-emerald-700 text-white shadow-sm" : "bg-rose-700 text-white shadow-sm") : "bg-stone-100 text-slate-500 hover:bg-stone-200"}`}>
               {t === "buy" ? "کڕین" : "فرۆشتن"}
             </button>
@@ -926,15 +970,14 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
               })}
             </Sel>
           </div>
-          {f.type === "buy" && (
-            <div>
-              <Lbl>دۆخی پارەدان</Lbl>
-              <Sel value={f.status} onChange={(ev) => setF({ ...f, status: ev.target.value })}>
-                <option value="completed">تەواوکراو (خۆم پارەم دا)</option>
-                <option value="pending">چاوەڕوانی پارە (نووسینگە دەیدات)</option>
-              </Sel>
-            </div>
-          )}
+          <div>
+            <Lbl>دۆخی پارە</Lbl>
+            <Sel value={f.status} onChange={(ev) => setF({ ...f, status: ev.target.value })}>
+              {f.type === "buy"
+                ? <><option value="completed">پارەم داوە</option><option value="pending">چاوەڕوانی پارە (نووسینگە دەیدات)</option></>
+                : <><option value="completed">پارەم وەرگرتووە</option><option value="pending">چاوەڕوانی وەرگرتنی پارە</option></>}
+            </Sel>
+          </div>
         </div>
 
         {!lockCp && (
@@ -976,50 +1019,139 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
   );
 }
 
-/* ══════════════════ لیستی مامەڵەکان ══════════════════ */
-function TxList({ data, cur, usr, onEdit, onDel }) {
-  const [q, setQ] = useState(""); const [ft, setFt] = useState("all");
-  const list = [...data.txs].filter((t) => !t.deleted).reverse().filter((t) => {
-    if (ft === "buy" && t.type !== "buy") return false;
-    if (ft === "sell" && t.type !== "sell") return false;
-    if (ft === "pending" && t.status !== "pending") return false;
-    const name = t.cpId ? usr(t.cpId).name : t.cpName;
-    return !q || (name || "").includes(q) || cur(t.curId).code.includes(q.toUpperCase()) || String(t.code || "").includes(q.replace("#", ""));
+/* ══════════════════ فلتەری مامەڵەکان ══════════════════ */
+const emptyFilter = { q: "", type: "all", status: "all", cur: "all", from: "", to: "" };
+
+function useTxFilter(list, cur, usr) {
+  const [f, setF] = useState(emptyFilter);
+  const out = list.filter((t) => {
+    if (f.type !== "all" && t.type !== f.type) return false;
+    if (f.status === "pending" && t.status !== "pending") return false;
+    if (f.status === "completed" && t.status !== "completed") return false;
+    if (f.cur !== "all" && t.curId !== f.cur && t.againstId !== f.cur) return false;
+    const d = dOnly(t.date);
+    if (f.from && d < f.from) return false;
+    if (f.to && d > f.to) return false;
+    if (f.q) {
+      const name = t.cpId ? (usr(t.cpId).name || "") : (t.cpName || "");
+      const hay = `${t.code || ""} ${name} ${cur(t.curId).code || ""} ${cur(t.againstId).code || ""} ${t.note || ""}`.toLowerCase();
+      if (!hay.includes(f.q.toLowerCase().replace("#", ""))) return false;
+    }
+    return true;
   });
+  return [out, f, setF];
+}
+
+function TxFilterBar({ data, f, setF, count, total }) {
+  const [open, setOpen] = useState(false);
+  const active = JSON.stringify(f) !== JSON.stringify(emptyFilter);
+  const quick = (days) => {
+    const t = new Date(); const to = t.toISOString().slice(0, 10);
+    const x = new Date(t); x.setDate(x.getDate() - days);
+    setF({ ...f, from: x.toISOString().slice(0, 10), to });
+  };
+  return (
+    <Card className="p-3 md:p-4">
+      <div className="flex gap-2 items-center">
+        <Inp value={f.q} onChange={(e) => setF({ ...f, q: e.target.value })} placeholder="گەڕان بە کۆد، ناو، دراو..." className="flex-1" />
+        <button onClick={() => setOpen(!open)}
+          className={`shrink-0 px-3 py-2.5 rounded-xl border text-sm font-semibold flex items-center gap-1.5 transition ${active ? "bg-emerald-700 text-white border-emerald-700" : "bg-white border-stone-300 text-slate-600"}`}>
+          <SlidersHorizontal className="w-4 h-4" /> فلتەر
+        </button>
+      </div>
+      {open && (
+        <div className="mt-3 pt-3 border-t border-stone-100 space-y-3">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+            <div><Lbl>جۆر</Lbl><Sel value={f.type} onChange={(e) => setF({ ...f, type: e.target.value })}>
+              <option value="all">هەمووی</option><option value="buy">کڕین</option><option value="sell">فرۆشتن</option></Sel></div>
+            <div><Lbl>دۆخ</Lbl><Sel value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })}>
+              <option value="all">هەمووی</option><option value="pending">چاوەڕوان</option><option value="completed">تەواوکراو</option></Sel></div>
+            <div><Lbl>دراو</Lbl><Sel value={f.cur} onChange={(e) => setF({ ...f, cur: e.target.value })}>
+              <option value="all">هەمووی</option>{data.currencies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Sel></div>
+            <div className="flex items-end"><Btn kind="ghost" className="w-full" onClick={() => setF(emptyFilter)}>سڕینەوەی فلتەر</Btn></div>
+          </div>
+          <div className="grid grid-cols-2 gap-2.5">
+            <div><Lbl>لە بەرواری</Lbl><Inp type="date" value={f.from} onChange={(e) => setF({ ...f, from: e.target.value })} /></div>
+            <div><Lbl>بۆ بەرواری</Lbl><Inp type="date" value={f.to} onChange={(e) => setF({ ...f, to: e.target.value })} /></div>
+          </div>
+          <div className="flex gap-1.5 flex-wrap">
+            {[["ئەمڕۆ", 0], ["٧ ڕۆژ", 7], ["٣٠ ڕۆژ", 30], ["٩٠ ڕۆژ", 90]].map(([t, d]) => (
+              <button key={t} onClick={() => quick(d)} className="px-3 py-1.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-xs font-semibold text-slate-600">{t}</button>
+            ))}
+          </div>
+        </div>
+      )}
+      {(count != null) && (
+        <div className="mt-2.5 pt-2.5 border-t border-stone-100 flex gap-4 flex-wrap text-xs text-slate-500">
+          <span><b style={num}>{count}</b> مامەڵە</span>
+          {total && Object.entries(total).map(([c, v]) => <span key={c}>{c}: <b style={num}>{fmt(v, 0)}</b></span>)}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/* ══════════════════ لیستی مامەڵەکان ══════════════════ */
+function TxList({ data, cur, usr, onEdit, onDel, settle }) {
+  const base = [...data.txs].filter((t) => !t.deleted).reverse();
+  const [list, f, setF] = useTxFilter(base, cur, usr);
+  const total = {};
+  list.forEach((t) => { total[cur(t.againstId).code || "?"] = (total[cur(t.againstId).code || "?"] || 0) + t.total; });
   return (
     <div className="space-y-3">
-      <H>هەموو مامەڵەکان</H>
-      <div className="flex gap-2 flex-wrap">
-        <Inp value={q} onChange={(e) => setQ(e.target.value)} placeholder="گەڕان بە کۆد، ناو یان دراو..." className="max-w-xs" />
-        <Sel value={ft} onChange={(e) => setFt(e.target.value)} className="max-w-[190px]">
-          <option value="all">هەمووی</option><option value="buy">کڕین</option><option value="sell">فرۆشتن</option><option value="pending">چاوەڕوانی پارە</option>
-        </Sel>
-      </div>
-      {list.length === 0 ? <Card><Empty t="هیچ مامەڵەیەک نییە" /></Card> :
-        list.map((t) => <TxRow key={t.id} t={t} cur={cur} usr={usr} onEdit={onEdit} onDel={onDel} />)}
+      <H>مامەڵەکان</H>
+      <TxFilterBar data={data} f={f} setF={setF} count={list.length} total={total} />
+      {list.length === 0 ? <Card><Empty t="هیچ مامەڵەیەک نەدۆزرایەوە" /></Card> :
+        list.map((t) => <TxRow key={t.id} t={t} cur={cur} usr={usr} onEdit={onEdit} onDel={onDel} settle={settle} />)}
     </div>
   );
 }
 
 /* flip = بینینی مامەڵەکە لە ڕوانگەی لایەنی بەرامبەرەوە / lite = بێ وردەکاری ناوخۆیی */
-function TxRow({ t, cur, usr, onEdit, onDel, flip, lite }) {
+function TxRow({ t, cur, usr, onEdit, onDel, flip, lite, settle }) {
   const name = t.cpId ? usr(t.cpId).name : t.cpName;
   const shown = flip ? (t.type === "buy" ? "sell" : "buy") : t.type;
+  const pend = t.status === "pending";
+  const pendLbl = flip
+    ? (t.type === "buy" ? "چاوەڕوانی وەرگرتنی پارە" : "چاوەڕوانی پارەدان")
+    : (t.type === "buy" ? "پارە نەدراوە" : "پارە وەرنەگیراوە");
   return (
-    <Card className="p-3.5 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
-      {t.code && <span className="text-[11px] font-bold text-slate-400 bg-stone-100 px-2 py-0.5 rounded" style={num}>#{t.code}</span>}
-      <Pill tone={shown === "buy" ? "green" : "red"}>{shown === "buy" ? "کڕین" : "فرۆشتن"}</Pill>
-      <span><Money v={t.amount} dec={cur(t.curId).dec} /> {cur(t.curId).code}</span>
-      <span className="text-slate-400">نرخ <span style={num}>{fmt(t.rate, 6)}</span></span>
-      <span>= <Money v={t.total} dec={cur(t.againstId).dec} /> {cur(t.againstId).code}</span>
-      {!lite && <span className="text-slate-600">{name}</span>}
-      {!lite && t.partnerId && <span className="text-amber-700 text-xs">لای {usr(t.partnerId).name}</span>}
-      {t.status === "pending" && <Pill tone="amber">چاوەڕوانی پارە</Pill>}
-      {!lite && t.profit != null && <span className="text-xs text-slate-500">خێر: <Money v={t.profit} dec={cur(t.profitCurId).dec} pos /></span>}
-      {!lite && t.edited && <span className="text-[11px] text-slate-400">(ئیدیت کراوە)</span>}
-      <span className="text-[11px] text-slate-400 mr-auto" style={num}>{new Date(t.date).toLocaleString("en-GB")}</span>
-      {onEdit && <button onClick={() => onEdit(t)} className="text-slate-400 hover:text-emerald-700"><Pencil className="w-4 h-4" /></button>}
-      {onDel && <button onClick={() => onDel(t)} className="text-slate-400 hover:text-rose-700"><Trash2 className="w-4 h-4" /></button>}
+    <Card className={`p-3.5 ${pend ? "border-amber-300 bg-amber-50/40" : ""}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <Pill tone={shown === "buy" ? "green" : "red"}>{shown === "buy" ? "کڕین" : "فرۆشتن"}</Pill>
+            <span className="font-bold text-slate-900" style={num}>{fmt(t.amount, 0)}</span>
+            <span className="text-sm text-slate-500">{cur(t.curId).code}</span>
+            <span className="text-slate-300 mx-0.5">←</span>
+            <span className="font-bold text-slate-900" style={num}>{fmt(t.total, 0)}</span>
+            <span className="text-sm text-slate-500">{cur(t.againstId).code}</span>
+          </div>
+          <div className="flex items-center gap-x-3 gap-y-1 flex-wrap mt-1.5 text-xs text-slate-500">
+            {t.code && <span className="font-bold text-slate-400" style={num}>#{t.code}</span>}
+            {!lite && name && <span className="text-slate-700 font-semibold">{name}</span>}
+            <span style={num}>نرخ {fmt(t.rate, 6)}</span>
+            {!lite && t.partnerId && <span className="text-amber-700">لای {usr(t.partnerId).name}</span>}
+            {!lite && t.profit != null && <span>خێر <b className="text-emerald-700" style={num}>{fmt(t.profit, 0)}</b></span>}
+            {!lite && t.edited && <span className="text-slate-400">(ئیدیت)</span>}
+            <span className="text-slate-400" style={num}>{new Date(t.date).toLocaleDateString("en-GB")}</span>
+          </div>
+          {pend && <div className="mt-2"><Pill tone="amber">{pendLbl}</Pill></div>}
+        </div>
+        {(onEdit || onDel) && (
+          <div className="flex flex-col gap-1 shrink-0">
+            {onEdit && <button onClick={() => onEdit(t)} className="p-2 rounded-lg text-slate-400 hover:text-emerald-700 hover:bg-emerald-50"><Pencil className="w-4 h-4" /></button>}
+            {onDel && <button onClick={() => onDel(t)} className="p-2 rounded-lg text-slate-400 hover:text-rose-700 hover:bg-rose-50"><Trash2 className="w-4 h-4" /></button>}
+          </div>
+        )}
+      </div>
+      {pend && settle && (
+        <div className="mt-2.5 pt-2.5 border-t border-amber-200/70">
+          <button onClick={() => settle(t)} className="flex items-center gap-1.5 text-sm font-semibold text-emerald-700 hover:text-emerald-800">
+            <CheckCircle2 className="w-4 h-4" /> {t.type === "buy" ? "پارەکەم دا" : "پارەکەم وەرگرت"}
+          </button>
+        </div>
+      )}
     </Card>
   );
 }
@@ -1390,50 +1522,94 @@ function PeopleHub(p) {
 }
 
 /* ══════════════════ کڕیاران ══════════════════ */
-function Customers({ data, calc, cur, usr, detailId, setDetailId, onSave, ...rest }) {
+function Customers({ data, calc, cur, usr, detailId, setDetailId, onSave, settle, ...rest }) {
   const customers = data.users.filter((u) => u.role === "customer" && !u.deleted);
-  if (detailId) {
-    const u = usr(detailId);
-    const txs = data.txs.filter((t) => !t.deleted && t.cpId === detailId).reverse();
-    const pend = calc.pending[detailId];
-    return (
-      <div className="space-y-4">
-        <Back onClick={() => setDetailId(null)} t="گەڕانەوە بۆ لیستی کڕیاران" />
-        <div>
-          <h2 className="text-xl font-bold text-slate-900">{u.name}</h2>
-          {(u.phone || u.address) && <div className="text-xs text-slate-500 mt-0.5">{u.phone && <span style={num}>{u.phone}</span>}{u.phone && u.address && " · "}{u.address}</div>}
-        </div>
-        {pend && (
-          <Card className="p-4 border-amber-300 bg-amber-50/60">
-            <div className="text-sm font-semibold text-amber-900 mb-1">قەرز لەسەر تۆ (چاوەڕوانی نووسینگە)</div>
-            {Object.entries(pend.byCur).map(([cid, v]) => <div key={cid}><Money v={v} dec={cur(cid).dec} /> <span className="text-sm text-slate-600">{cur(cid).code}</span></div>)}
-          </Card>
-        )}
-        <Card className="p-5">
-          <SecLbl>مامەڵەی ڕاستەوخۆ لەگەڵ {u.name}</SecLbl>
-          <TxForm data={data} calc={calc} cur={cur} usr={usr} {...rest} onSave={(f, e) => onSave({ ...f, cpMode: "acc", cpId: detailId, cpName: "" }, e)} lockCp={detailId} />
-        </Card>
-        <SecLbl>مێژووی مامەڵەکان ({txs.length})</SecLbl>
-        {txs.length === 0 ? <Card><Empty t="هیچ مامەڵەیەک نییە" /></Card> : txs.map((t) => <TxRow key={t.id} t={t} cur={cur} usr={usr} />)}
-      </div>
-    );
-  }
+  const [q, setQ] = useState("");
+  if (detailId) return <CustomerDetail id={detailId} back={() => setDetailId(null)} data={data} calc={calc} cur={cur} usr={usr} onSave={onSave} settle={settle} {...rest} />;
+  const list = customers.filter((u) => !q || (u.name || "").includes(q) || (u.phone || "").includes(q));
   return (
     <div className="space-y-3">
-      {customers.length === 0 ? <Card><Empty t="هیچ کڕیارێک نییە — لە بەشی بەڕێوەبردن زیادی بکە" /></Card> :
-        customers.map((u) => {
+      <Inp value={q} onChange={(e) => setQ(e.target.value)} placeholder="گەڕان بە ناو یان ژمارە..." />
+      {list.length === 0 ? <Card><Empty t="هیچ کڕیارێک نەدۆزرایەوە" /></Card> :
+        list.map((u) => {
           const cnt = data.txs.filter((t) => !t.deleted && t.cpId === u.id).length;
-          const pend = calc.pending[u.id];
+          const c = calc.cust[u.id];
+          const owe = c ? Object.entries(c.owe).filter(([, v]) => v) : [];
+          const due = c ? Object.entries(c.due).filter(([, v]) => v) : [];
           return (
-            <Card key={u.id} className="p-4 flex items-center justify-between" onClick={() => setDetailId(u.id)}>
-              <div>
-                <div className="font-semibold text-slate-800">{u.name}</div>
-                <div className="text-xs text-slate-500 mt-0.5">{cnt} مامەڵە {pend && <span className="text-amber-700 font-bold">· قەرزی چاوەڕوان</span>}</div>
+            <Card key={u.id} className="p-4" onClick={() => setDetailId(u.id)}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="font-semibold text-slate-800">{u.name}</div>
+                  <div className="text-xs text-slate-500 mt-0.5">{cnt} مامەڵە{u.phone && <span style={num}> · {u.phone}</span>}</div>
+                </div>
+                <div className="text-left shrink-0 space-y-0.5">
+                  {owe.map(([cid, v]) => <div key={cid} className="text-xs text-rose-700 font-semibold">قەرزاری ئەوم: <span style={num}>{fmt(v, 0)}</span> {cur(cid).code}</div>)}
+                  {due.map(([cid, v]) => <div key={cid} className="text-xs text-emerald-700 font-semibold">لای ئەو: <span style={num}>{fmt(v, 0)}</span> {cur(cid).code}</div>)}
+                  {!owe.length && !due.length && <div className="text-xs text-slate-400">حیساب پاکە</div>}
+                </div>
               </div>
-              <ChevronLeft className="w-5 h-5 text-slate-300" />
             </Card>
           );
         })}
+    </div>
+  );
+}
+
+/* دوو قاسەی کڕیار + مێژووی فلتەرکراو */
+function CustomerDetail({ id, back, data, calc, cur, usr, onSave, settle, ...rest }) {
+  const u = usr(id);
+  const c = calc.cust[id] || { owe: {}, due: {} };
+  const base = data.txs.filter((t) => !t.deleted && t.cpId === id).reverse();
+  const [list, f, setF] = useTxFilter(base, cur, usr);
+  const [tab, setTab] = useState("history");
+  return (
+    <div className="space-y-4">
+      <Back onClick={back} t="گەڕانەوە بۆ لیستی کڕیاران" />
+      <div>
+        <h2 className="text-xl font-bold text-slate-900">{u.name}</h2>
+        {(u.phone || u.address) && <div className="text-xs text-slate-500 mt-0.5">{u.phone && <span style={num}>{u.phone}</span>}{u.phone && u.address && " · "}{u.address}</div>}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <Card className="p-4 border-rose-200 bg-rose-50/40">
+          <div className="text-xs font-semibold text-rose-800 mb-2">پارەی ئەو لای من (قەرزاری ئەوم)</div>
+          {Object.entries(c.owe).filter(([, v]) => v).length === 0 ? <div className="text-sm text-slate-400">هیچ</div> :
+            Object.entries(c.owe).filter(([, v]) => v).map(([cid, v]) => (
+              <div key={cid} className="flex justify-between py-1">
+                <span className="text-sm text-slate-600">{cur(cid).name}</span>
+                <span className="text-lg font-bold text-rose-700" style={num}>{fmt(v, 0)}</span>
+              </div>
+            ))}
+        </Card>
+        <Card className="p-4 border-emerald-200 bg-emerald-50/40">
+          <div className="text-xs font-semibold text-emerald-800 mb-2">پارەی من لای ئەو (قەرزارمە)</div>
+          {Object.entries(c.due).filter(([, v]) => v).length === 0 ? <div className="text-sm text-slate-400">هیچ</div> :
+            Object.entries(c.due).filter(([, v]) => v).map(([cid, v]) => (
+              <div key={cid} className="flex justify-between py-1">
+                <span className="text-sm text-slate-600">{cur(cid).name}</span>
+                <span className="text-lg font-bold text-emerald-700" style={num}>{fmt(v, 0)}</span>
+              </div>
+            ))}
+        </Card>
+      </div>
+
+      <div className="flex gap-1 bg-white border border-stone-200 rounded-xl p-1">
+        {[["history", "مێژوو"], ["new", "مامەڵەی نوێ"]].map(([k, t]) => (
+          <button key={k} onClick={() => setTab(k)}
+            className={`flex-1 px-4 py-2.5 rounded-lg text-sm ${tab === k ? "bg-emerald-700 text-white font-semibold" : "text-slate-600 hover:bg-stone-100"}`}>{t}</button>
+        ))}
+      </div>
+
+      {tab === "new" ? (
+        <TxForm data={data} calc={calc} cur={cur} usr={usr} {...rest} onSave={(fm, e) => onSave({ ...fm, cpMode: "acc", cpId: id, cpName: "" }, e)} lockCp={id} />
+      ) : (
+        <>
+          <TxFilterBar data={data} f={f} setF={setF} count={list.length} />
+          {list.length === 0 ? <Card><Empty t="هیچ مامەڵەیەک نەدۆزرایەوە" /></Card> :
+            list.map((t) => <TxRow key={t.id} t={t} cur={cur} usr={usr} settle={settle} />)}
+        </>
+      )}
     </div>
   );
 }
@@ -1703,10 +1879,22 @@ function UsersAdmin({ data, createUser, deleteUser, setUserRate, flash }) {
 }
 
 /* ══════════════════ ڕاپۆرت ══════════════════ */
-function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare }) {
+function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare, sumUsd, toUsd, ratesReady }) {
   const today = new Date();
-  const [from, setFrom] = useState(new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10));
-  const [to, setTo] = useState(today.toISOString().slice(0, 10));
+  const iso = (d) => d.toISOString().slice(0, 10);
+  const [from, setFrom] = useState(iso(new Date(today.getFullYear(), today.getMonth(), 1)));
+  const [to, setTo] = useState(iso(today));
+  const [tab, setTab] = useState("pl");
+
+  const preset = (k) => {
+    const t = new Date();
+    if (k === "today") { setFrom(iso(t)); setTo(iso(t)); }
+    if (k === "week") { const w = new Date(t); w.setDate(w.getDate() - w.getDay()); setFrom(iso(w)); setTo(iso(t)); }
+    if (k === "month") { setFrom(iso(new Date(t.getFullYear(), t.getMonth(), 1))); setTo(iso(t)); }
+    if (k === "prev") { const a = new Date(t.getFullYear(), t.getMonth() - 1, 1), b = new Date(t.getFullYear(), t.getMonth(), 0); setFrom(iso(a)); setTo(iso(b)); }
+    if (k === "year") { setFrom(iso(new Date(t.getFullYear(), 0, 1))); setTo(iso(t)); }
+  };
+
   const inR = (d) => { const x = dOnly(d); return x >= from && x <= to; };
   const txs = data.txs.filter((t) => !t.deleted && inR(t.date));
   const entries = data.ledger.filter((e) => inR(e.date));
@@ -1718,14 +1906,11 @@ function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare })
       else loss[t.profitCurId] = (loss[t.profitCurId] || 0) + Math.abs(t.profit);
     }
   });
-  const exp = {}, fee = {}, payout = {};
+  const exp = {}, fee = {}, payout = {}, flow = {};
   entries.forEach((e) => {
     if (e.type === "expense") exp[e.curId] = (exp[e.curId] || 0) + Math.abs(e.amount);
     if (e.type === "partner_fee") fee[e.curId] = (fee[e.curId] || 0) + Math.abs(e.amount);
     if (e.type === "investor_payout") payout[e.curId] = (payout[e.curId] || 0) + Math.abs(e.amount);
-  });
-  const flow = {};
-  entries.forEach((e) => {
     const fl = (flow[e.curId] = flow[e.curId] || { inn: 0, out: 0 });
     if (e.amount >= 0) fl.inn += e.amount; else fl.out += Math.abs(e.amount);
   });
@@ -1736,7 +1921,13 @@ function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare })
   });
   const pm = profitIn(from, to);
   const invP = investorsProfitIn(pm);
+  const net = {};
+  data.currencies.forEach((c) => {
+    const n = (profit[c.id] || 0) - (loss[c.id] || 0) - (exp[c.id] || 0) - (fee[c.id] || 0) - (invP[c.id] || 0);
+    if (n) net[c.id] = n;
+  });
   const allCurs = data.currencies.filter((c) => profit[c.id] || loss[c.id] || exp[c.id] || fee[c.id] || payout[c.id] || flow[c.id] || vol[c.id]);
+  const investors = data.users.filter((u) => u.role === "investor" && !u.deleted);
 
   const exportCsv = () => {
     const head = ["کۆد", "جۆر", "بەروار", "لایەن", "دراو", "بڕ", "نرخ", "بەرامبەر", "کۆ", "شوێن", "دۆخ", "خێر"];
@@ -1749,117 +1940,161 @@ function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare })
     a.download = `report_${from}_${to}.csv`; a.click();
   };
 
-  const Th = ({ children, w }) => <th className={`text-right py-2 font-semibold ${w || ""}`}>{children}</th>;
+  const Row = ({ label, m, tone, bold }) => (
+    <div className={`flex items-center justify-between py-2.5 border-b border-stone-100 last:border-0 ${bold ? "font-bold" : ""}`}>
+      <span className={`text-sm ${bold ? "text-slate-900" : "text-slate-600"}`}>{label}</span>
+      <div className="text-left space-y-0.5">
+        {Object.keys(m).length === 0 ? <span className="text-slate-300 text-sm">0</span> :
+          Object.entries(m).map(([cid, v]) => (
+            <div key={cid} className={`text-sm ${tone === "pos" ? "text-emerald-700" : tone === "neg" ? "text-rose-700" : "text-slate-800"}`}>
+              <span style={num} className="font-bold">{tone === "neg" ? "−" : ""}{fmt(Math.abs(v), 0)}</span>
+              <span className="text-xs text-slate-400 mr-1">{cur(cid).code}</span>
+            </div>
+          ))}
+      </div>
+    </div>
+  );
+
+  const TABS = [["pl", "خێر و زەرەر"], ["flow", "هاتوو و تێچوو"], ["inv", "وەبەرهێنەران"]];
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <H>ڕاپۆرتی تەواو</H>
+      <div className="flex items-start justify-between flex-wrap gap-2">
+        <H sub={`${from} تا ${to}`}>ڕاپۆرت</H>
         <Btn kind="ghost" onClick={exportCsv}>دەرهێنان بۆ ئێکسڵ</Btn>
       </div>
-      <Card className="p-4 flex gap-3 flex-wrap items-end">
-        <div><Lbl>لە بەرواری</Lbl><Inp type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
-        <div><Lbl>بۆ بەرواری</Lbl><Inp type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
-        <div className="text-xs text-slate-400 pb-3" style={num}>{txs.length} مامەڵە</div>
+
+      <Card className="p-4 space-y-3">
+        <div className="flex gap-1.5 flex-wrap">
+          {[["today", "ئەمڕۆ"], ["week", "ئەم هەفتەیە"], ["month", "ئەم مانگە"], ["prev", "مانگی ڕابردوو"], ["year", "ئەمساڵ"]].map(([k, t]) => (
+            <button key={k} onClick={() => preset(k)} className="px-3 py-1.5 rounded-lg bg-stone-100 hover:bg-emerald-700 hover:text-white text-xs font-semibold text-slate-600 transition">{t}</button>
+          ))}
+        </div>
+        <div className="grid grid-cols-2 gap-2.5">
+          <div><Lbl>لە</Lbl><Inp type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
+          <div><Lbl>بۆ</Lbl><Inp type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
+        </div>
       </Card>
 
-      <Card className="p-5 overflow-x-auto">
-        <SecLbl>خێر و زەرەر</SecLbl>
-        <table className="w-full text-sm">
-          <thead><tr className="text-slate-500 text-xs border-b border-stone-200">
-            <Th>دراو</Th><Th>خێر</Th><Th>زەرەر</Th><Th>خەرجی</Th><Th>عمولەی هاوبەشان</Th><Th>خێری وەبەرهێنەران</Th><Th>نەتی خۆم</Th>
-          </tr></thead>
-          <tbody>
-            {allCurs.length === 0 ? <tr><td colSpan={7}><Empty t="هیچ نییە لەم ماوەیەدا" /></td></tr> :
-              allCurs.map((c) => {
-                const net = (profit[c.id] || 0) - (loss[c.id] || 0) - (exp[c.id] || 0) - (fee[c.id] || 0) - (invP[c.id] || 0);
-                return (
-                  <tr key={c.id} className="border-b border-stone-100">
-                    <td className="py-2.5 font-semibold">{c.name}</td>
-                    <td><Money v={profit[c.id] || 0} dec={c.dec} pos /></td>
-                    <td>{loss[c.id] ? <Money v={-loss[c.id]} dec={c.dec} /> : <span className="text-slate-300">0</span>}</td>
-                    <td>{exp[c.id] ? <Money v={-exp[c.id]} dec={c.dec} /> : <span className="text-slate-300">0</span>}</td>
-                    <td>{fee[c.id] ? <Money v={-fee[c.id]} dec={c.dec} /> : <span className="text-slate-300">0</span>}</td>
-                    <td>{invP[c.id] ? <Money v={-invP[c.id]} dec={c.dec} /> : <span className="text-slate-300">0</span>}</td>
-                    <td className="font-bold"><Money v={net} dec={c.dec} pos /></td>
-                  </tr>
-                );
-              })}
-          </tbody>
-        </table>
-      </Card>
-
-      <div className="grid md:grid-cols-2 gap-4">
-        <Card className="p-5 overflow-x-auto">
-          <SecLbl>هاتوو و تێچوو</SecLbl>
-          <table className="w-full text-sm">
-            <thead><tr className="text-slate-500 text-xs border-b border-stone-200"><Th>دراو</Th><Th>هاتوو</Th><Th>تێچوو</Th><Th>جیاوازی</Th></tr></thead>
-            <tbody>
-              {Object.keys(flow).length === 0 ? <tr><td colSpan={4}><Empty t="هیچ" /></td></tr> :
-                Object.entries(flow).map(([cid, fl]) => (
-                  <tr key={cid} className="border-b border-stone-100">
-                    <td className="py-2">{cur(cid).name}</td>
-                    <td><Money v={fl.inn} dec={cur(cid).dec} pos /></td>
-                    <td><Money v={-fl.out} dec={cur(cid).dec} /></td>
-                    <td className="font-bold"><Money v={fl.inn - fl.out} dec={cur(cid).dec} pos /></td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
-        </Card>
-        <Card className="p-5 overflow-x-auto">
-          <SecLbl>قەبارەی مامەڵەکان</SecLbl>
-          <table className="w-full text-sm">
-            <thead><tr className="text-slate-500 text-xs border-b border-stone-200"><Th>دراو</Th><Th>کڕدراو</Th><Th>فرۆشراو</Th><Th>ژمارە</Th></tr></thead>
-            <tbody>
-              {Object.keys(vol).length === 0 ? <tr><td colSpan={4}><Empty t="هیچ" /></td></tr> :
-                Object.entries(vol).map(([cid, v]) => (
-                  <tr key={cid} className="border-b border-stone-100">
-                    <td className="py-2">{cur(cid).name}</td>
-                    <td><Money v={v.buy} dec={cur(cid).dec} pos /></td>
-                    <td><Money v={v.sell} dec={cur(cid).dec} /></td>
-                    <td style={num}>{v.n}</td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
+      {/* پوختەی سەرەکی */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <Card className="p-4"><div className="text-xs text-slate-500">مامەڵە</div><div className="text-2xl font-bold" style={num}>{txs.length}</div></Card>
+        <Card className="p-4"><div className="text-xs text-slate-500">کڕین</div><div className="text-2xl font-bold text-emerald-700" style={num}>{txs.filter((t) => t.type === "buy").length}</div></Card>
+        <Card className="p-4"><div className="text-xs text-slate-500">فرۆشتن</div><div className="text-2xl font-bold text-rose-700" style={num}>{txs.filter((t) => t.type === "sell").length}</div></Card>
+        <Card className="p-4 bg-emerald-700 text-white border-emerald-700">
+          <div className="text-xs text-emerald-100">نەتی خۆم {ratesReady ? "(دۆلار)" : ""}</div>
+          <div className="text-2xl font-bold" style={num}>{ratesReady ? fmt(sumUsd(net), 0) : Object.values(net).length ? fmt(Object.values(net)[0], 0) : 0}</div>
         </Card>
       </div>
 
-      <Card className="p-5 overflow-x-auto">
-        <SecLbl>دابەشکردنی خێر بەسەر وەبەرهێنەران</SecLbl>
-        <table className="w-full text-sm">
-          <thead><tr className="text-slate-500 text-xs border-b border-stone-200">
-            <Th>وەبەرهێنەر</Th><Th>دراو</Th><Th>سەرمایە</Th><Th>بەشی سەرمایە</Th><Th>ڕێژە</Th><Th>خێری ئەم ماوەیە</Th>
-          </tr></thead>
-          <tbody>
-            {(() => {
-              const rows = [];
-              data.users.filter((u) => u.role === "investor" && !u.deleted).forEach((u) => {
-                Object.entries(pm).forEach(([cid, tot]) => {
-                  const cap = (calc.invCap[u.id] || {})[cid] || 0;
-                  if (!cap) return;
-                  const totalCap = (calc.selfCap[cid] || 0) + (calc.invTotal[cid] || 0);
-                  rows.push(
-                    <tr key={u.id + cid} className="border-b border-stone-100">
-                      <td className="py-2.5">{u.name}</td>
-                      <td>{cur(cid).name}</td>
-                      <td><Money v={cap} dec={cur(cid).dec} /></td>
-                      <td style={num}>{totalCap ? ((cap / totalCap) * 100).toFixed(1) : 0}٪</td>
-                      <td style={num}>{u.rate}٪</td>
-                      <td><Money v={invShare(u.id, cid, tot)} dec={cur(cid).dec} pos /></td>
-                    </tr>
-                  );
-                });
-              });
-              return rows.length ? rows : <tr><td colSpan={6}><Empty t="هیچ نییە" /></td></tr>;
-            })()}
-          </tbody>
-        </table>
-      </Card>
+      <div className="flex gap-1 bg-white border border-stone-200 rounded-xl p-1 overflow-x-auto">
+        {TABS.map(([k, t]) => (
+          <button key={k} onClick={() => setTab(k)}
+            className={`flex-1 whitespace-nowrap px-3 py-2.5 rounded-lg text-sm ${tab === k ? "bg-emerald-700 text-white font-semibold" : "text-slate-600 hover:bg-stone-100"}`}>{t}</button>
+        ))}
+      </div>
+
+      {tab === "pl" && (
+        <Card className="p-5">
+          <SecLbl>خێر و زەرەر</SecLbl>
+          {allCurs.length === 0 ? <Empty t="هیچ نییە لەم ماوەیەدا" /> : <>
+            <Row label="خێری فرۆشتن" m={profit} tone="pos" />
+            <Row label="زەرەری فرۆشتن" m={loss} tone="neg" />
+            <Row label="خەرجی" m={exp} tone="neg" />
+            <Row label="عمولەی هاوبەشان" m={fee} tone="neg" />
+            <Row label="خێری وەبەرهێنەران" m={invP} tone="neg" />
+            <div className="mt-1 pt-1 border-t-2 border-slate-900/10">
+              <Row label="نەتیجەی کۆتایی (بۆ خۆم)" m={net} tone="pos" bold />
+            </div>
+            {ratesReady && (
+              <div className="mt-3 bg-emerald-50 rounded-xl p-3 flex justify-between items-center">
+                <span className="text-sm text-emerald-900 font-semibold">کۆی نەت بە دۆلار</span>
+                <span className="text-xl font-bold text-emerald-700" style={num}>{fmt(sumUsd(net), 0)} $</span>
+              </div>
+            )}
+          </>}
+        </Card>
+      )}
+
+      {tab === "flow" && (
+        <div className="space-y-4">
+          <Card className="p-5">
+            <SecLbl>هاتوو و تێچووی قاسە</SecLbl>
+            {Object.keys(flow).length === 0 ? <Empty t="هیچ" /> :
+              Object.entries(flow).map(([cid, fl]) => (
+                <div key={cid} className="py-3 border-b border-stone-100 last:border-0">
+                  <div className="font-semibold text-slate-800 mb-2">{cur(cid).name}</div>
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div className="bg-emerald-50 rounded-lg py-2">
+                      <div className="text-[10px] text-emerald-800/70">هاتوو</div>
+                      <div className="text-sm font-bold text-emerald-700" style={num}>{fmt(fl.inn, 0)}</div>
+                    </div>
+                    <div className="bg-rose-50 rounded-lg py-2">
+                      <div className="text-[10px] text-rose-800/70">تێچوو</div>
+                      <div className="text-sm font-bold text-rose-700" style={num}>{fmt(fl.out, 0)}</div>
+                    </div>
+                    <div className="bg-stone-100 rounded-lg py-2">
+                      <div className="text-[10px] text-slate-500">جیاوازی</div>
+                      <div className="text-sm font-bold text-slate-800" style={num}>{fmt(fl.inn - fl.out, 0)}</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+          </Card>
+          <Card className="p-5">
+            <SecLbl>قەبارەی مامەڵەکان</SecLbl>
+            {Object.keys(vol).length === 0 ? <Empty t="هیچ" /> :
+              Object.entries(vol).map(([cid, v]) => (
+                <div key={cid} className="flex items-center justify-between py-2.5 border-b border-stone-100 last:border-0">
+                  <div>
+                    <div className="text-sm font-semibold text-slate-800">{cur(cid).name}</div>
+                    <div className="text-xs text-slate-400" style={num}>{v.n} مامەڵە</div>
+                  </div>
+                  <div className="text-left text-sm">
+                    <div className="text-emerald-700">کڕدراو <b style={num}>{fmt(v.buy, 0)}</b></div>
+                    <div className="text-rose-700">فرۆشراو <b style={num}>{fmt(v.sell, 0)}</b></div>
+                  </div>
+                </div>
+              ))}
+          </Card>
+        </div>
+      )}
+
+      {tab === "inv" && (
+        <Card className="p-5">
+          <SecLbl>دابەشکردنی خێر</SecLbl>
+          {investors.length === 0 || Object.keys(pm).length === 0 ? <Empty t="هیچ خێرێک نییە لەم ماوەیەدا" /> :
+            investors.map((u) => {
+              const rows = Object.entries(pm).map(([cid, tot]) => {
+                const cap = (calc.invCap[u.id] || {})[cid] || 0;
+                if (!cap) return null;
+                const totalCap = (calc.selfCap[cid] || 0) + (calc.invTotal[cid] || 0);
+                return { cid, cap, share: totalCap ? cap / totalCap : 0, amt: invShare(u.id, cid, tot) };
+              }).filter(Boolean);
+              if (!rows.length) return null;
+              return (
+                <div key={u.id} className="py-3 border-b border-stone-100 last:border-0">
+                  <div className="flex justify-between items-center mb-2">
+                    <div className="font-semibold text-slate-800">{u.name}</div>
+                    <Pill>ڕێژە {u.rate}٪</Pill>
+                  </div>
+                  {rows.map((r) => (
+                    <div key={r.cid} className="flex justify-between items-center py-1.5 text-sm">
+                      <span className="text-slate-500">
+                        {cur(r.cid).name} · سەرمایە <span style={num}>{fmt(r.cap, 0)}</span> ({(r.share * 100).toFixed(1)}٪)
+                      </span>
+                      <span className="font-bold text-emerald-700" style={num}>{fmt(r.amt, 0)}</span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
+        </Card>
+      )}
     </div>
   );
 }
+
 
 /* ══════════════════ تۆماری گۆڕانکاری ══════════════════ */
 function Audit({ data }) {
@@ -1879,27 +2114,52 @@ function Audit({ data }) {
   );
 }
 
+/* پۆرتاڵی کڕیار */
+function CustomerPortal({ user, c, base, data, cur, usr }) {
+  const [list, f, setF] = useTxFilter(base, cur, usr);
+  const owe = Object.entries(c.owe).filter(([, v]) => v);
+  const due = Object.entries(c.due).filter(([, v]) => v);
+  return (
+    <div className="space-y-4">
+      <H sub={`بەخێربێیت، ${user.name}`}>ئەکاونتی من</H>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <Card className="p-4 border-emerald-200 bg-emerald-50/40">
+          <div className="text-xs font-semibold text-emerald-800 mb-2">پارەی من لای ئەوان</div>
+          {owe.length === 0 ? <div className="text-sm text-slate-400">هیچ</div> :
+            owe.map(([cid, v]) => (
+              <div key={cid} className="flex justify-between py-1">
+                <span className="text-sm text-slate-600">{cur(cid).name}</span>
+                <span className="text-lg font-bold text-emerald-700" style={num}>{fmt(v, 0)}</span>
+              </div>
+            ))}
+        </Card>
+        <Card className="p-4 border-rose-200 bg-rose-50/40">
+          <div className="text-xs font-semibold text-rose-800 mb-2">قەرزی من</div>
+          {due.length === 0 ? <div className="text-sm text-slate-400">هیچ</div> :
+            due.map(([cid, v]) => (
+              <div key={cid} className="flex justify-between py-1">
+                <span className="text-sm text-slate-600">{cur(cid).name}</span>
+                <span className="text-lg font-bold text-rose-700" style={num}>{fmt(v, 0)}</span>
+              </div>
+            ))}
+        </Card>
+      </div>
+      <SecLbl>مامەڵەکانم</SecLbl>
+      <TxFilterBar data={data} f={f} setF={setF} count={list.length} />
+      {list.length === 0 ? <Card><Empty t="هیچ مامەڵەیەک نەدۆزرایەوە" /></Card> :
+        list.map((t) => <TxRow key={t.id} t={t} cur={cur} usr={usr} flip lite />)}
+    </div>
+  );
+}
+
 /* ══════════════════ پۆرتاڵی ڕۆڵەکانی تر ══════════════════ */
-function Portal({ user, data, calc, cur, usr, officePay, invUnpaid }) {
+function Portal({ user, data, calc, cur, usr, officePay, settle, invUnpaid }) {
   if (user.role === "office") return <Office data={data} cur={cur} usr={usr} officePay={officePay} />;
 
   if (user.role === "customer") {
-    const txs = data.txs.filter((t) => !t.deleted && t.cpId === user.id).reverse();
-    const pend = calc.pending[user.id];
-    return (
-      <div className="space-y-4">
-        <H sub={`بەخێربێیت، ${user.name}`}>ئەکاونتی من</H>
-        {pend && (
-          <Card className="p-4 border-amber-300 bg-amber-50/60">
-            <div className="text-sm font-semibold text-amber-900 mb-1">پارەی چاوەڕوانکراو بۆت</div>
-            {Object.entries(pend.byCur).map(([cid, v]) => <div key={cid}><Money v={v} dec={cur(cid).dec} /> {cur(cid).code}</div>)}
-          </Card>
-        )}
-        <SecLbl>مامەڵەکانم ({txs.length})</SecLbl>
-        {txs.length === 0 ? <Card><Empty t="هیچ مامەڵەیەکت نییە" /></Card> :
-          txs.map((t) => <TxRow key={t.id} t={t} cur={cur} usr={usr} flip lite />)}
-      </div>
-    );
+    const c = calc.cust[user.id] || { owe: {}, due: {} };
+    const base = data.txs.filter((t) => !t.deleted && t.cpId === user.id).reverse();
+    return <CustomerPortal user={user} c={c} base={base} data={data} cur={cur} usr={usr} />;
   }
 
   if (user.role === "partner") {

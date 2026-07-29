@@ -1050,6 +1050,8 @@ function Receipts({ data, cur, usr, flash, A }) {
   const [cpMode, setCpMode] = useState("acc");
   const [cpId, setCpId] = useState("");
   const [cpName, setCpName] = useState("");
+  const [fee, setFee] = useState("");
+  const [maxAge, setMaxAge] = useState(3);
   const [rows, setRows] = useState([]);
   const [working, setWorking] = useState(false);
   const [prog, setProg] = useState(null);
@@ -1119,10 +1121,16 @@ function Receipts({ data, cur, usr, flash, A }) {
           if (same || sameOld) { status = "suspect"; note = "هەمان بڕ لە هەمان کاتدا — بیپشکنە"; }
         }
         if (status === "ok" && d.confidence != null && d.confidence < 0.6) { status = "suspect"; note = note || "خوێندنەوەکە دڵنیا نییە — بە دەست بیپشکنە"; }
+        // ٦) چوارەم پشکنین: ڕێکەوتی کۆن
+        let ageDays = null;
+        if (d.txDate && /^\d{4}-\d{2}-\d{2}$/.test(d.txDate)) {
+          ageDays = Math.floor((Date.now() - new Date(d.txDate + "T12:00:00").getTime()) / 86400000);
+          if (status === "ok" && ageDays > maxAge) { status = "suspect"; note = `ڕێکەوتی کۆن — ${ageDays} ڕۆژ لەمەوبەر`; }
+        }
 
         out.push({ id: uid(), file: f.name, url: img.url, hash: img.hash, status, note,
           amount: d.amount, currency: d.currency, sender: d.sender, receiver: d.receiver,
-          refNo: d.refNo, txTime: d.txTime, bank: d.bank, confidence: d.confidence, raw: d });
+          refNo: d.refNo, txTime: d.txTime, txDate: d.txDate, ageDays, bank: d.bank, confidence: d.confidence, raw: d });
         setRows([...out]);
       }
     } finally { setWorking(false); setProg(null); }
@@ -1135,6 +1143,19 @@ function Receipts({ data, cur, usr, flash, A }) {
   const totals = {};
   good.forEach((r) => { if (r.amount) totals[r.currency || "?"] = (totals[r.currency || "?"] || 0) + (+r.amount || 0); });
   const dupCount = rows.filter((r) => r.status === "dup").length;
+  const feeP = +fee || 0;
+  const net = {};
+  Object.entries(totals).forEach(([c, v]) => (net[c] = v - v * feeP / 100));
+
+  // دابەشکردن بەپێی ناوی وەرگر
+  const byRecv = {};
+  good.forEach((r) => {
+    const k = (r.receiver || "نەزانراو").trim();
+    byRecv[k] = byRecv[k] || { n: 0, cur: {} };
+    byRecv[k].n++;
+    if (r.amount) byRecv[k].cur[r.currency || "?"] = (byRecv[k].cur[r.currency || "?"] || 0) + (+r.amount || 0);
+  });
+  const recvList = Object.entries(byRecv).sort((a, b) => b[1].n - a[1].n);
 
   const save = async () => {
     if (!who) return flash("سەرەتا کەسەکە دیاری بکە");
@@ -1155,11 +1176,17 @@ function Receipts({ data, cur, usr, flash, A }) {
   };
 
   const copyTable = () => {
-    const lines = [["#", "بڕ", "دراو", "ناردەر", "ژ.مامەڵە", "کات", "ئەپ", "دۆخ"].join("\t")];
-    rows.forEach((r, i) => lines.push([i + 1, r.amount ?? "", r.currency ?? "", r.sender ?? "", r.refNo ?? "", r.txTime ?? "", r.bank ?? "",
+    const lines = [["#", "بڕ", "دراو", "ناردەر", "وەرگر", "ژ.مامەڵە", "کات", "ئەپ", "دۆخ"].join("\t")];
+    rows.forEach((r, i) => lines.push([i + 1, r.amount ?? "", r.currency ?? "", r.sender ?? "", r.receiver ?? "", r.refNo ?? "", r.txTime ?? "", r.bank ?? "",
       r.status === "dup" ? "دووبارە" : r.status === "suspect" ? "گومانلێکراو" : r.status === "error" ? "هەڵە" : "دروست"].join("\t")));
     lines.push("");
-    Object.entries(totals).forEach(([c, v]) => lines.push(`کۆی گشتی ${c}\t${v}`));
+    lines.push("— بەپێی وەرگر —");
+    recvList.forEach(([n, v]) => lines.push(`${n}\t${Object.entries(v.cur).map(([c, a]) => a + " " + c).join(" / ")}`));
+    lines.push("");
+    Object.entries(totals).forEach(([c, v]) => {
+      lines.push(`کۆی گشتی ${c}\t${v}`);
+      if (feeP > 0) { lines.push(`عمولە ${feeP}%\t${-(v * feeP / 100)}`); lines.push(`دوای عمولە ${c}\t${net[c]}`); }
+    });
     navigator.clipboard.writeText(lines.join("\n")).then(() => flash("خشتەکە کۆپی کرا ✓"));
   };
 
@@ -1173,7 +1200,7 @@ function Receipts({ data, cur, usr, flash, A }) {
       <H sub="سکرینشۆتی فیشەکان هەڵبژێرە — سیستەمەکە دەیانخوێنێتەوە، دەیانکات بە خشتە، و دووبارەکان نیشانە دەکات">پشکنینی فیش</H>
 
       <Card className="p-5">
-        <SecLbl>١ — ئەم فیشانە لە کێوەن؟</SecLbl>
+        <SecLbl>١ — ڕێکخستن</SecLbl>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
             <Lbl>جۆر</Lbl>
@@ -1186,6 +1213,14 @@ function Receipts({ data, cur, usr, flash, A }) {
             {cpMode === "acc"
               ? <Sel value={cpId} onChange={(e) => setCpId(e.target.value)}><option value="">—</option>{customers.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</Sel>
               : <Inp value={cpName} onChange={(e) => setCpName(e.target.value)} placeholder="ناوی کەسەکە..." />}
+          </div>
+          <div>
+            <Lbl>ڕێژەی عمولە ٪ (لە کۆی گشتی کەم دەکرێتەوە)</Lbl>
+            <Inp type="number" step="any" value={fee} onChange={(e) => setFee(e.target.value)} placeholder="0" />
+          </div>
+          <div>
+            <Lbl>ئاگادارم بکەوە گەر فیشەکە کۆنتر بێت لە (ڕۆژ)</Lbl>
+            <Inp type="number" value={maxAge} onChange={(e) => setMaxAge(+e.target.value || 0)} />
           </div>
         </div>
       </Card>
@@ -1227,8 +1262,8 @@ function Receipts({ data, cur, usr, flash, A }) {
               <thead><tr className="text-slate-500 text-xs border-b border-stone-200">
                 <th className="text-right py-2 w-12">#</th><th className="text-right w-14">وێنە</th>
                 <th className="text-right">بڕ</th><th className="text-right">ناردەر</th>
-                <th className="text-right">ژ. مامەڵە</th><th className="text-right">کات</th>
-                <th className="text-right">ئەپ</th><th className="text-right">دۆخ</th><th></th>
+                <th className="text-right">وەرگر</th><th className="text-right">ژ. مامەڵە</th>
+                <th className="text-right">کات</th><th className="text-right">دۆخ</th><th></th>
               </tr></thead>
               <tbody>
                 {rows.map((r, i) => (
@@ -1236,10 +1271,13 @@ function Receipts({ data, cur, usr, flash, A }) {
                     <td className="py-2.5 text-slate-400" style={num}>{i + 1}</td>
                     <td>{r.url && <a href={r.url} target="_blank" rel="noreferrer"><img src={r.url} alt="" className="w-10 h-10 object-cover rounded-lg border border-stone-200" /></a>}</td>
                     <td className="font-bold" style={num}>{r.amount != null ? fmt(r.amount, 2) : "—"} <span className="text-xs font-normal text-slate-500">{r.currency || ""}</span></td>
-                    <td className="text-slate-600 max-w-[140px] truncate">{r.sender || "—"}</td>
+                    <td className="text-slate-600 max-w-[130px] truncate">{r.sender || "—"}</td>
+                    <td className="text-slate-800 font-semibold max-w-[130px] truncate">{r.receiver || "—"}</td>
                     <td className="text-slate-600 text-xs" style={num}>{r.refNo || "—"}</td>
-                    <td className="text-slate-500 text-xs">{r.txTime || "—"}</td>
-                    <td className="text-slate-500 text-xs">{r.bank || "—"}</td>
+                    <td className="text-slate-500 text-xs">
+                      {r.txTime || "—"}
+                      {r.ageDays != null && r.ageDays > maxAge && <div className="text-[10px] text-amber-700 font-bold">{r.ageDays} ڕۆژ لەمەوبەر</div>}
+                    </td>
                     <td>
                       <Pill tone={ST[r.status].tone}>{ST[r.status].t}</Pill>
                       {r.note && <div className="text-[10px] text-slate-500 mt-1 max-w-[170px]">{r.note}</div>}
@@ -1256,13 +1294,44 @@ function Receipts({ data, cur, usr, flash, A }) {
           </Card>
 
           <Card className="p-5">
-            <SecLbl>کۆی گشتی (بێ دووبارەکان)</SecLbl>
+            <SecLbl>کۆی گشتی بەپێی ناوی وەرگر</SecLbl>
+            {recvList.length === 0 ? <Empty t="هیچ نییە" /> :
+              <div className="space-y-2">
+                {recvList.map(([name, v]) => (
+                  <div key={name} className="flex items-center justify-between py-2.5 border-b border-stone-100 last:border-0 flex-wrap gap-2">
+                    <div>
+                      <div className="font-semibold text-slate-800">{name}</div>
+                      <div className="text-xs text-slate-400">{v.n} فیش</div>
+                    </div>
+                    <div className="text-left">
+                      {Object.entries(v.cur).map(([c, amt]) => (
+                        <div key={c} className="text-lg"><Money v={amt} dec={2} /> <span className="text-xs text-slate-500">{c}</span></div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>}
+          </Card>
+
+          <Card className="p-5">
+            <SecLbl>کۆی کۆتایی (بێ دووبارەکان)</SecLbl>
             {Object.keys(totals).length === 0 ? <Empty t="هیچ بڕێک نەخوێندرایەوە" /> :
-              <div className="flex gap-6 flex-wrap">
+              <div className="space-y-3">
                 {Object.entries(totals).map(([c, v]) => (
-                  <div key={c}>
-                    <div className="text-xs text-slate-500">{c}</div>
-                    <div className="text-3xl font-bold text-emerald-700" style={num}>{fmt(v, 2)}</div>
+                  <div key={c} className="bg-stone-50 border border-stone-200 rounded-xl p-4">
+                    <div className="text-xs font-semibold text-slate-500 mb-2">{c}</div>
+                    <div className="flex justify-between py-1 text-sm">
+                      <span className="text-slate-600">کۆی گشتی</span><Money v={v} dec={2} />
+                    </div>
+                    {feeP > 0 && (
+                      <div className="flex justify-between py-1 text-sm border-b border-stone-200 pb-2">
+                        <span className="text-slate-600">عمولە ({feeP}٪)</span><Money v={-(v * feeP / 100)} dec={2} />
+                      </div>
+                    )}
+                    <div className="flex justify-between pt-2 items-baseline">
+                      <span className="text-sm font-semibold text-slate-700">{feeP > 0 ? "دوای عمولە" : "کۆی کۆتایی"}</span>
+                      <span className="text-3xl font-bold text-emerald-700" style={num}>{fmt(net[c], 2)}</span>
+                    </div>
                   </div>
                 ))}
               </div>}

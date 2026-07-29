@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Vault, ArrowLeftRight, ListOrdered, Users, Handshake,
   TrendingUp, Building2, UserCog, PieChart, History, Plus, Trash2, Pencil,
   CheckCircle2, AlertTriangle, Eye, LogOut, Wallet, ChevronLeft, Coins,
-  Receipt, TrendingDown
+  Receipt, TrendingDown, ScanLine, Upload, XCircle
 } from "lucide-react";
 
 /* ══════════════════ یارمەتیدەرەکان ══════════════════ */
@@ -396,6 +396,7 @@ export default function App() {
     ["dash", "داشبۆرد", LayoutDashboard],
     ["newtx", "مامەڵەی نوێ", ArrowLeftRight],
     ["txs", "مامەڵەکان", ListOrdered],
+    ["receipts", "پشکنینی فیش", ScanLine],
     ["people", "بەکارهێنەران", Users],
     ["report", "ڕاپۆرت", PieChart],
     ["audit", "تۆمار", History],
@@ -458,6 +459,7 @@ export default function App() {
             {page === "txs" && (editTx
               ? <TxForm {...shared} onSave={saveTx} editing={editTx} onCancel={() => setEditTx(null)} />
               : <TxList {...shared} onEdit={setEditTx} onDel={delTx} />)}
+            {page === "receipts" && <Receipts {...shared} flash={flash} A={A} />}
             {page === "people" && <PeopleHub {...shared} detailId={detailId} setDetailId={setDetailId} onSave={saveTx} transfer={transfer} officePay={officePay} createUser={createUser} deleteUser={deleteUser} setUserRate={setUserRate} flash={flash} />}
             {page === "report" && <Report {...shared} />}
             {page === "audit" && <Audit data={data} />}
@@ -1018,6 +1020,262 @@ function TxRow({ t, cur, usr, onEdit, onDel, flip, lite }) {
       {onEdit && <button onClick={() => onEdit(t)} className="text-slate-400 hover:text-emerald-700"><Pencil className="w-4 h-4" /></button>}
       {onDel && <button onClick={() => onDel(t)} className="text-slate-400 hover:text-rose-700"><Trash2 className="w-4 h-4" /></button>}
     </Card>
+  );
+}
+
+/* ══════════════════ پشکنینی فیشەکان ══════════════════ */
+
+/* بچووککردنەوەی وێنە + دەرهێنانی هێمای یەکتاگەری (SHA-256) */
+async function prepImage(file) {
+  const bmp = await createImageBitmap(file);
+  const MAX = 1400;
+  const s = Math.min(1, MAX / Math.max(bmp.width, bmp.height));
+  const cv = document.createElement("canvas");
+  cv.width = Math.round(bmp.width * s); cv.height = Math.round(bmp.height * s);
+  cv.getContext("2d").drawImage(bmp, 0, 0, cv.width, cv.height);
+  const blob = await new Promise((r) => cv.toBlob(r, "image/jpeg", 0.75));
+  const buf = await blob.arrayBuffer();
+  const bytes = new Uint8Array(buf);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 8192) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
+  const b64 = btoa(bin);
+  const hb = await crypto.subtle.digest("SHA-256", buf);
+  const hash = [...new Uint8Array(hb)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  return { b64, hash, url: URL.createObjectURL(blob), size: blob.size };
+}
+
+const normRef = (r) => String(r || "").replace(/[\s\-_.]/g, "").toUpperCase();
+
+function Receipts({ data, cur, usr, flash, A }) {
+  const [cpMode, setCpMode] = useState("acc");
+  const [cpId, setCpId] = useState("");
+  const [cpName, setCpName] = useState("");
+  const [rows, setRows] = useState([]);
+  const [working, setWorking] = useState(false);
+  const [prog, setProg] = useState(null);
+  const [saved, setSaved] = useState(false);
+  const customers = data.users.filter((u) => u.role === "customer" && !u.deleted);
+  const who = cpMode === "acc" ? (cpId ? usr(cpId).name : "") : cpName;
+
+  const onFiles = async (files) => {
+    const list = Array.from(files || []).filter((f) => f.type.startsWith("image/"));
+    if (!list.length) return;
+    setWorking(true); setSaved(false);
+    const out = [...rows];
+    try {
+      // ١) مێژووی فیشە کۆنەکان بۆ بەراوردکردن
+      const { data: old } = await supabase.from("receipts").select("image_hash, ref_no, amount, tx_time, customer_name, created_at");
+      const oldHash = new Map((old || []).map((r) => [r.image_hash, r]));
+      const oldRef = new Map((old || []).filter((r) => r.ref_no).map((r) => [normRef(r.ref_no), r]));
+
+      for (let i = 0; i < list.length; i++) {
+        setProg(`${i + 1} لە ${list.length}`);
+        const f = list[i];
+        let img;
+        try { img = await prepImage(f); }
+        catch { out.push({ id: uid(), file: f.name, status: "error", note: "نەتوانرا وێنەکە بکرێتەوە" }); continue; }
+
+        // ٢) یەکەم پشکنین: هەمان وێنە
+        const inBatch = out.find((r) => r.hash === img.hash);
+        const inOld = oldHash.get(img.hash);
+        if (inBatch || inOld) {
+          out.push({ id: uid(), file: f.name, url: img.url, hash: img.hash, status: "dup",
+            note: inBatch ? "هەمان وێنە لەم کۆمەڵەیەدا دووبارە بووەتەوە" : `هەمان وێنە پێشتر ناردراوە (${new Date(inOld.created_at).toLocaleDateString("en-GB")})` });
+          setRows([...out]); continue;
+        }
+
+        // ٣) خوێندنەوە بە AI
+        let d;
+        try {
+          if (i > 0) await new Promise((r) => setTimeout(r, 1500)); // ڕێزگرتن لە سنووری خێرایی
+          const resp = await fetch("/api/read-receipt", {
+            method: "POST", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ image: img.b64, mediaType: "image/jpeg" }),
+          });
+          d = await resp.json();
+          if (d.error) throw new Error(d.error);
+        } catch (e) {
+          out.push({ id: uid(), file: f.name, url: img.url, hash: img.hash, status: "error", note: String(e.message || e) });
+          setRows([...out]); continue;
+        }
+
+        if (d.ok === false) {
+          out.push({ id: uid(), file: f.name, url: img.url, hash: img.hash, status: "error", note: d.note || "فیش نییە" });
+          setRows([...out]); continue;
+        }
+
+        // ٤) دووەم پشکنین: هەمان ژمارەی مامەڵە
+        const rn = normRef(d.refNo);
+        let status = "ok", note = d.note || "";
+        if (rn) {
+          const b = out.find((r) => r.refNo && normRef(r.refNo) === rn);
+          const o = oldRef.get(rn);
+          if (b || o) { status = "dup"; note = b ? "هەمان ژمارەی مامەڵە لەم کۆمەڵەیەدا" : `ئەم ژمارە مامەڵەیە پێشتر تۆمار کراوە (${new Date(o.created_at).toLocaleDateString("en-GB")})`; }
+        }
+        // ٥) سێیەم پشکنین: هەمان بڕ و هەمان کات
+        if (status === "ok") {
+          const same = out.find((r) => r.status !== "dup" && r.amount && +r.amount === +d.amount && r.txTime && d.txTime && r.txTime === d.txTime);
+          const sameOld = (old || []).find((r) => r.amount && +r.amount === +d.amount && r.tx_time && d.txTime && r.tx_time === d.txTime);
+          if (same || sameOld) { status = "suspect"; note = "هەمان بڕ لە هەمان کاتدا — بیپشکنە"; }
+        }
+        if (status === "ok" && d.confidence != null && d.confidence < 0.6) { status = "suspect"; note = note || "خوێندنەوەکە دڵنیا نییە — بە دەست بیپشکنە"; }
+
+        out.push({ id: uid(), file: f.name, url: img.url, hash: img.hash, status, note,
+          amount: d.amount, currency: d.currency, sender: d.sender, receiver: d.receiver,
+          refNo: d.refNo, txTime: d.txTime, bank: d.bank, confidence: d.confidence, raw: d });
+        setRows([...out]);
+      }
+    } finally { setWorking(false); setProg(null); }
+  };
+
+  const del = (id) => setRows(rows.filter((r) => r.id !== id));
+  const setStatus = (id, s) => setRows(rows.map((r) => (r.id === id ? { ...r, status: s } : r)));
+
+  const good = rows.filter((r) => r.status === "ok" || r.status === "suspect");
+  const totals = {};
+  good.forEach((r) => { if (r.amount) totals[r.currency || "?"] = (totals[r.currency || "?"] || 0) + (+r.amount || 0); });
+  const dupCount = rows.filter((r) => r.status === "dup").length;
+
+  const save = async () => {
+    if (!who) return flash("سەرەتا کەسەکە دیاری بکە");
+    if (!good.length) return flash("هیچ فیشێکی دروست نییە");
+    try {
+      const recs = good.map((r) => ({
+        id: uid(), customer_id: cpMode === "acc" ? cpId || null : null, customer_name: who,
+        amount: r.amount || null, currency: r.currency || null, sender: r.sender || null,
+        receiver: r.receiver || null, ref_no: r.refNo || null, tx_time: r.txTime || null,
+        bank: r.bank || null, note: r.note || null, image_hash: r.hash, status: r.status, raw: r.raw || null,
+      }));
+      const e = await supabase.from("receipts").insert(recs);
+      if (e.error) throw e.error;
+      await A("تۆمارکردنی فیش", `${recs.length} فیش بۆ ${who}${dupCount ? ` — ${dupCount} دووبارە ڕەتکرانەوە` : ""}`);
+      setSaved(true);
+      flash(`${recs.length} فیش تۆمار کران ✓`);
+    } catch (err) { console.error(err); flash("هەڵە لە تۆمارکردن — ئایا خشتەی receipts درووست کراوە؟"); }
+  };
+
+  const copyTable = () => {
+    const lines = [["#", "بڕ", "دراو", "ناردەر", "ژ.مامەڵە", "کات", "ئەپ", "دۆخ"].join("\t")];
+    rows.forEach((r, i) => lines.push([i + 1, r.amount ?? "", r.currency ?? "", r.sender ?? "", r.refNo ?? "", r.txTime ?? "", r.bank ?? "",
+      r.status === "dup" ? "دووبارە" : r.status === "suspect" ? "گومانلێکراو" : r.status === "error" ? "هەڵە" : "دروست"].join("\t")));
+    lines.push("");
+    Object.entries(totals).forEach(([c, v]) => lines.push(`کۆی گشتی ${c}\t${v}`));
+    navigator.clipboard.writeText(lines.join("\n")).then(() => flash("خشتەکە کۆپی کرا ✓"));
+  };
+
+  const ST = {
+    ok: { tone: "green", t: "دروست" }, dup: { tone: "red", t: "دووبارە" },
+    suspect: { tone: "amber", t: "گومانلێکراو" }, error: { tone: "slate", t: "هەڵە" },
+  };
+
+  return (
+    <div className="space-y-4">
+      <H sub="سکرینشۆتی فیشەکان هەڵبژێرە — سیستەمەکە دەیانخوێنێتەوە، دەیانکات بە خشتە، و دووبارەکان نیشانە دەکات">پشکنینی فیش</H>
+
+      <Card className="p-5">
+        <SecLbl>١ — ئەم فیشانە لە کێوەن؟</SecLbl>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <Lbl>جۆر</Lbl>
+            <Sel value={cpMode} onChange={(e) => { setCpMode(e.target.value); setCpId(""); setCpName(""); }}>
+              <option value="acc">کڕیارێکی تۆمارکراو</option><option value="free">ناوێکی ئازاد</option>
+            </Sel>
+          </div>
+          <div>
+            <Lbl>{cpMode === "acc" ? "کڕیار" : "ناو"}</Lbl>
+            {cpMode === "acc"
+              ? <Sel value={cpId} onChange={(e) => setCpId(e.target.value)}><option value="">—</option>{customers.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</Sel>
+              : <Inp value={cpName} onChange={(e) => setCpName(e.target.value)} placeholder="ناوی کەسەکە..." />}
+          </div>
+        </div>
+      </Card>
+
+      <Card className="p-5">
+        <SecLbl>٢ — فیشەکان هەڵبژێرە</SecLbl>
+        <label className={`block border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition ${working ? "border-stone-200 bg-stone-50" : "border-stone-300 hover:border-emerald-500 hover:bg-emerald-50/30"}`}>
+          <input type="file" accept="image/*" multiple className="hidden" disabled={working}
+            onChange={(e) => { onFiles(e.target.files); e.target.value = ""; }} />
+          <Upload className="w-8 h-8 mx-auto text-slate-400 mb-2" />
+          <div className="text-sm font-semibold text-slate-700">{working ? `خوێندنەوە... ${prog || ""}` : "کلیک بکە بۆ هەڵبژاردنی وێنەکان"}</div>
+          <div className="text-xs text-slate-400 mt-1">دەتوانیت چەندین وێنە بەیەکەوە هەڵبژێریت</div>
+        </label>
+      </Card>
+
+      {rows.length > 0 && (
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <Card className="p-4"><div className="text-xs text-slate-500">کۆی فیشەکان</div><div className="text-2xl font-bold" style={num}>{rows.length}</div></Card>
+            <Card className="p-4"><div className="text-xs text-slate-500">دروست</div><div className="text-2xl font-bold text-emerald-700" style={num}>{rows.filter((r) => r.status === "ok").length}</div></Card>
+            <Card className="p-4"><div className="text-xs text-slate-500">دووبارە</div><div className={`text-2xl font-bold ${dupCount ? "text-rose-700" : ""}`} style={num}>{dupCount}</div></Card>
+            <Card className="p-4"><div className="text-xs text-slate-500">گومانلێکراو</div><div className="text-2xl font-bold text-amber-600" style={num}>{rows.filter((r) => r.status === "suspect").length}</div></Card>
+          </div>
+
+          {dupCount > 0 && (
+            <Card className="p-4 border-rose-300 bg-rose-50/60">
+              <div className="flex items-center gap-2 text-sm text-rose-900 font-semibold">
+                <AlertTriangle className="w-4 h-4" /> {dupCount} فیشی دووبارە دۆزرایەوە — لە کۆی گشتیدا ژمێردراو نین
+              </div>
+            </Card>
+          )}
+
+          <Card className="p-5 overflow-x-auto">
+            <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+              <SecLbl>خشتەی فیشەکان{who && ` — ${who}`}</SecLbl>
+              <Btn kind="ghost" onClick={copyTable}>کۆپیکردنی خشتە</Btn>
+            </div>
+            <table className="w-full text-sm min-w-[760px]">
+              <thead><tr className="text-slate-500 text-xs border-b border-stone-200">
+                <th className="text-right py-2 w-12">#</th><th className="text-right w-14">وێنە</th>
+                <th className="text-right">بڕ</th><th className="text-right">ناردەر</th>
+                <th className="text-right">ژ. مامەڵە</th><th className="text-right">کات</th>
+                <th className="text-right">ئەپ</th><th className="text-right">دۆخ</th><th></th>
+              </tr></thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={r.id} className={`border-b border-stone-100 ${r.status === "dup" ? "bg-rose-50/50" : r.status === "suspect" ? "bg-amber-50/40" : ""}`}>
+                    <td className="py-2.5 text-slate-400" style={num}>{i + 1}</td>
+                    <td>{r.url && <a href={r.url} target="_blank" rel="noreferrer"><img src={r.url} alt="" className="w-10 h-10 object-cover rounded-lg border border-stone-200" /></a>}</td>
+                    <td className="font-bold" style={num}>{r.amount != null ? fmt(r.amount, 2) : "—"} <span className="text-xs font-normal text-slate-500">{r.currency || ""}</span></td>
+                    <td className="text-slate-600 max-w-[140px] truncate">{r.sender || "—"}</td>
+                    <td className="text-slate-600 text-xs" style={num}>{r.refNo || "—"}</td>
+                    <td className="text-slate-500 text-xs">{r.txTime || "—"}</td>
+                    <td className="text-slate-500 text-xs">{r.bank || "—"}</td>
+                    <td>
+                      <Pill tone={ST[r.status].tone}>{ST[r.status].t}</Pill>
+                      {r.note && <div className="text-[10px] text-slate-500 mt-1 max-w-[170px]">{r.note}</div>}
+                    </td>
+                    <td className="text-left whitespace-nowrap">
+                      {r.status === "dup" && <button onClick={() => setStatus(r.id, "ok")} title="دووبارە نییە" className="text-slate-400 hover:text-emerald-700 ml-1"><CheckCircle2 className="w-4 h-4" /></button>}
+                      {r.status !== "dup" && r.status !== "error" && <button onClick={() => setStatus(r.id, "dup")} title="نیشانەکردن وەک دووبارە" className="text-slate-400 hover:text-rose-700 ml-1"><XCircle className="w-4 h-4" /></button>}
+                      <button onClick={() => del(r.id)} className="text-slate-400 hover:text-rose-700"><Trash2 className="w-4 h-4" /></button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Card>
+
+          <Card className="p-5">
+            <SecLbl>کۆی گشتی (بێ دووبارەکان)</SecLbl>
+            {Object.keys(totals).length === 0 ? <Empty t="هیچ بڕێک نەخوێندرایەوە" /> :
+              <div className="flex gap-6 flex-wrap">
+                {Object.entries(totals).map(([c, v]) => (
+                  <div key={c}>
+                    <div className="text-xs text-slate-500">{c}</div>
+                    <div className="text-3xl font-bold text-emerald-700" style={num}>{fmt(v, 2)}</div>
+                  </div>
+                ))}
+              </div>}
+            <div className="text-xs text-slate-400 mt-3">{good.length} فیش ژمێردراوە{dupCount ? ` · ${dupCount} دووبارە دەرکراوە` : ""}</div>
+            <div className="flex gap-2 mt-4 flex-wrap">
+              <Btn onClick={save} disabled={saved || !good.length}>{saved ? "تۆمار کرا ✓" : "تۆمارکردنی فیشەکان"}</Btn>
+              <Btn kind="ghost" onClick={() => { setRows([]); setSaved(false); }}>پاککردنەوە</Btn>
+            </div>
+            <div className="text-xs text-slate-400 mt-2">دوای تۆمارکردن، ئەم فیشانە لە داهاتوودا وەک دووبارە ناسراو دەبن</div>
+          </Card>
+        </>
+      )}
+    </div>
   );
 }
 

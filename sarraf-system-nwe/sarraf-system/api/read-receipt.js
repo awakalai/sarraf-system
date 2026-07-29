@@ -40,22 +40,44 @@ const USER_MSG = "ئەم فیشە بخوێنەوە و بە JSON بیگەڕێنە
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /* ── Gemini (بەخۆڕایی) ── */
-async function callGemini(key, image, mediaType) {
-  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+// زنجیرەی مۆدێلەکان — گەر یەکەم نەبوو، دواتری تاقی دەکرێتەوە
+const GEMINI_MODELS = [process.env.GEMINI_MODEL, "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3-flash"].filter(Boolean);
+
+async function geminiOnce(model, key, image, mediaType) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
   const body = {
     system_instruction: { parts: [{ text: SYSTEM }] },
     contents: [{ parts: [{ inline_data: { mime_type: mediaType, data: image } }, { text: USER_MSG }] }],
-    generationConfig: { temperature: 0, responseMimeType: "application/json", maxOutputTokens: 800 },
+    generationConfig: { responseMimeType: "application/json", maxOutputTokens: 2000 },
   };
-  const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const r = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-goog-api-key": key },
+    body: JSON.stringify(body),
+  });
   const j = await r.json();
   if (j.error) {
-    const e = new Error(j.error.message || "هەڵەی Gemini");
+    const e = new Error(`${model}: ${j.error.message || "هەڵە"}`);
     e.status = j.error.code || r.status;
     throw e;
   }
-  return (j.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("").trim();
+  const out = (j.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("").trim();
+  if (!out) { const e = new Error(`${model}: وەڵامی بەتاڵ`); e.status = 500; throw e; }
+  return out;
+}
+
+async function callGemini(key, image, mediaType) {
+  let last;
+  for (const m of GEMINI_MODELS) {
+    try { return await geminiOnce(m, key, image, mediaType); }
+    catch (e) {
+      last = e;
+      // تەنها گەر مۆدێلەکە نەبوو، دواتری تاقی بکەوە
+      if (e.status === 404 || /not found|not supported|deprecat/i.test(e.message)) continue;
+      throw e;
+    }
+  }
+  throw last || new Error("هیچ مۆدێلێکی Gemini بەردەست نییە");
 }
 
 /* ── Claude (بە پارە) ── */

@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Vault, ArrowLeftRight, ListOrdered, Users, Handshake,
   TrendingUp, Building2, UserCog, PieChart, History, Plus, Trash2, Pencil,
   CheckCircle2, AlertTriangle, Eye, LogOut, Wallet, ChevronLeft, Coins,
-  Receipt, TrendingDown, ScanLine, Upload, XCircle, SlidersHorizontal, MoreHorizontal, X
+  Receipt, TrendingDown, ScanLine, Upload, XCircle, SlidersHorizontal, MoreHorizontal, X, Share2, Database, Download
 } from "lucide-react";
 
 /* ══════════════════ یارمەتیدەرەکان ══════════════════ */
@@ -82,6 +82,7 @@ export default function App() {
     return () => sub.subscription.unsubscribe();
   }, []);
   useEffect(() => { if (session) loadAll(); }, [session]);
+  useEffect(() => { if (profile?.role === "admin") { const id = setTimeout(() => autoBackup(), 4000); return () => clearTimeout(id); } }, [profile]);
 
   const flash = (t) => { setMsg(t); setTimeout(() => setMsg(null), 3000); };
 
@@ -259,7 +260,8 @@ export default function App() {
 
   /* ───────── کردارەکان ───────── */
   const addDeposit = (f) => run(async () => {
-    const amount = f.dir === "in" ? Math.abs(+f.amount) : -Math.abs(+f.amount);
+    if (!(Math.abs(+f.amount) > 0)) { flash("بڕ پێویستە"); return; }
+    const amount = Math.round(f.dir === "in" ? Math.abs(+f.amount) : -Math.abs(+f.amount));
     const e = { id: uid(), type: f.dir === "in" ? "deposit" : "withdraw", owner: f.owner === "self" ? "self" : "investor", investorId: f.owner === "self" ? null : f.owner, curId: f.curId, amount, partnerId: null, txId: null, note: f.note, date: now() };
     const r = await supabase.from("ledger").insert(LR(e)); if (r.error) throw r.error;
     await A(f.dir === "in" ? "پارە داخڵکردن" : "پارە دەرهێنان", `${fmt(Math.abs(amount))} ${cur(f.curId).code} — ${f.owner === "self" ? "هی خۆم" : usr(f.owner).name}`);
@@ -286,18 +288,31 @@ export default function App() {
 
   const saveTx = (f, existing) => {
     const amount = Math.round(+f.amount), rate = +f.rate, total = Math.round(amount * rate);
-    if (!amount || !rate) return flash("بڕ و نرخ پێویستە");
+    if (!(amount > 0)) return flash("بڕ دەبێت لە سفر گەورەتر بێت");
+    if (!(rate > 0)) return flash("نرخ دەبێت لە سفر گەورەتر بێت");
+    if (f.curId === f.againstId) return flash("ناکرێت دراوەکە لەگەڵ خۆی مامەڵەی پێبکرێت");
     if (!f.cpId && !f.cpName) return flash("لایەنی بەرامبەر دیاری بکە");
+    if (!(total > 0)) return flash("کۆی گشتی ناتوانێت سفر بێت");
     run(async () => {
       let profit = null, profitCurId = null;
-      if (f.type === "sell") { const av = avgRate(f.curId, f.againstId); if (av !== null) { profit = Math.round(total - av * amount); profitCurId = f.againstId; } }
+      if (f.type === "sell") {
+        const av = avgRate(f.curId, f.againstId);
+        if (av !== null) { profit = Math.round(total - av * amount); profitCurId = f.againstId; }
+      }
       const code = existing ? existing.code : Math.max(1000, ...data.txs.map((x) => x.code || 0)) + 1;
       const t = { id: existing ? existing.id : uid(), code, type: f.type, cpId: f.cpId || null, cpName: f.cpId ? null : f.cpName, curId: f.curId, amount, rate, againstId: f.againstId, total, partnerId: f.partnerId || null, status: f.status || "completed", paidAt: existing ? existing.paidAt : null, profit, profitCurId, note: f.note || "", date: existing ? existing.date : now(), edited: !!existing };
       if (existing) {
         let r = await supabase.from("ledger").delete().eq("tx_id", t.id); if (r.error) throw r.error;
         r = await supabase.from("txs").update(TR(t)).eq("id", t.id); if (r.error) throw r.error;
       } else {
-        const r = await supabase.from("txs").insert(TR(t)); if (r.error) throw r.error;
+        // گەر کەسێکی تر لە هەمان ساتدا هەمان کۆدی بردبێت، کۆدی دواتر تاقی بکەوە
+        let ok = false;
+        for (let k = 0; k < 8 && !ok; k++) {
+          const r = await supabase.from("txs").insert(TR({ ...t, code: t.code + k }));
+          if (!r.error) { t.code = t.code + k; ok = true; }
+          else if (!String(r.error.message).match(/duplicate|unique/i)) throw r.error;
+        }
+        if (!ok) throw new Error("نەتوانرا کۆدێکی بەردەست بدۆزرێتەوە");
       }
       const r2 = await supabase.from("ledger").insert(buildEntries(t).map(LR)); if (r2.error) throw r2.error;
       await A(existing ? "ئیدیتی مامەڵە" : (t.type === "buy" ? "کڕین" : "فرۆشتن"), `#${t.code} — ${fmt(amount)} ${cur(f.curId).code} — ${t.cpId ? usr(t.cpId).name : t.cpName}`);
@@ -331,8 +346,8 @@ export default function App() {
   const officePay = (t) => settle(t, true);
 
   const addExpense = (f) => {
-    const amt = Math.abs(+f.amount);
-    if (!amt) return flash("بڕی خەرجی پێویستە");
+    const amt = Math.round(Math.abs(+f.amount));
+    if (!(amt > 0)) return flash("بڕی خەرجی پێویستە");
     if (f.category === "خێری وەبەرهێنەر" && !f.investorId) return flash("وەبەرهێنەر هەڵبژێرە");
     run(async () => {
       const isPayout = f.category === "خێری وەبەرهێنەر";
@@ -408,6 +423,61 @@ export default function App() {
     await A("گۆڕینی ڕێژە", `${u.name} → ${rate}%`);
   });
 
+  /* ── باکئەپ ── */
+  const snapshot = async (kind = "auto") => {
+    const [c, u, l, t, a, rc] = await Promise.all([
+      supabase.from("currencies").select("*"),
+      supabase.from("app_users").select("*"),
+      supabase.from("ledger").select("*"),
+      supabase.from("txs").select("*"),
+      supabase.from("audit").select("*"),
+      supabase.from("receipts").select("*"),
+    ]);
+    const payload = {
+      version: 2, takenAt: now(), kind,
+      currencies: c.data || [], app_users: u.data || [], ledger: l.data || [],
+      txs: t.data || [], audit: a.data || [], receipts: rc.data || [],
+    };
+    const counts = {
+      currencies: payload.currencies.length, users: payload.app_users.length,
+      ledger: payload.ledger.length, txs: payload.txs.length,
+      audit: payload.audit.length, receipts: payload.receipts.length,
+    };
+    return { payload, counts };
+  };
+
+  const saveBackup = (kind = "manual") => run(async () => {
+    const { payload, counts } = await snapshot(kind);
+    const r = await supabase.from("backups").insert({ id: uid(), kind, counts, data: payload });
+    if (r.error) throw r.error;
+    // تەنها ٤٠ی دوایی بهێڵەرەوە
+    const old = await supabase.from("backups").select("id").order("created_at", { ascending: false }).range(40, 999);
+    if (old.data?.length) await supabase.from("backups").delete().in("id", old.data.map((x) => x.id));
+    if (kind === "manual") { await A("باکئەپ", `${counts.txs} مامەڵە · ${counts.ledger} تۆماری دەفتەر`); flash("باکئەپ درووست کرا ✓"); }
+  });
+
+  const downloadBackup = async () => {
+    const { payload } = await snapshot("download");
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `backup_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.json`;
+    a.click();
+    flash("فایلی باکئەپ دابەزێندرا ✓");
+  };
+
+  // باکئەپی ئۆتۆماتیکی: ئەگەر دوا باکئەپ کۆنتر بێت لە ٦ کاتژمێر
+  const autoBackup = async () => {
+    try {
+      const { data: last } = await supabase.from("backups").select("created_at").order("created_at", { ascending: false }).limit(1);
+      const t = last?.[0]?.created_at ? new Date(last[0].created_at).getTime() : 0;
+      if (Date.now() - t > 6 * 3600 * 1000) {
+        const { payload, counts } = await snapshot("auto");
+        await supabase.from("backups").insert({ id: uid(), kind: "auto", counts, data: payload });
+      }
+    } catch { /* خشتەکە هێشتا درووست نەکراوە */ }
+  };
+
   const signOut = () => supabase.auth.signOut();
 
   /* ───────── ڕەندەر ───────── */
@@ -428,6 +498,7 @@ export default function App() {
     ["people", "بەکارهێنەران", Users],
     ["report", "ڕاپۆرت", PieChart],
     ["audit", "تۆمار", History],
+    ["backup", "پاراستنی داتا", Database],
   ];
 
 
@@ -493,6 +564,7 @@ export default function App() {
             {page === "people" && <PeopleHub {...shared} detailId={detailId} setDetailId={setDetailId} onSave={saveTx} transfer={transfer} officePay={officePay} settle={settle} createUser={createUser} deleteUser={deleteUser} setUserRate={setUserRate} flash={flash} />}
             {page === "report" && <Report {...shared} />}
             {page === "audit" && <Audit data={data} />}
+            {page === "backup" && <Backup data={data} calc={calc} cur={cur} saveBackup={saveBackup} downloadBackup={downloadBackup} flash={flash} sumUsd={sumUsd} mySafe={mySafe} owners={owners} ratesReady={ratesReady} />}
           </main>
 
           {/* لیستی خوارەوە — تەنها لە مۆبایل */}
@@ -1086,6 +1158,12 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
           </div>
         )}
 
+        {f.type === "sell" && av === null && amtR > 0 && (
+          <div className="flex items-start gap-2 text-slate-600 bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm">
+            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-amber-600" />
+            هیچ کڕینێکی پێشووی ئەم دراوە نییە بەرامبەر {cur(f.againstId).code} — بۆیە خێری ئەم فرۆشتنە ناژمێردرێت.
+          </div>
+        )}
         {feeRate > 0 && f.type === "buy" && +f.amount > 0 && (
           <div className="text-sm bg-stone-50 border border-stone-200 rounded-xl p-3 text-slate-600">
             عمولەی {usr(f.partnerId).name} ({feeRate}٪): <b style={num}>{fmt(Math.round(amtR * feeRate / 100), 0)}</b> {cur(f.curId).code} — دەستبەجێ کەم دەکرێتەوە، باڵانسی دوایی: <b style={num}>{fmt(amtR - Math.round(amtR * feeRate / 100), 0)}</b>
@@ -1278,6 +1356,7 @@ function Receipts({ data, cur, usr, flash, A }) {
   const [working, setWorking] = useState(false);
   const [prog, setProg] = useState(null);
   const [saved, setSaved] = useState(false);
+  const [showSum, setShowSum] = useState(false);
   const customers = data.users.filter((u) => u.role === "customer" && !u.deleted);
   const who = cpMode === "acc" ? (cpId ? usr(cpId).name : "") : cpName;
 
@@ -1353,8 +1432,10 @@ function Receipts({ data, cur, usr, flash, A }) {
           if (status === "ok" && ageDays > maxAge) { status = "suspect"; note = `ڕێکەوتی کۆن — ${ageDays} ڕۆژ لەمەوبەر`; }
         }
 
+        const feeV = +d.fee || 0;
+        const netV = d.netAmount != null ? +d.netAmount : (+d.amount || 0) - feeV;
         out.push({ id: uid(), file: f.name, url: img.url, hash: img.hash, status, note,
-          amount: d.amount, currency: d.currency, sender: d.sender, receiver: d.receiver,
+          amount: d.amount, fee: feeV, net: netV, currency: d.currency, sender: d.sender, receiver: d.receiver,
           refNo: d.refNo, txTime: d.txTime, txDate: d.txDate, ageDays, bank: d.bank, confidence: d.confidence, raw: d });
         setRows([...out]);
       }
@@ -1365,20 +1446,30 @@ function Receipts({ data, cur, usr, flash, A }) {
   const setStatus = (id, s) => setRows(rows.map((r) => (r.id === id ? { ...r, status: s } : r)));
 
   const good = rows.filter((r) => r.status === "ok" || r.status === "suspect");
-  const totals = {};
-  good.forEach((r) => { if (r.amount) totals[r.currency || "?"] = (totals[r.currency || "?"] || 0) + (+r.amount || 0); });
-  const dupCount = rows.filter((r) => r.status === "dup").length;
   const feeP = +fee || 0;
-  const net = {};
-  Object.entries(totals).forEach(([c, v]) => (net[c] = v - v * feeP / 100));
+  // gross = بڕی ناردراو | fees = عمولەی ناو فیشەکان | net = ئەوەی گەیشتووە بە وەرگر
+  const gross = {}, fees = {}, net = {};
+  good.forEach((r) => {
+    const c = r.currency || "?";
+    gross[c] = (gross[c] || 0) + (+r.amount || 0);
+    fees[c] = (fees[c] || 0) + (+r.fee || 0);
+    net[c] = (net[c] || 0) + (r.net != null ? +r.net : (+r.amount || 0));
+  });
+  // عمولەی دەستی (ئارەزوومەندانە) لەسەری زیاد دەکرێت
+  const finalNet = {};
+  Object.keys(net).forEach((c) => (finalNet[c] = net[c] - net[c] * feeP / 100));
+  const totals = gross;
+  const dupCount = rows.filter((r) => r.status === "dup").length;
 
-  // دابەشکردن بەپێی ناوی وەرگر
+  // دابەشکردن بەپێی ناوی وەرگر — بەپێی ئەوەی بە ڕاستی گەیشتووەتێ
   const byRecv = {};
   good.forEach((r) => {
     const k = (r.receiver || "نەزانراو").trim();
-    byRecv[k] = byRecv[k] || { n: 0, cur: {} };
+    byRecv[k] = byRecv[k] || { n: 0, cur: {}, gross: {} };
     byRecv[k].n++;
-    if (r.amount) byRecv[k].cur[r.currency || "?"] = (byRecv[k].cur[r.currency || "?"] || 0) + (+r.amount || 0);
+    const c = r.currency || "?";
+    byRecv[k].cur[c] = (byRecv[k].cur[c] || 0) + (r.net != null ? +r.net : (+r.amount || 0));
+    byRecv[k].gross[c] = (byRecv[k].gross[c] || 0) + (+r.amount || 0);
   });
   const recvList = Object.entries(byRecv).sort((a, b) => b[1].n - a[1].n);
 
@@ -1440,7 +1531,7 @@ function Receipts({ data, cur, usr, flash, A }) {
               : <Inp value={cpName} onChange={(e) => setCpName(e.target.value)} placeholder="ناوی کەسەکە..." />}
           </div>
           <div>
-            <Lbl>ڕێژەی عمولە ٪ (لە کۆی گشتی کەم دەکرێتەوە)</Lbl>
+            <Lbl>عمولەی دەستی ٪ (ئارەزوومەندانە)</Lbl>
             <Inp type="number" step="any" value={fee} onChange={(e) => setFee(e.target.value)} placeholder="0" />
           </div>
           <div>
@@ -1554,35 +1645,140 @@ function Receipts({ data, cur, usr, flash, A }) {
 
           <Card className="p-5">
             <SecLbl>کۆی کۆتایی (بێ دووبارەکان)</SecLbl>
-            {Object.keys(totals).length === 0 ? <Empty t="هیچ بڕێک نەخوێندرایەوە" /> :
+            {Object.keys(gross).length === 0 ? <Empty t="هیچ بڕێک نەخوێندرایەوە" /> :
               <div className="space-y-3">
-                {Object.entries(totals).map(([c, v]) => (
+                {Object.keys(gross).map((c) => (
                   <div key={c} className="bg-stone-50 border border-stone-200 rounded-xl p-4">
                     <div className="text-xs font-semibold text-slate-500 mb-2">{c}</div>
                     <div className="flex justify-between py-1 text-sm">
-                      <span className="text-slate-600">کۆی گشتی</span><Money v={v} dec={2} />
+                      <span className="text-slate-600">کۆی ناردراو</span>
+                      <span style={num} className="font-semibold">{fmt(gross[c], 0)}</span>
                     </div>
-                    {feeP > 0 && (
-                      <div className="flex justify-between py-1 text-sm border-b border-stone-200 pb-2">
-                        <span className="text-slate-600">عمولە ({feeP}٪)</span><Money v={-(v * feeP / 100)} dec={2} />
+                    {fees[c] > 0 && (
+                      <div className="flex justify-between py-1 text-sm">
+                        <span className="text-slate-600">عمولەی ناو فیشەکان</span>
+                        <span style={num} className="font-semibold text-rose-700">− {fmt(fees[c], 0)}</span>
                       </div>
                     )}
-                    <div className="flex justify-between pt-2 items-baseline">
-                      <span className="text-sm font-semibold text-slate-700">{feeP > 0 ? "دوای عمولە" : "کۆی کۆتایی"}</span>
-                      <span className="text-3xl font-bold text-emerald-700" style={num}>{fmt(net[c], 2)}</span>
+                    {feeP > 0 && (
+                      <div className="flex justify-between py-1 text-sm">
+                        <span className="text-slate-600">عمولەی دەستی ({feeP}٪)</span>
+                        <span style={num} className="font-semibold text-rose-700">− {fmt(net[c] * feeP / 100, 0)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between pt-2.5 mt-1 border-t border-stone-200 items-baseline">
+                      <span className="text-sm font-bold text-slate-800">گەیشتووە بە وەرگر</span>
+                      <span className="text-3xl font-bold text-emerald-700" style={num}>{fmt(finalNet[c], 0)}</span>
                     </div>
                   </div>
                 ))}
               </div>}
             <div className="text-xs text-slate-400 mt-3">{good.length} فیش ژمێردراوە{dupCount ? ` · ${dupCount} دووبارە دەرکراوە` : ""}</div>
             <div className="flex gap-2 mt-4 flex-wrap">
-              <Btn onClick={save} disabled={saved || !good.length}>{saved ? "تۆمار کرا ✓" : "تۆمارکردنی فیشەکان"}</Btn>
+              <Btn onClick={() => setShowSum(true)} kind="gold" className="flex items-center gap-1.5"><Share2 className="w-4 h-4" /> پوختەی ئامادە</Btn>
+              <Btn onClick={save} disabled={saved || !good.length}>{saved ? "تۆمار کرا ✓" : "تۆمارکردن"}</Btn>
               <Btn kind="ghost" onClick={() => { setRows([]); setSaved(false); }}>پاککردنەوە</Btn>
             </div>
             <div className="text-xs text-slate-400 mt-2">دوای تۆمارکردن، ئەم فیشانە لە داهاتوودا وەک دووبارە ناسراو دەبن</div>
           </Card>
         </>
       )}
+
+      {showSum && (
+        <ReceiptSummary who={who} rows={good} gross={gross} fees={fees} net={net} finalNet={finalNet}
+          feeP={feeP} recvList={recvList} dupCount={dupCount} onClose={() => setShowSum(false)} flash={flash} />
+      )}
+    </div>
+  );
+}
+
+/* پوختەی ئامادە بۆ ناردن */
+function ReceiptSummary({ who, rows, gross, fees, net, finalNet, feeP, recvList, dupCount, onClose, flash }) {
+  const today = new Date().toLocaleDateString("en-GB");
+  const text = (() => {
+    const L = [];
+    L.push("📋 پوختەی فیشەکان");
+    if (who) L.push(`👤 ${who}`);
+    L.push(`📅 ${today}`);
+    L.push("");
+    L.push(`تەدادی فیش: ${rows.length}`);
+    if (dupCount) L.push(`⚠️ دووبارە: ${dupCount} (نەژمێردراون)`);
+    L.push("");
+    L.push("── بەپێی وەرگر ──");
+    recvList.forEach(([n, v]) => {
+      const s = Object.entries(v.cur).map(([c, a]) => `${fmt(a, 0)} ${c}`).join(" / ");
+      L.push(`• ${n} — ${s}  (${v.n})`);
+    });
+    L.push("");
+    L.push("── کۆی گشتی ──");
+    Object.keys(gross).forEach((c) => {
+      L.push(`${c}:`);
+      L.push(`   ناردراو: ${fmt(gross[c], 0)}`);
+      if (fees[c] > 0) L.push(`   عمولە: −${fmt(fees[c], 0)}`);
+      if (feeP > 0) L.push(`   عمولەی ${feeP}٪: −${fmt(net[c] * feeP / 100, 0)}`);
+      L.push(`   ✅ گەیشتوو: ${fmt(finalNet[c], 0)}`);
+    });
+    return L.join("\n");
+  })();
+
+  const copy = () => navigator.clipboard.writeText(text).then(() => flash("کۆپی کرا ✓"));
+  const share = async () => {
+    if (navigator.share) { try { await navigator.share({ text }); } catch {} }
+    else copy();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-end md:items-center justify-center p-0 md:p-6" onClick={onClose}>
+      <div className="bg-white w-full max-w-lg rounded-t-3xl md:rounded-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="sticky top-0 bg-white border-b border-stone-200 px-5 py-3.5 flex items-center justify-between">
+          <div className="font-bold text-slate-900">پوختەی ئامادە</div>
+          <button onClick={onClose} className="p-1.5 text-slate-400"><X className="w-5 h-5" /></button>
+        </div>
+
+        <div className="p-5">
+          <div className="border border-stone-200 rounded-2xl overflow-hidden">
+            <div className="bg-slate-900 text-white px-4 py-3">
+              <div className="font-bold">پوختەی فیشەکان</div>
+              <div className="text-xs text-slate-400 mt-0.5">{who || "—"} · <span style={num}>{today}</span></div>
+            </div>
+            <div className="p-4 space-y-3">
+              <div className="flex gap-4 text-xs text-slate-500">
+                <span>فیش: <b style={num} className="text-slate-800">{rows.length}</b></span>
+                {dupCount > 0 && <span className="text-rose-700">دووبارە: <b style={num}>{dupCount}</b></span>}
+              </div>
+              <div>
+                <div className="text-[11px] font-bold text-slate-400 uppercase mb-1.5">بەپێی وەرگر</div>
+                {recvList.map(([n, v]) => (
+                  <div key={n} className="flex justify-between items-baseline py-1.5 border-b border-stone-100 last:border-0">
+                    <span className="text-sm text-slate-700">{n} <span className="text-[10px] text-slate-400">({v.n})</span></span>
+                    <span className="text-sm font-bold" style={num}>
+                      {Object.entries(v.cur).map(([c, a]) => `${fmt(a, 0)} ${c}`).join(" / ")}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              {Object.keys(gross).map((c) => (
+                <div key={c} className="bg-stone-50 rounded-xl p-3">
+                  <div className="text-[11px] font-bold text-slate-400 mb-1">{c}</div>
+                  <div className="flex justify-between text-sm py-0.5"><span className="text-slate-600">ناردراو</span><span style={num}>{fmt(gross[c], 0)}</span></div>
+                  {fees[c] > 0 && <div className="flex justify-between text-sm py-0.5"><span className="text-slate-600">عمولە</span><span style={num} className="text-rose-700">−{fmt(fees[c], 0)}</span></div>}
+                  {feeP > 0 && <div className="flex justify-between text-sm py-0.5"><span className="text-slate-600">عمولەی {feeP}٪</span><span style={num} className="text-rose-700">−{fmt(net[c] * feeP / 100, 0)}</span></div>}
+                  <div className="flex justify-between pt-2 mt-1 border-t border-stone-200">
+                    <span className="text-sm font-bold">گەیشتوو</span>
+                    <span className="text-lg font-bold text-emerald-700" style={num}>{fmt(finalNet[c], 0)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex gap-2 mt-4">
+            <Btn className="flex-1" onClick={share}>ناردن</Btn>
+            <Btn kind="ghost" className="flex-1" onClick={copy}>کۆپیکردنی دەق</Btn>
+          </div>
+          <div className="text-[11px] text-slate-400 mt-2 text-center">دەتوانیت وێنەیەکیشی لێ بگریت و بینێریت</div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -2198,6 +2394,125 @@ function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare, s
   );
 }
 
+
+/* ══════════════════ پاراستنی داتا و باکئەپ ══════════════════ */
+function Backup({ data, calc, cur, saveBackup, downloadBackup, flash, sumUsd, mySafe, owners, ratesReady }) {
+  const [list, setList] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = async () => {
+    try {
+      const { data: b, error } = await supabase.from("backups").select("id, created_at, kind, counts").order("created_at", { ascending: false }).limit(40);
+      if (error) throw error;
+      setList(b || []);
+    } catch { setList([]); }
+  };
+  useEffect(() => { load(); }, []);
+
+  const counts = {
+    مامەڵە: data.txs.filter((t) => !t.deleted).length,
+    "تۆماری دەفتەر": data.ledger.length,
+    بەکارهێنەر: data.users.filter((u) => !u.deleted).length,
+    دراو: data.currencies.length,
+  };
+
+  /* پشکنینی تەندروستی حیسابەکان */
+  const checks = (() => {
+    const out = [];
+    // ١) هەر مامەڵەیەکی تەواوکراو دەبێت تۆماری دەفتەری هەبێت
+    const withLedger = new Set(data.ledger.map((e) => e.txId).filter(Boolean));
+    const orphan = data.txs.filter((t) => !t.deleted && !withLedger.has(t.id));
+    out.push({ ok: orphan.length === 0, t: "هەموو مامەڵەکان تۆماری دەفتەریان هەیە", d: orphan.length ? `${orphan.length} مامەڵە بێ تۆمار` : "تەواو" });
+    // ٢) تۆماری دەفتەری هەڵگەڕاو
+    const txIds = new Set(data.txs.map((t) => t.id));
+    const ghost = data.ledger.filter((e) => e.txId && !txIds.has(e.txId));
+    out.push({ ok: ghost.length === 0, t: "هیچ تۆمارێکی سەرگەردان نییە", d: ghost.length ? `${ghost.length} تۆمار` : "تەواو" });
+    // ٣) باڵانسی سالب لە قاسەی سەرەکی
+    const neg = data.currencies.filter((c) => (calc.atMe[c.id] || 0) < 0);
+    out.push({ ok: neg.length === 0, t: "هیچ باڵانسێکی سالب نییە لە قاسەی سەرەکی", d: neg.length ? neg.map((c) => c.code).join("، ") : "تەواو" });
+    // ٤) نرخەکان
+    out.push({ ok: ratesReady, t: "نرخی هەموو دراوەکان دانراوە", d: ratesReady ? "تەواو" : "هەندێک دراو نرخی نییە" });
+    // ٥) کۆی خاوەندارێتی = کۆی قاسە
+    if (ratesReady) {
+      const safe = sumUsd(calc.phys), own = owners.total;
+      const diff = Math.abs(safe - own);
+      const pct = safe > 0 ? (diff / safe) * 100 : 0;
+      out.push({ ok: pct < 5, t: "خاوەندارێتی لەگەڵ قاسە دەگونجێت", d: `جیاوازی ${fmt(diff, 0)}$ (${pct.toFixed(1)}٪)` });
+    }
+    return out;
+  })();
+
+  const okAll = checks.every((c) => c.ok);
+
+  return (
+    <div className="space-y-4">
+      <H sub="داتاکەت لە سێرڤەری Supabase پارێزراوە — لێرەش وێنەی زاپاسی لێ دەگیرێت">پاراستنی داتا</H>
+
+      <Card className={`p-4 ${okAll ? "border-emerald-300 bg-emerald-50/40" : "border-amber-300 bg-amber-50/40"}`}>
+        <div className="flex items-center gap-2 mb-3">
+          {okAll ? <CheckCircle2 className="w-5 h-5 text-emerald-700" /> : <AlertTriangle className="w-5 h-5 text-amber-600" />}
+          <span className={`font-bold ${okAll ? "text-emerald-800" : "text-amber-800"}`}>
+            {okAll ? "هەموو حیسابەکان ڕێکن" : "چەند خاڵێک پێویستی بە سەیرکردن هەیە"}
+          </span>
+        </div>
+        {checks.map((c, i) => (
+          <div key={i} className="flex items-center justify-between py-1.5 text-sm border-b border-white/60 last:border-0">
+            <span className="flex items-center gap-1.5 text-slate-700">
+              {c.ok ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />}
+              {c.t}
+            </span>
+            <span className={`text-xs ${c.ok ? "text-slate-400" : "text-amber-800 font-semibold"}`}>{c.d}</span>
+          </div>
+        ))}
+      </Card>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {Object.entries(counts).map(([k, v]) => (
+          <Card key={k} className="p-4"><div className="text-xs text-slate-500">{k}</div><div className="text-2xl font-bold" style={num}>{fmt(v, 0)}</div></Card>
+        ))}
+      </div>
+
+      <Card className="p-5">
+        <SecLbl>باکئەپ</SecLbl>
+        <div className="text-sm text-slate-600 mb-3 leading-relaxed">
+          هەر ٦ کاتژمێرێک جارێک خۆی وێنەیەکی تەواوی هەموو داتاکە هەڵدەگرێت. دەتوانیت خۆشت ئێستا یەکێک درووست بکەیت، یان فایلێک دابەزێنیت و لە کۆمپیوتەرەکەت هەڵیبگریت.
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          <Btn onClick={async () => { setBusy(true); await saveBackup("manual"); await load(); setBusy(false); }} disabled={busy}>
+            {busy ? "..." : "درووستکردنی باکئەپ ئێستا"}
+          </Btn>
+          <Btn kind="ghost" className="flex items-center gap-1.5" onClick={downloadBackup}><Download className="w-4 h-4" /> دابەزاندنی فایل</Btn>
+        </div>
+      </Card>
+
+      <Card className="p-5">
+        <SecLbl>باکئەپە هەڵگیراوەکان</SecLbl>
+        {list === null ? <Empty t="بارکردن..." /> :
+          list.length === 0 ? (
+            <div className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-xl p-3">
+              هێشتا هیچ باکئەپێک نییە — ئایا خشتەی <b>backups</b> لە Supabase درووست کراوە؟
+            </div>
+          ) : list.map((b) => (
+            <div key={b.id} className="flex items-center justify-between py-2.5 border-b border-stone-100 last:border-0">
+              <div>
+                <div className="text-sm text-slate-800" style={num}>{new Date(b.created_at).toLocaleString("en-GB")}</div>
+                <div className="text-[11px] text-slate-400">
+                  {b.kind === "auto" ? "ئۆتۆماتیکی" : "دەستی"} · <span style={num}>{b.counts?.txs ?? "?"}</span> مامەڵە · <span style={num}>{b.counts?.ledger ?? "?"}</span> تۆمار
+                </div>
+              </div>
+              <Pill tone={b.kind === "auto" ? "slate" : "green"}>{b.kind === "auto" ? "خۆکار" : "دەستی"}</Pill>
+            </div>
+          ))}
+      </Card>
+
+      <Card className="p-4 bg-stone-50/60">
+        <div className="text-xs text-slate-500 leading-relaxed">
+          <b className="text-slate-700">ئامۆژگاری:</b> بۆ کۆمپانیایەک کە ملیۆنان دۆلار ئاڵووگۆڕ دەکات، پێشنیار دەکەم پلانی <b>Supabase Pro</b> وەربگریت ($25/مانگ) — باکئەپی خۆکاری ڕۆژانەی هەیە لەگەڵ توانای گەڕاندنەوەی هەر خولەکێک، و پڕۆژەکەشت هەرگیز ناوەستێت. هەروەها مانگی جارێک فایلێکی باکئەپ دابەزێنە و لە شوێنێکی جیا هەڵیبگرە.
+        </div>
+      </Card>
+    </div>
+  );
+}
 
 /* ══════════════════ تۆماری گۆڕانکاری ══════════════════ */
 function Audit({ data }) {

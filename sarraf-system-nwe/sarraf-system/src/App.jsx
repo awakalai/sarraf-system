@@ -1825,60 +1825,74 @@ function Investors({ data, calc, cur, invUnpaid, invShare, profitAll }) {
   );
 }
 
-function InvestorDetail({ u, data, calc, cur, invUnpaid }) {
+function InvestorDetail({ u, data, calc, cur, invUnpaid, mine }) {
   const cap = calc.invCap[u.id] || {};
   const hist = data.ledger.filter((e) => e.investorId === u.id).slice().reverse();
+  const rows = data.currencies.map((c) => {
+    const capV = cap[c.id] || 0;
+    const up = invUnpaid(u.id, c.id);
+    return { c, capV, up, tot: capV + up };
+  }).filter((r) => r.capV || r.up);
+
   return (
     <div className="space-y-4">
-      <h2 className="text-xl font-bold text-slate-900">{u.name}</h2>
+      {!mine && <h2 className="text-xl font-bold text-slate-900">{u.name}</h2>}
+
+      {/* کۆی گشتی */}
+      <Card className="p-5 bg-slate-900 border-slate-900 text-white">
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-xs text-slate-400">{mine ? "کۆی ماڵی من" : `کۆی ماڵی ${u.name}`}</div>
+          <span className="text-[11px] bg-slate-800 px-2 py-0.5 rounded-full">ڕێژەی خێر {u.rate}٪</span>
+        </div>
+        {rows.length === 0 ? <div className="text-sm text-slate-400">هێشتا هیچ سەرمایەیەک دانەنراوە</div> :
+          rows.map((r) => (
+            <div key={r.c.id} className="flex justify-between items-baseline py-2 border-b border-slate-700/60 last:border-0">
+              <span className="text-sm text-slate-300">{r.c.name}</span>
+              <span className="text-2xl font-bold" style={num}>{fmt(r.tot, 0)}</span>
+            </div>
+          ))}
+        <div className="text-[11px] text-slate-400 mt-3">سەرمایە + خێری نەدراو</div>
+      </Card>
+
       <div className="grid md:grid-cols-2 gap-4">
         <Card className="p-5">
-          <div className="flex justify-between items-center mb-3">
-            <SecLbl>سەرمایە</SecLbl><Pill>ڕێژەی خێر {u.rate}٪</Pill>
-          </div>
-          {Object.keys(cap).length === 0 ? <Empty t="سەرمایە دانەنراوە" /> :
-            Object.entries(cap).map(([cid, v]) => (
-              <div key={cid} className="flex justify-between py-2 border-b border-stone-100 last:border-0">
-                <span className="text-sm text-slate-600">{cur(cid).name}</span><Money v={v} dec={cur(cid).dec} />
+          <SecLbl>{mine ? "سەرمایەکەم" : "سەرمایە"}</SecLbl>
+          {rows.filter((r) => r.capV).length === 0 ? <Empty t="سەرمایە دانەنراوە" /> :
+            rows.filter((r) => r.capV).map((r) => (
+              <div key={r.c.id} className="flex justify-between py-2 border-b border-stone-100 last:border-0">
+                <span className="text-sm text-slate-600">{r.c.name}</span><Money v={r.capV} dec={0} />
               </div>
             ))}
         </Card>
         <Card className="p-5">
           <SecLbl>خێری نەدراو</SecLbl>
-          {data.currencies.map((c) => {
-            const up = invUnpaid(u.id, c.id);
-            if (!up) return null;
-            return (
-              <div key={c.id} className="flex justify-between py-2 border-b border-stone-100 last:border-0">
-                <span className="text-sm text-slate-600">{c.name}</span><Money v={up} dec={c.dec} pos />
+          {rows.filter((r) => r.up).length === 0 ? <Empty t="هێشتا هیچ" /> :
+            rows.filter((r) => r.up).map((r) => (
+              <div key={r.c.id} className="flex justify-between py-2 border-b border-stone-100 last:border-0">
+                <span className="text-sm text-slate-600">{r.c.name}</span><Money v={r.up} dec={0} pos />
               </div>
-            );
-          })}
-          <div className="text-[11px] text-slate-400 mt-2">لە بەشی «قاسە و خەرجی» دەتوانیت پارەکەی بدەیت</div>
+            ))}
+          <div className="text-[11px] text-slate-400 mt-2">
+            {mine ? "ئەمە ئەو خێرەیە کە هێشتا وەرتنەگرتووە" : "لە بەشی «قاسە و خەرجی» دەتوانیت پارەکەی بدەیت"}
+          </div>
         </Card>
       </div>
-      <Card className="p-5 bg-stone-50/60">
-        <SecLbl>کۆی ماڵی ئەم (سەرمایە + خێری نەدراو)</SecLbl>
-        {data.currencies.map((c) => {
-          const tot = (cap[c.id] || 0) + invUnpaid(u.id, c.id);
-          if (!tot) return null;
-          return <div key={c.id} className="flex justify-between py-1.5 text-sm"><span>{c.name}</span><Money v={tot} dec={c.dec} /></div>;
-        })}
-      </Card>
+
       <SecLbl>مێژووی پارە ({hist.length})</SecLbl>
       {hist.length === 0 ? <Card><Empty t="هیچ نییە" /></Card> :
         hist.map((e) => (
           <Card key={e.id} className="p-3.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
             <Pill tone={e.type === "investor_payout" ? "amber" : e.amount >= 0 ? "green" : "red"}>
-              {e.type === "investor_payout" ? "پارەدانی خێر" : e.amount >= 0 ? "پارە دانان" : "پارە دەرهێنان"}
+              {e.type === "investor_payout" ? (mine ? "وەرگرتنی خێر" : "پارەدانی خێر") : e.amount >= 0 ? "پارە دانان" : "پارە دەرهێنان"}
             </Pill>
-            <span><Money v={Math.abs(e.amount)} dec={cur(e.curId).dec} /> {cur(e.curId).code}</span>
+            <span><Money v={Math.abs(e.amount)} dec={0} /> {cur(e.curId).code}</span>
             <span className="text-[11px] text-slate-400 mr-auto" style={num}>{new Date(e.date).toLocaleString("en-GB")}</span>
           </Card>
         ))}
     </div>
   );
 }
+
 
 /* ══════════════════ نووسینگە ══════════════════ */
 function Office({ data, cur, usr, officePay }) {
@@ -2293,42 +2307,10 @@ function Portal({ user, data, calc, cur, usr, officePay, settle, invUnpaid }) {
   }
 
   if (user.role === "investor") {
-    const cap = calc.invCap[user.id] || {};
-    const hist = data.ledger.filter((e) => e.investorId === user.id).slice().reverse();
     return (
       <div className="space-y-4">
         <H sub={`بەخێربێیت، ${user.name}`}>ئەکاونتی من</H>
-        <div className="grid md:grid-cols-2 gap-4">
-          <Card className="p-5">
-            <div className="flex justify-between items-center mb-3"><SecLbl>سەرمایەکەم</SecLbl><Pill>خێر {user.rate}٪</Pill></div>
-            {Object.keys(cap).length === 0 ? <Empty t="هیچ نییە" /> :
-              Object.entries(cap).map(([cid, v]) => (
-                <div key={cid} className="flex justify-between py-2 border-b border-stone-100 last:border-0">
-                  <span className="text-sm text-slate-600">{cur(cid).name}</span><Money v={v} dec={cur(cid).dec} />
-                </div>
-              ))}
-          </Card>
-          <Card className="p-5">
-            <SecLbl>خێری نەدراو</SecLbl>
-            {data.currencies.map((c) => {
-              const up = invUnpaid(user.id, c.id);
-              if (!up) return null;
-              return <div key={c.id} className="flex justify-between py-2 border-b border-stone-100 last:border-0">
-                <span className="text-sm text-slate-600">{c.name}</span><Money v={up} dec={c.dec} pos /></div>;
-            })}
-          </Card>
-        </div>
-        <SecLbl>مێژووی پارە</SecLbl>
-        {hist.length === 0 ? <Card><Empty t="هیچ نییە" /></Card> :
-          hist.map((e) => (
-            <Card key={e.id} className="p-3.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-              <Pill tone={e.type === "investor_payout" ? "amber" : e.amount >= 0 ? "green" : "red"}>
-                {e.type === "investor_payout" ? "وەرگرتنی خێر" : e.amount >= 0 ? "پارە دانان" : "پارە دەرهێنان"}
-              </Pill>
-              <span><Money v={Math.abs(e.amount)} dec={cur(e.curId).dec} /> {cur(e.curId).code}</span>
-              <span className="text-[11px] text-slate-400 mr-auto" style={num}>{new Date(e.date).toLocaleString("en-GB")}</span>
-            </Card>
-          ))}
+        <InvestorDetail u={user} data={data} calc={calc} cur={cur} invUnpaid={invUnpaid} mine />
       </div>
     );
   }

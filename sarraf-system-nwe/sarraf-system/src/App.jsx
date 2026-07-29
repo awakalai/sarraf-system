@@ -252,7 +252,7 @@ export default function App() {
       // دراوی کڕدراو دێتە ژوورەوە (لای خۆم یان لای هاوبەش)
       es.push({ id: uid(), type: "buy", curId: t.curId, amount: +t.amount, partnerId: t.partnerId || null, txId: t.id, date: t.date });
       // عمولەی هاوبەش دەستبەجێ کەم دەکرێتەوە
-      if (feeRate > 0) es.push({ id: uid(), type: "partner_fee", curId: t.curId, amount: -(t.amount * feeRate / 100), partnerId: t.partnerId, txId: t.id, note: `عمولەی ${feeRate}٪`, date: t.date });
+      if (feeRate > 0) es.push({ id: uid(), type: "partner_fee", curId: t.curId, amount: -Math.round(t.amount * feeRate / 100), partnerId: t.partnerId, txId: t.id, note: `عمولەی ${feeRate}٪`, date: t.date });
       // بەرامبەرەکەی لە قاسەی گشتی دەردەچێت (گەر خۆم پارەم دابێت)
       if (t.status === "completed") es.push({ id: uid(), type: "buy", curId: t.againstId, amount: -t.total, partnerId: null, txId: t.id, date: t.date });
     } else {
@@ -263,12 +263,12 @@ export default function App() {
   };
 
   const saveTx = (f, existing) => {
-    const amount = +f.amount, rate = +f.rate, total = amount * rate;
+    const amount = Math.round(+f.amount), rate = +f.rate, total = Math.round(amount * rate);
     if (!amount || !rate) return flash("بڕ و نرخ پێویستە");
     if (!f.cpId && !f.cpName) return flash("لایەنی بەرامبەر دیاری بکە");
     run(async () => {
       let profit = null, profitCurId = null;
-      if (f.type === "sell") { const av = avgRate(f.curId, f.againstId); if (av !== null) { profit = (rate - av) * amount; profitCurId = f.againstId; } }
+      if (f.type === "sell") { const av = avgRate(f.curId, f.againstId); if (av !== null) { profit = Math.round(total - av * amount); profitCurId = f.againstId; } }
       const code = existing ? existing.code : Math.max(1000, ...data.txs.map((x) => x.code || 0)) + 1;
       const t = { id: existing ? existing.id : uid(), code, type: f.type, cpId: f.cpId || null, cpName: f.cpId ? null : f.cpName, curId: f.curId, amount, rate, againstId: f.againstId, total, partnerId: f.partnerId || null, status: f.type === "buy" ? f.status : "completed", paidAt: existing ? existing.paidAt : null, profit, profitCurId, note: f.note || "", date: existing ? existing.date : now(), edited: !!existing };
       if (existing) {
@@ -321,7 +321,7 @@ export default function App() {
   };
 
   const transfer = (f) => {
-    const amt = Math.abs(+f.amount);
+    const amt = Math.round(Math.abs(+f.amount));
     if (!amt || !f.partnerId) return flash("بڕ و هاوبەش دیاری بکە");
     run(async () => {
       const base = { curId: f.curId, txId: null, date: now() };
@@ -332,7 +332,7 @@ export default function App() {
            { ...base, id: uid(), type: "transfer", amount: -amt, partnerId: f.partnerId }];
       // عمولە تەنها لە کاتی تێکردندا
       const fr = usr(f.partnerId).rate || 0;
-      if (f.dir === "to" && fr > 0) es.push({ ...base, id: uid(), type: "partner_fee", amount: -(amt * fr / 100), partnerId: f.partnerId, note: `عمولەی ${fr}٪` });
+      if (f.dir === "to" && fr > 0) es.push({ ...base, id: uid(), type: "partner_fee", amount: -Math.round(amt * fr / 100), partnerId: f.partnerId, note: `عمولەی ${fr}٪` });
       const r = await supabase.from("ledger").insert(es.map(LR)); if (r.error) throw r.error;
       await A("گواستنەوە", `${fmt(amt)} ${cur(f.curId).code} ${f.dir === "to" ? "بۆ لای" : "لە لای"} ${usr(f.partnerId).name}`);
       flash("گواستنەوە تۆمار کرا ✓");
@@ -859,11 +859,12 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
 
   const auto = autoRate(f.type, f.curId, f.againstId);
   const rate = f.manualRate ? +f.rate : (auto || 0);
-  const total = (+f.amount || 0) * rate;
+  const amtR = Math.round(+f.amount || 0);
+  const total = Math.round(amtR * rate);
   const av = f.type === "sell" ? avgRate(f.curId, f.againstId) : null;
-  const estProfit = f.type === "sell" && av !== null ? (rate - av) * (+f.amount || 0) : null;
+  const estProfit = f.type === "sell" && av !== null ? Math.round(total - av * amtR) : null;
   const srcBal = f.partnerId ? ((calc.partner[f.partnerId] || {})[f.curId] || 0) : (calc.atMe[f.curId] || 0);
-  const willBeNeg = f.type === "sell" && srcBal - (+f.amount || 0) < 0;
+  const willBeNeg = f.type === "sell" && srcBal - amtR < 0;
   const feeRate = f.partnerId ? (usr(f.partnerId).rate || 0) : 0;
 
   const submit = () => onSave({ ...f, rate }, e);
@@ -955,7 +956,7 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
 
         {feeRate > 0 && f.type === "buy" && +f.amount > 0 && (
           <div className="text-sm bg-stone-50 border border-stone-200 rounded-xl p-3 text-slate-600">
-            عمولەی {usr(f.partnerId).name} ({feeRate}٪): <b style={num}>{fmt((+f.amount) * feeRate / 100, cur(f.curId).dec)}</b> {cur(f.curId).code} — دەستبەجێ کەم دەکرێتەوە، باڵانسی دوایی: <b style={num}>{fmt((+f.amount) * (1 - feeRate / 100), cur(f.curId).dec)}</b>
+            عمولەی {usr(f.partnerId).name} ({feeRate}٪): <b style={num}>{fmt(Math.round(amtR * feeRate / 100), 0)}</b> {cur(f.curId).code} — دەستبەجێ کەم دەکرێتەوە، باڵانسی دوایی: <b style={num}>{fmt(amtR - Math.round(amtR * feeRate / 100), 0)}</b>
           </div>
         )}
         {willBeNeg && (
@@ -1463,7 +1464,7 @@ function Partners({ data, calc, cur, usr, transfer, detailId, setDetailId }) {
         </div>
         {tf.dir === "to" && fr > 0 && +tf.amount > 0 && (
           <div className="mt-3 text-sm text-slate-600 bg-stone-50 border border-stone-200 rounded-xl p-3">
-            عمولەی {fr}٪ = <b style={num}>{fmt((+tf.amount) * fr / 100, cur(tf.curId).dec)}</b> — باڵانسی دوایی: <b style={num}>{fmt((+tf.amount) * (1 - fr / 100), cur(tf.curId).dec)}</b>
+            عمولەی {fr}٪ = <b style={num}>{fmt(Math.round(Math.round(+tf.amount) * fr / 100), 0)}</b> — باڵانسی دوایی: <b style={num}>{fmt(Math.round(+tf.amount) - Math.round(Math.round(+tf.amount) * fr / 100), 0)}</b>
           </div>
         )}
       </Card>

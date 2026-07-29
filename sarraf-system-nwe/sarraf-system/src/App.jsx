@@ -222,6 +222,24 @@ export default function App() {
   const sumUsd = (map) => (data?.currencies || []).reduce((s, c) => s + toUsd(map?.[c.id] || 0, c.id), 0);
   const ratesReady = !!data && data.currencies.every((c) => c.id === "usd" || c.buyRate || c.sellRate);
 
+  /* بەشی خاوەندارێتی — هەر دراوێک بەپێی سەرمایە دابەش دەبێت */
+  const owners = useMemo(() => {
+    if (!data || !calc) return { list: [], total: 0 };
+    const invs = data.users.filter((u) => u.role === "investor" && !u.deleted);
+    const mine = sumUsd(mySafe);
+    const list = [{ id: "me", name: "خۆم", equity: mine, isMe: true }];
+    invs.forEach((u) => {
+      const cap = sumUsd(calc.invCap[u.id] || {});
+      let unpaid = 0;
+      data.currencies.forEach((c) => { unpaid += toUsd(invUnpaid(u.id, c.id), c.id); });
+      const eq = cap + unpaid;
+      if (eq !== 0) list.push({ id: u.id, name: u.name, equity: eq, cap, unpaid });
+    });
+    const total = list.reduce((s, x) => s + x.equity, 0);
+    list.forEach((x) => (x.share = total > 0 ? x.equity / total : 0));
+    return { list, total };
+  }, [data, calc, mySafe]);
+
   /* مامناوەندی نرخی کڕین (بۆ حیسابی خێر لە کاتی فرۆشتن) */
   const avgRate = (curId, againstId) => {
     let a = 0, v = 0;
@@ -412,23 +430,6 @@ export default function App() {
     ["audit", "تۆمار", History],
   ];
 
-  /* بەشی خاوەندارێتی — هەر دراوێک بەپێی سەرمایە دابەش دەبێت */
-  const owners = useMemo(() => {
-    if (!data || !calc) return { list: [], total: 0 };
-    const invs = data.users.filter((u) => u.role === "investor" && !u.deleted);
-    const mine = sumUsd(mySafe);
-    const list = [{ id: "me", name: "خۆم", equity: mine, isMe: true }];
-    invs.forEach((u) => {
-      const cap = sumUsd(calc.invCap[u.id] || {});
-      let unpaid = 0;
-      data.currencies.forEach((c) => { unpaid += toUsd(invUnpaid(u.id, c.id), c.id); });
-      const eq = cap + unpaid;
-      if (eq !== 0) list.push({ id: u.id, name: u.name, equity: eq, cap, unpaid });
-    });
-    const total = list.reduce((s, x) => s + x.equity, 0);
-    list.forEach((x) => (x.share = total > 0 ? x.equity / total : 0));
-    return { list, total };
-  }, [data, calc, mySafe]);
 
   const shared = { data, calc, cur, usr, mySafe, profitAll, profitIn, investorsProfitIn, invShare, invUnpaid, autoRate, avgRate, toUsd, sumUsd, ratesReady, owners };
 

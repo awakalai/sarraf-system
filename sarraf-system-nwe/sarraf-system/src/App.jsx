@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "./lib/supabase";
 import { createClient } from "@supabase/supabase-js";
 import {
@@ -18,16 +18,64 @@ const fmt = (n, dec = 2) => {
   return Number(n).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: dec });
 };
 const num = { fontVariantNumeric: "tabular-nums", direction: "ltr", unicodeBidi: "embed" };
+
+/* ڕەنگ و هێمای دراوەکان */
+const CUR_STYLE = {
+  usd: { bg: "from-emerald-500 to-emerald-700", ring: "ring-emerald-500/20", txt: "text-emerald-700", sym: "$" },
+  eur: { bg: "from-blue-500 to-blue-700", ring: "ring-blue-500/20", txt: "text-blue-700", sym: "€" },
+  cny: { bg: "from-rose-500 to-rose-700", ring: "ring-rose-500/20", txt: "text-rose-700", sym: "¥" },
+  jpy: { bg: "from-rose-400 to-rose-600", ring: "ring-rose-400/20", txt: "text-rose-600", sym: "¥" },
+  iqd: { bg: "from-amber-500 to-amber-700", ring: "ring-amber-500/20", txt: "text-amber-700", sym: "ع" },
+  try: { bg: "from-cyan-500 to-cyan-700", ring: "ring-cyan-500/20", txt: "text-cyan-700", sym: "₺" },
+  gbp: { bg: "from-violet-500 to-violet-700", ring: "ring-violet-500/20", txt: "text-violet-700", sym: "£" },
+  aed: { bg: "from-teal-500 to-teal-700", ring: "ring-teal-500/20", txt: "text-teal-700", sym: "د.إ" },
+  gold: { bg: "from-yellow-400 to-amber-600", ring: "ring-yellow-500/20", txt: "text-amber-600", sym: "Au" },
+  _default: { bg: "from-slate-500 to-slate-700", ring: "ring-slate-500/20", txt: "text-slate-700", sym: "¤" },
+};
+const curStyle = (c) => CUR_STYLE[(c?.id || "").toLowerCase()] || CUR_STYLE._default;
+
+/* نیشانەی دراو — گۆی ڕەنگاوڕەنگ */
+const CurBadge = ({ c, size = "md", pulse }) => {
+  const st = curStyle(c);
+  const dim = size === "lg" ? "w-11 h-11 text-base" : size === "sm" ? "w-7 h-7 text-[11px]" : "w-9 h-9 text-sm";
+  return (
+    <div className={`${dim} rounded-full bg-gradient-to-br ${st.bg} text-white font-bold flex items-center justify-center shadow-sm ring-4 ${st.ring} shrink-0 ${pulse ? "cur-pop" : ""}`}>
+      {c?.symbol || st.sym}
+    </div>
+  );
+};
+
+/* ژمارەی جوڵاو */
+function CountUp({ v, dec = 0, className = "", style }) {
+  const [d, setD] = useState(v);
+  const prev = useRef(v);
+  useEffect(() => {
+    const from = prev.current, to = v;
+    if (from === to) return;
+    let raf, t0 = null;
+    const dur = 550;
+    const step = (t) => {
+      if (!t0) t0 = t;
+      const p = Math.min(1, (t - t0) / dur);
+      const e = 1 - Math.pow(1 - p, 3);
+      setD(from + (to - from) * e);
+      if (p < 1) raf = requestAnimationFrame(step); else prev.current = to;
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [v]);
+  return <span className={className} style={{ ...num, ...style }}>{fmt(d, dec)}</span>;
+}
 const dOnly = (d) => (d || "").slice(0, 10);
 
 /* ══════════════════ پێکهاتە بچووکەکان ══════════════════ */
-const Card = ({ children, className = "", onClick, dark, accent }) => {
+const Card = ({ children, className = "", onClick, dark, accent, style }) => {
   const base = dark ? "bg-slate-900 border-slate-900 text-white"
     : accent ? "bg-emerald-700 border-emerald-700 text-white"
     : "bg-white border-stone-200/80";
   return (
-    <div onClick={onClick}
-      className={`${base} border rounded-2xl shadow-[0_1px_3px_rgba(0,0,0,0.04)] ${onClick ? "cursor-pointer hover:border-emerald-500 hover:shadow-md transition" : ""} ${className}`}>
+    <div onClick={onClick} style={style}
+      className={`${base} border rounded-2xl shadow-[0_1px_3px_rgba(0,0,0,0.04)] ${onClick ? "cursor-pointer lift press hover:border-emerald-500" : ""} ${className}`}>
       {children}
     </div>
   );
@@ -44,12 +92,12 @@ const Inp = (p) => <input {...p} className={`w-full border border-stone-300 roun
 const Sel = (p) => <select {...p} className={`w-full border border-stone-300 rounded-xl px-3 py-2.5 text-sm bg-white outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/15 transition ${p.className || ""}`}>{p.children}</select>;
 const Btn = ({ kind = "primary", className = "", ...p }) => {
   const k = {
-    primary: "bg-emerald-700 hover:bg-emerald-800 text-white shadow-sm",
-    danger: "bg-rose-700 hover:bg-rose-800 text-white shadow-sm",
-    ghost: "bg-white hover:bg-stone-50 text-slate-700 border border-stone-300",
-    gold: "bg-amber-600 hover:bg-amber-700 text-white shadow-sm",
+    primary: "bg-gradient-to-b from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white shadow-[0_2px_8px_rgba(4,120,87,.25)]",
+    danger: "bg-gradient-to-b from-rose-600 to-rose-700 hover:from-rose-700 hover:to-rose-800 text-white shadow-[0_2px_8px_rgba(190,18,60,.22)]",
+    ghost: "bg-white hover:bg-stone-50 text-slate-700 border border-stone-300 shadow-sm",
+    gold: "bg-gradient-to-b from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white shadow-[0_2px_8px_rgba(217,119,6,.25)]",
   }[kind];
-  return <button {...p} className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition disabled:opacity-50 ${k} ${className}`} />;
+  return <button {...p} className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition press disabled:opacity-50 disabled:shadow-none ${k} ${className}`} />;
 };
 const Money = ({ v, dec, pos }) => (
   <span style={num} className={`font-bold ${v < 0 ? "text-rose-700" : pos ? "text-emerald-700" : "text-slate-900"}`}>{fmt(v, dec)}</span>
@@ -535,10 +583,24 @@ export default function App() {
   const shared = { data, calc, cur, usr, mySafe, profitAll, profitIn, investorsProfitIn, invShare, invUnpaid, autoRate, avgRate, toUsd, sumUsd, ratesReady, owners };
 
   return (
-    <div dir="rtl" className="min-h-screen bg-[#F6F5F2] text-slate-800" style={{ fontFamily: "'Segoe UI', Tahoma, sans-serif" }}>
+    <div dir="rtl" className="min-h-screen bg-[#F5F5F3] text-slate-800" style={{ fontFamily: "'Segoe UI', Tahoma, sans-serif" }}>
+      <style>{`
+        @keyframes fadeUp { from { opacity:0; transform: translateY(8px) } to { opacity:1; transform:none } }
+        @keyframes popIn { 0% { transform: scale(.7); opacity:0 } 60% { transform: scale(1.08) } 100% { transform: scale(1); opacity:1 } }
+        @keyframes slideDown { from { opacity:0; transform: translateY(-14px) } to { opacity:1; transform:none } }
+        @keyframes shimmer { 0% { background-position: 200% 0 } 100% { background-position: -200% 0 } }
+        .fade-up { animation: fadeUp .32s cubic-bezier(.2,.8,.2,1) both }
+        .cur-pop { animation: popIn .4s cubic-bezier(.2,1.2,.3,1) both }
+        .toast-in { animation: slideDown .3s cubic-bezier(.2,.9,.2,1) both }
+        .press:active { transform: scale(.97) }
+        .lift { transition: transform .18s ease, box-shadow .18s ease }
+        .lift:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(15,23,42,.08) }
+        ::-webkit-scrollbar { width: 8px; height: 8px }
+        ::-webkit-scrollbar-thumb { background: #d6d3d1; border-radius: 8px }
+      `}</style>
       {msg && (
         <div className="fixed top-0 right-0 left-0 z-[60] flex justify-center px-4" style={{ paddingTop: "calc(env(safe-area-inset-top) + 12px)" }}>
-          <div className={`flex items-center gap-2.5 px-5 py-3.5 rounded-2xl shadow-xl text-white font-bold text-sm max-w-md w-full justify-center ${/✓|کرا|تۆمار|نێردرا|وەرگ/.test(msg) ? "bg-emerald-600" : "bg-slate-900"}`}>
+          <div className={`toast-in flex items-center gap-2.5 px-5 py-3.5 rounded-2xl shadow-xl text-white font-bold text-sm max-w-md w-full justify-center ${/✓|کرا|تۆمار|نێردرا|وەرگ/.test(msg) ? "bg-emerald-600" : "bg-slate-900"}`}>
             {/✓|کرا|تۆمار|نێردرا|وەرگ/.test(msg) ? <CheckCircle2 className="w-5 h-5 shrink-0" /> : <AlertTriangle className="w-5 h-5 shrink-0" />}
             <span>{msg.replace(" ✓", "")}</span>
           </div>
@@ -596,7 +658,7 @@ export default function App() {
             )}
           </nav>
           <main className="flex-1 p-3 pb-24 md:p-6 md:pb-6 max-w-5xl w-full mx-auto">
-            {page === "dash" && <Dashboard {...shared} go={setPage} />}
+            {page === "dash" && <Dashboard {...shared} batches={batches} go={setPage} />}
             {page === "safes" && <><Back onClick={() => setPage("dash")} t="گەڕانەوە بۆ داشبۆرد" /><Safes {...shared} addDeposit={addDeposit} addExpense={addExpense} addCurrency={addCurrency} /></>}
             {page === "rates" && <><Back onClick={() => setPage("dash")} t="گەڕانەوە بۆ داشبۆرد" /><Rates {...shared} saveRates={saveRates} /></>}
             {page === "profit" && <><Back onClick={() => setPage("dash")} t="گەڕانەوە بۆ داشبۆرد" /><ProfitPage {...shared} /></>}
@@ -701,7 +763,7 @@ function Login() {
 }
 
 /* ══════════════════ داشبۆرد ══════════════════ */
-function Dashboard({ data, calc, cur, mySafe, profitIn, investorsProfitIn, sumUsd, ratesReady, owners, go }) {
+function Dashboard({ data, calc, cur, mySafe, profitIn, investorsProfitIn, sumUsd, ratesReady, owners, batches, go }) {
   const today = dOnly(new Date().toISOString());
   const todayTxs = data.txs.filter((t) => !t.deleted && dOnly(t.date) === today);
   const pTod = profitIn(today, today);
@@ -711,8 +773,18 @@ function Dashboard({ data, calc, cur, mySafe, profitIn, investorsProfitIn, sumUs
   const pendingCount = pendBuy + pendSell;
   const noRates = data.currencies.some((c) => c.id !== "usd" && (!c.buyRate || !c.sellRate));
 
-  const Stat = ({ t, v, tone }) => (
-    <Card className="p-4">
+  /* ئاگادارییەکان — ئەوەی پێویستە سەرنجی بدەیت */
+  const alerts = [];
+  if (noRates) alerts.push({ tone: "amber", Ic: AlertTriangle, t: "نرخی هەموو دراوەکان دانەنراوە — کلیک بکە", go: () => go("rates") });
+  const newBatches = (batches || []).filter((b) => b.status === "new").length;
+  if (newBatches) alerts.push({ tone: "green", Ic: ScanLine, t: `${newBatches} کۆمەڵەی فیشی نوێ چاوەڕوانی پشکنینن`, go: () => go("receipts") });
+  const oldPend = data.txs.filter((t) => !t.deleted && t.status === "pending" && (Date.now() - new Date(t.date).getTime()) > 3 * 86400000).length;
+  if (oldPend) alerts.push({ tone: "amber", Ic: AlertTriangle, t: `${oldPend} مامەڵە زیاتر لە ٣ ڕۆژە چاوەڕوانی پارەن`, go: () => go("txs") });
+  const negP = data.users.filter((u) => u.role === "partner" && !u.deleted && Object.values(calc.partner[u.id] || {}).some((v) => v < 0));
+  if (negP.length) alerts.push({ tone: "red", Ic: TrendingDown, t: `قەرزارت لای ${negP.map((u) => u.name).join("، ")}`, go: () => go("people") });
+
+  const Stat = ({ t, v, tone, i = 0 }) => (
+    <Card className="p-4 fade-up" style={{ animationDelay: `${i * 50}ms` }}>
       <div className="text-xs text-slate-500 mb-1">{t}</div>
       <div className={`text-2xl font-bold ${tone || ""}`} style={num}>{v}</div>
     </Card>
@@ -722,19 +794,26 @@ function Dashboard({ data, calc, cur, mySafe, profitIn, investorsProfitIn, sumUs
     <div className="space-y-4">
       <H sub={new Date().toLocaleDateString("en-GB")}>داشبۆرد</H>
 
-      {noRates && (
-        <Card className="p-4 border-amber-300 bg-amber-50/60" onClick={() => go("rates")}>
-          <div className="flex items-center gap-2 text-sm text-amber-900 font-semibold">
-            <AlertTriangle className="w-4 h-4" /> هێشتا نرخی هەموو دراوەکان دانەنراوە — کلیک بکە بۆ دانانی نرخی ئەمڕۆ
-          </div>
-        </Card>
+      {alerts.length > 0 && (
+        <div className="space-y-2">
+          {alerts.map((a, i) => (
+            <Card key={i} onClick={a.go} style={{ animationDelay: `${i * 50}ms` }}
+              className={`fade-up p-3.5 ${a.tone === "red" ? "border-rose-300 bg-rose-50/60" : a.tone === "amber" ? "border-amber-300 bg-amber-50/60" : "border-emerald-300 bg-emerald-50/50"}`}>
+              <div className={`flex items-center gap-2 text-sm font-semibold ${a.tone === "red" ? "text-rose-900" : a.tone === "amber" ? "text-amber-900" : "text-emerald-900"}`}>
+                <a.Ic className="w-4 h-4 shrink-0" />
+                <span className="flex-1">{a.t}</span>
+                <ChevronLeft className="w-4 h-4 opacity-40" />
+              </div>
+            </Card>
+          ))}
+        </div>
       )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Stat t="مامەڵەی ئەمڕۆ" v={todayTxs.length} />
-        <Stat t="کڕین" v={todayTxs.filter((t) => t.type === "buy").length} tone="text-emerald-700" />
-        <Stat t="فرۆشتن" v={todayTxs.filter((t) => t.type === "sell").length} tone="text-rose-700" />
-        <Stat t="چاوەڕوانی پارە" v={pendingCount} tone={pendingCount ? "text-amber-600" : ""} />
+        <Stat t="مامەڵەی ئەمڕۆ" v={todayTxs.length} i={0} />
+        <Stat t="کڕین" v={todayTxs.filter((t) => t.type === "buy").length} tone="text-emerald-700" i={1} />
+        <Stat t="فرۆشتن" v={todayTxs.filter((t) => t.type === "sell").length} tone="text-rose-700" i={2} />
+        <Stat t="چاوەڕوانی پارە" v={pendingCount} tone={pendingCount ? "text-amber-600" : ""} i={3} />
       </div>
 
       <div className="grid md:grid-cols-2 gap-4">
@@ -765,7 +844,7 @@ function Dashboard({ data, calc, cur, mySafe, profitIn, investorsProfitIn, sumUs
           </div>
           {data.currencies.filter((c) => c.id !== "usd").map((c) => (
             <div key={c.id} className="flex justify-between items-center py-1.5 border-b border-stone-100 last:border-0 text-sm">
-              <span className="text-slate-600">{c.name}</span>
+              <span className="text-slate-600 flex items-center gap-2"><CurBadge c={c} size="sm" /> {c.name}</span>
               <span style={num} className="text-slate-800">
                 <span className="text-emerald-700 font-semibold">{c.buyRate ? fmt(c.buyRate, 4) : "—"}</span>
                 <span className="text-slate-300 mx-1.5">/</span>
@@ -801,24 +880,33 @@ function SafeCards({ data, calc, cur, mySafe, sumUsd, ratesReady, owners, go }) 
         <div className="grid grid-cols-2 gap-3 mb-4">
           <div className="bg-slate-900 text-white rounded-xl p-4">
             <div className="text-[11px] text-slate-400">کۆی گشتی بە دۆلار</div>
-            <div className="text-2xl font-bold" style={num}>{fmt(sumUsd(calc.phys), 0)} <span className="text-sm text-amber-400">$</span></div>
+            <div className="text-2xl font-bold"><CountUp v={sumUsd(calc.phys)} /> <span className="text-sm text-amber-400">$</span></div>
           </div>
           <div className="bg-emerald-700 text-white rounded-xl p-4">
             <div className="text-[11px] text-emerald-100">ماڵی خۆم بە دۆلار</div>
-            <div className="text-2xl font-bold" style={num}>{fmt(sumUsd(mySafe), 0)} <span className="text-sm text-amber-300">$</span></div>
+            <div className="text-2xl font-bold"><CountUp v={sumUsd(mySafe)} /> <span className="text-sm text-amber-300">$</span></div>
           </div>
         </div>
       )}
 
       <div className="text-[11px] text-slate-400 mb-2">کلیک لە هەر دراوێک بکە بۆ وردەکاری</div>
       <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
-        {data.currencies.map((cc) => {
+        {data.currencies.map((cc, i) => {
           const isOpen = open === cc.id;
+          const v = calc.phys[cc.id] || 0;
           return (
             <button key={cc.id} onClick={() => { setOpen(isOpen ? null : cc.id); setView("where"); }}
-              className={`text-right border rounded-xl p-3.5 transition ${isOpen ? "border-emerald-600 bg-emerald-50/60 ring-2 ring-emerald-600/15" : "border-stone-200 bg-stone-50/60 hover:border-emerald-400"}`}>
-              <div className="text-xs text-slate-500">{cc.name}</div>
-              <div className="text-xl mt-0.5"><Money v={calc.phys[cc.id] || 0} dec={0} /> <span className="text-amber-600 text-sm">{cc.symbol}</span></div>
+              style={{ animationDelay: `${i * 45}ms` }}
+              className={`fade-up press text-right border rounded-2xl p-3.5 transition ${isOpen ? "border-emerald-600 bg-emerald-50/60 ring-2 ring-emerald-600/15" : "border-stone-200 bg-white hover:border-emerald-400 lift"}`}>
+              <div className="flex items-center gap-2.5">
+                <CurBadge c={cc} pulse={isOpen} />
+                <div className="min-w-0">
+                  <div className="text-[11px] text-slate-500 truncate">{cc.name}</div>
+                  <div className={`text-lg font-bold ${v < 0 ? "text-rose-700" : "text-slate-900"}`}>
+                    <CountUp v={v} />
+                  </div>
+                </div>
+              </div>
             </button>
           );
         })}
@@ -1026,8 +1114,9 @@ function Safes({ data, calc, cur, usr, mySafe, invUnpaid, owners, ratesReady, ad
             <div key={c.id}>
               <button onClick={() => setOpenCur(openCur === c.id ? null : c.id)}
                 className={`w-full flex justify-between items-center py-2.5 border-b border-stone-100 transition ${openCur === c.id ? "text-emerald-700" : "hover:text-emerald-700"}`}>
-                <span className="text-sm flex items-center gap-1.5">
+                <span className="text-sm flex items-center gap-2">
                   <ChevronLeft className={`w-3.5 h-3.5 transition-transform ${openCur === c.id ? "-rotate-90" : "rotate-180"}`} />
+                  <CurBadge c={c} size="sm" />
                   {c.name}
                 </span>
                 <Money v={calc.phys[c.id] || 0} dec={0} />
@@ -2097,6 +2186,84 @@ function PartnerReceipts({ partnerId, usr, data }) {
 }
 
 
+/* کەشف حساب — پوختەی حیسابی کڕیارێک بۆ ناردن */
+function Statement({ u, txs, c, cur, onClose, flash }) {
+  const today = new Date().toLocaleDateString("en-GB");
+  const owe = Object.entries(c.owe || {}).filter(([, v]) => v);
+  const due = Object.entries(c.due || {}).filter(([, v]) => v);
+  const last = txs.slice(0, 15);
+
+  const text = (() => {
+    const L = ["📄 کەشف حساب", `👤 ${u.name}`, `📅 ${today}`, ""];
+    L.push("── دوا مامەڵەکان ──");
+    last.forEach((t) => {
+      const kind = t.type === "buy" ? "فرۆشتنت" : "کڕینت";
+      L.push(`${new Date(t.date).toLocaleDateString("en-GB")} · ${kind} ${fmt(t.amount, 0)} ${cur(t.curId).code} = ${fmt(t.total, 0)} ${cur(t.againstId).code}${t.status === "pending" ? " (چاوەڕوان)" : ""}`);
+    });
+    L.push("");
+    L.push("── حیسابی کۆتایی ──");
+    if (owe.length) { L.push("پارەی تۆ لای من:"); owe.forEach(([cid, v]) => L.push(`   ${fmt(v, 0)} ${cur(cid).code}`)); }
+    if (due.length) { L.push("قەرزی تۆ:"); due.forEach(([cid, v]) => L.push(`   ${fmt(v, 0)} ${cur(cid).code}`)); }
+    if (!owe.length && !due.length) L.push("حیساب پاکە ✅");
+    return L.join("\n");
+  })();
+
+  const copy = () => navigator.clipboard.writeText(text).then(() => flash("کۆپی کرا ✓"));
+  const share = async () => { if (navigator.share) { try { await navigator.share({ text }); } catch {} } else copy(); };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-end md:items-center justify-center md:p-6" onClick={onClose}>
+      <div className="bg-white w-full max-w-lg rounded-t-3xl md:rounded-2xl max-h-[88vh] overflow-y-auto" onClick={(ev) => ev.stopPropagation()}>
+        <div className="sticky top-0 bg-white border-b border-stone-200 px-5 py-3.5 flex items-center justify-between">
+          <div className="font-bold text-slate-900">کەشف حساب</div>
+          <button onClick={onClose} className="p-1.5 text-slate-400"><X className="w-5 h-5" /></button>
+        </div>
+        <div className="p-5">
+          <div className="border border-stone-200 rounded-2xl overflow-hidden">
+            <div className="bg-slate-900 text-white px-4 py-3">
+              <div className="font-bold">{u.name}</div>
+              <div className="text-xs text-slate-400 mt-0.5" style={num}>{today}</div>
+            </div>
+            <div className="p-4">
+              <div className="text-[11px] font-bold text-slate-400 uppercase mb-2">دوا مامەڵەکان</div>
+              {last.length === 0 ? <div className="text-sm text-slate-400">هیچ</div> :
+                last.map((t) => (
+                  <div key={t.id} className="flex justify-between items-center py-1.5 border-b border-stone-100 last:border-0 text-sm">
+                    <span className="text-slate-600">
+                      <span style={num} className="text-xs text-slate-400">{new Date(t.date).toLocaleDateString("en-GB")}</span>
+                      <span className="mr-2">{t.type === "buy" ? "فرۆشتنت" : "کڕینت"}</span>
+                      {t.status === "pending" && <Pill tone="amber">چاوەڕوان</Pill>}
+                    </span>
+                    <span className="font-bold" style={num}>{fmt(t.amount, 0)} {cur(t.curId).code}</span>
+                  </div>
+                ))}
+              <div className="mt-3 pt-3 border-t border-stone-200 space-y-1.5">
+                {owe.map(([cid, v]) => (
+                  <div key={cid} className="flex justify-between text-sm">
+                    <span className="text-slate-600">پارەی تۆ لای من</span>
+                    <span className="font-bold text-rose-700" style={num}>{fmt(v, 0)} {cur(cid).code}</span>
+                  </div>
+                ))}
+                {due.map(([cid, v]) => (
+                  <div key={cid} className="flex justify-between text-sm">
+                    <span className="text-slate-600">قەرزی تۆ</span>
+                    <span className="font-bold text-emerald-700" style={num}>{fmt(v, 0)} {cur(cid).code}</span>
+                  </div>
+                ))}
+                {!owe.length && !due.length && <div className="text-sm text-emerald-700 font-semibold text-center py-1">حیساب پاکە ✅</div>}
+              </div>
+            </div>
+          </div>
+          <div className="flex gap-2 mt-4">
+            <Btn className="flex-1" onClick={share}>ناردن</Btn>
+            <Btn kind="ghost" className="flex-1" onClick={copy}>کۆپیکردن</Btn>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ══════════════════ ناوەندی بەکارهێنەران ══════════════════ */
 function PeopleHub(p) {
   const [tab, setTab] = useState("customers");
@@ -2121,10 +2288,10 @@ function PeopleHub(p) {
 }
 
 /* ══════════════════ کڕیاران ══════════════════ */
-function Customers({ data, calc, cur, usr, detailId, setDetailId, onSave, settle, ...rest }) {
+function Customers({ data, calc, cur, usr, detailId, setDetailId, onSave, settle, flash, ...rest }) {
   const customers = data.users.filter((u) => u.role === "customer" && !u.deleted);
   const [q, setQ] = useState("");
-  if (detailId) return <CustomerDetail id={detailId} back={() => setDetailId(null)} data={data} calc={calc} cur={cur} usr={usr} onSave={onSave} settle={settle} {...rest} />;
+  if (detailId) return <CustomerDetail id={detailId} back={() => setDetailId(null)} data={data} calc={calc} cur={cur} usr={usr} onSave={onSave} settle={settle} flash={flash} {...rest} />;
   const list = customers.filter((u) => !q || (u.name || "").includes(q) || (u.phone || "").includes(q));
   return (
     <div className="space-y-3">
@@ -2156,8 +2323,9 @@ function Customers({ data, calc, cur, usr, detailId, setDetailId, onSave, settle
 }
 
 /* دوو قاسەی کڕیار + مێژووی فلتەرکراو */
-function CustomerDetail({ id, back, data, calc, cur, usr, onSave, settle, ...rest }) {
+function CustomerDetail({ id, back, data, calc, cur, usr, onSave, settle, flash, ...rest }) {
   const u = usr(id);
+  const [stmt, setStmt] = useState(false);
   const c = calc.cust[id] || { owe: {}, due: {} };
   const base = data.txs.filter((t) => !t.deleted && t.cpId === id).reverse();
   const [list, f, setF] = useTxFilter(base, cur, usr);
@@ -2165,10 +2333,16 @@ function CustomerDetail({ id, back, data, calc, cur, usr, onSave, settle, ...res
   return (
     <div className="space-y-4">
       <Back onClick={back} t="گەڕانەوە بۆ لیستی کڕیاران" />
-      <div>
-        <h2 className="text-xl font-bold text-slate-900">{u.name}</h2>
-        {(u.phone || u.address) && <div className="text-xs text-slate-500 mt-0.5">{u.phone && <span style={num}>{u.phone}</span>}{u.phone && u.address && " · "}{u.address}</div>}
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h2 className="text-xl font-bold text-slate-900">{u.name}</h2>
+          {(u.phone || u.address) && <div className="text-xs text-slate-500 mt-0.5">{u.phone && <span style={num}>{u.phone}</span>}{u.phone && u.address && " · "}{u.address}</div>}
+        </div>
+        <Btn kind="ghost" className="flex items-center gap-1.5" onClick={() => setStmt(true)}>
+          <Share2 className="w-4 h-4" /> کەشف حساب
+        </Btn>
       </div>
+      {stmt && <Statement u={u} txs={base} c={c} cur={cur} flash={flash} onClose={() => setStmt(false)} />}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <Card className="p-4 border-rose-200 bg-rose-50/40">

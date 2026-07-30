@@ -21,12 +21,17 @@ const num = { fontVariantNumeric: "tabular-nums", direction: "ltr", unicodeBidi:
 const dOnly = (d) => (d || "").slice(0, 10);
 
 /* ══════════════════ پێکهاتە بچووکەکان ══════════════════ */
-const Card = ({ children, className = "", onClick }) => (
-  <div onClick={onClick}
-    className={`bg-white border border-stone-200/80 rounded-2xl shadow-[0_1px_3px_rgba(0,0,0,0.04)] ${onClick ? "cursor-pointer hover:border-emerald-500 hover:shadow-md transition" : ""} ${className}`}>
-    {children}
-  </div>
-);
+const Card = ({ children, className = "", onClick, dark, accent }) => {
+  const base = dark ? "bg-slate-900 border-slate-900 text-white"
+    : accent ? "bg-emerald-700 border-emerald-700 text-white"
+    : "bg-white border-stone-200/80";
+  return (
+    <div onClick={onClick}
+      className={`${base} border rounded-2xl shadow-[0_1px_3px_rgba(0,0,0,0.04)] ${onClick ? "cursor-pointer hover:border-emerald-500 hover:shadow-md transition" : ""} ${className}`}>
+      {children}
+    </div>
+  );
+};
 const H = ({ children, sub }) => (
   <div className="mb-4">
     <h2 className="text-xl font-bold text-slate-900 tracking-tight">{children}</h2>
@@ -531,40 +536,40 @@ export default function App() {
 
   return (
     <div dir="rtl" className="min-h-screen bg-[#F6F5F2] text-slate-800" style={{ fontFamily: "'Segoe UI', Tahoma, sans-serif" }}>
-      {msg && <div className="fixed top-4 left-4 z-50 bg-slate-900 text-white text-sm px-4 py-2.5 rounded-xl shadow-lg">{msg}</div>}
-      {busy && <div className="fixed top-0 right-0 left-0 h-0.5 bg-emerald-600 animate-pulse z-50" />}
-
-      <header className="bg-slate-900 text-white px-3 md:px-4 py-2.5 flex items-center justify-between gap-2 sticky top-0 z-40">
-        <div className="flex items-center gap-2.5">
-          <Vault className="w-6 h-6 text-amber-400" />
-          <div>
-            <div className="font-bold leading-tight text-sm md:text-base">سیستەمی دراو</div>
-            <div className="text-[11px] text-slate-400">{profile.name} — {ROLE_KU[profile.role]}</div>
+      {msg && (
+        <div className="fixed top-0 right-0 left-0 z-[60] flex justify-center px-4" style={{ paddingTop: "calc(env(safe-area-inset-top) + 12px)" }}>
+          <div className={`flex items-center gap-2.5 px-5 py-3.5 rounded-2xl shadow-xl text-white font-bold text-sm max-w-md w-full justify-center ${/✓|کرا|تۆمار|نێردرا|وەرگ/.test(msg) ? "bg-emerald-600" : "bg-slate-900"}`}>
+            {/✓|کرا|تۆمار|نێردرا|وەرگ/.test(msg) ? <CheckCircle2 className="w-5 h-5 shrink-0" /> : <AlertTriangle className="w-5 h-5 shrink-0" />}
+            <span>{msg.replace(" ✓", "")}</span>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          {isAdmin && !va && (
-            <div className="flex items-center gap-1.5">
-              <Eye className="w-4 h-4 text-slate-400" />
-              <select value="" onChange={(e) => e.target.value && setViewAs(e.target.value)} className="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-sm">
-                <option value="">بینین وەک...</option>
-                {data.users.filter((u) => u.role !== "admin" && !u.deleted).map((u) => <option key={u.id} value={u.id}>{u.name} ({ROLE_KU[u.role]})</option>)}
-              </select>
+      )}
+      {busy && <div className="fixed top-0 right-0 left-0 h-0.5 bg-emerald-600 animate-pulse z-50" />}
+
+      <header className="bg-slate-900 text-white sticky top-0 z-40" style={{ paddingTop: "env(safe-area-inset-top)" }}>
+        <div className="px-3 md:px-4 py-2.5 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <Vault className="w-6 h-6 text-amber-400 shrink-0" />
+            <div className="min-w-0">
+              <div className="font-bold leading-tight text-sm md:text-base truncate">سیستەمی دراو</div>
+              <div className="text-[11px] text-slate-400 truncate">{profile.name} — {ROLE_KU[profile.role]}</div>
             </div>
-          )}
-          {isAdmin && va && (
-            <button onClick={() => setViewAs(null)} className="flex items-center gap-1 text-sm bg-amber-600 hover:bg-amber-700 px-3 py-1.5 rounded-lg">
-              <LogOut className="w-4 h-4" /> گەڕانەوە ({va.name})
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {isAdmin && va && (
+              <button onClick={() => setViewAs(null)} className="flex items-center gap-1 text-xs bg-amber-600 hover:bg-amber-700 px-2.5 py-1.5 rounded-lg">
+                <LogOut className="w-3.5 h-3.5" /> گەڕانەوە
+              </button>
+            )}
+            <button onClick={signOut} className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700">
+              <LogOut className="w-4 h-4" />
             </button>
-          )}
-          <button onClick={signOut} className="flex items-center gap-1 text-sm bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-1.5 rounded-lg">
-            <LogOut className="w-4 h-4" /> <span className="hidden sm:inline">دەرچوون</span>
-          </button>
+          </div>
         </div>
       </header>
 
       {portalUser ? (
-        <main className="p-4 pb-8 max-w-3xl mx-auto"><Portal user={portalUser} {...shared} officePay={officePay} settle={settle} flash={flash} reloadBatches={reloadBatches} /></main>
+        <main className="p-3 md:p-5 pb-10 max-w-3xl mx-auto"><Portal user={portalUser} {...shared} officePay={officePay} settle={settle} flash={flash} reloadBatches={reloadBatches} /></main>
       ) : (
         <div className="flex flex-col md:flex-row">
           {/* لیستی لاتەنیشت — تەنها لە شاشەی گەورە */}
@@ -575,6 +580,20 @@ export default function App() {
                 <Ic className="w-[18px] h-[18px]" /> {t}
               </button>
             ))}
+            {isAdmin && (
+              <div className="mt-4 pt-3 border-t border-stone-200">
+                <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-400 mb-1.5 px-1">
+                  <Eye className="w-3.5 h-3.5" /> بینین وەک
+                </div>
+                <select value="" onChange={(e) => e.target.value && setViewAs(e.target.value)}
+                  className="w-full border border-stone-300 rounded-lg px-2 py-2 text-xs bg-white">
+                  <option value="">کەسێک هەڵبژێرە...</option>
+                  {data.users.filter((u) => u.role !== "admin" && !u.deleted).map((u) => (
+                    <option key={u.id} value={u.id}>{u.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
           </nav>
           <main className="flex-1 p-3 pb-24 md:p-6 md:pb-6 max-w-5xl w-full mx-auto">
             {page === "dash" && <Dashboard {...shared} go={setPage} />}
@@ -594,7 +613,7 @@ export default function App() {
           </main>
 
           {/* لیستی خوارەوە — تەنها لە مۆبایل */}
-          <nav className="md:hidden fixed bottom-0 right-0 left-0 z-40 bg-white border-t border-stone-200 flex" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
+          <nav className="md:hidden fixed bottom-0 right-0 left-0 z-40 bg-white border-t border-stone-200 flex" style={{ paddingBottom: "max(env(safe-area-inset-bottom), 4px)" }}>
             {NAV.slice(0, 4).map(([id, t, Ic]) => (
               <button key={id} onClick={() => { setPage(id); setDetailId(null); setEditTx(null); setMore(false); }}
                 className={`flex-1 flex flex-col items-center gap-0.5 py-2.5 text-[10px] font-semibold transition ${page === id ? "text-emerald-700" : "text-slate-400"}`}>
@@ -620,6 +639,19 @@ export default function App() {
                     <Ic className="w-5 h-5" /> {t}
                   </button>
                 ))}
+                {isAdmin && (
+                  <div className="mt-3 pt-3 border-t border-stone-200">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 mb-2 px-1">
+                      <Eye className="w-4 h-4" /> بینین وەک بەکارهێنەرێکی تر
+                    </div>
+                    <Sel value="" onChange={(e) => { if (e.target.value) { setViewAs(e.target.value); setMore(false); } }}>
+                      <option value="">کەسێک هەڵبژێرە...</option>
+                      {data.users.filter((u) => u.role !== "admin" && !u.deleted).map((u) => (
+                        <option key={u.id} value={u.id}>{u.name} ({ROLE_KU[u.role]})</option>
+                      ))}
+                    </Sel>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -1090,7 +1122,12 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
   const partners = data.users.filter((u) => u.role === "partner" && !u.deleted);
 
   const auto = autoRate(f.type, f.curId, f.againstId);
-  const rate = f.manualRate ? +f.rate : (auto || 0);
+  // نرخی ڕۆژ خۆکار دادەنرێت، بەڵام هەر کاتێک دەتوانیت بیگۆڕیت
+  useEffect(() => {
+    if (!f.manualRate && auto) setF((x) => (+x.rate === auto ? x : { ...x, rate: auto }));
+  }, [auto, f.manualRate]);
+  const rate = +f.rate || 0;
+  const offDay = auto && rate && Math.abs(rate - auto) > auto * 0.0001;
   const amtR = Math.round(+f.amount || 0);
   const total = Math.round(amtR * rate);
   const av = f.type === "sell" ? avgRate(f.curId, f.againstId) : null;
@@ -1143,17 +1180,25 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
             </div>
             <div className="text-left">
               <div className="text-xs text-slate-500 mb-1">نرخی یەک یەکە</div>
-              {f.manualRate
-                ? <div className="flex items-center gap-2">
-                    <Inp type="number" step="any" dir="ltr" value={f.rate} onChange={(ev) => setF({ ...f, rate: ev.target.value })} className="w-32" />
-                    <button onClick={() => setF({ ...f, manualRate: false })} className="text-xs text-emerald-700 font-semibold">ئۆتۆماتیکی</button>
-                  </div>
-                : <div className="flex items-center gap-2">
-                    <span style={num} className="font-bold text-slate-800">{auto ? fmt(auto, 6) : "نرخ دانەنراوە"}</span>
-                    <button onClick={() => setF({ ...f, manualRate: true, rate: auto || "" })} className="text-xs text-slate-500 underline">گۆڕین</button>
-                  </div>}
+              <Inp type="number" step="any" dir="ltr" value={f.rate}
+                onChange={(ev) => setF({ ...f, rate: ev.target.value, manualRate: true })}
+                className={`w-36 text-center font-bold ${offDay ? "border-amber-500 bg-amber-50" : ""}`} />
             </div>
           </div>
+
+          <div className="flex items-center justify-between flex-wrap gap-2 mt-3 pt-3 border-t border-stone-200 text-xs">
+            <span className="text-slate-500">
+              نرخی ڕۆژ: <b style={num} className="text-slate-700">{auto ? fmt(auto, 6) : "دانەنراوە"}</b>
+            </span>
+            {offDay && (
+              <div className="flex items-center gap-2">
+                <span className="text-amber-700 font-semibold">نرخێکی تایبەت بەکاردێت</span>
+                <button onClick={() => setF({ ...f, manualRate: false, rate: auto })}
+                  className="text-emerald-700 font-semibold underline">گەڕانەوە بۆ نرخی ڕۆژ</button>
+              </div>
+            )}
+          </div>
+
           {(av !== null || estProfit !== null) && (
             <div className="flex gap-5 flex-wrap text-sm mt-3 pt-3 border-t border-stone-200">
               {av !== null && <span className="text-slate-500">مامناوەندی کڕین: <span style={num}>{fmt(av, 6)}</span></span>}
@@ -1385,6 +1430,20 @@ async function prepImage(file) {
 }
 const normRef = (r) => String(r || "").replace(/[\s\-_.]/g, "").toUpperCase();
 
+/* گۆڕینی بڕێک بۆ دۆلار بەپێی نرخی ئەمڕۆ — بەپێی کۆدی دراو */
+const usdConv = (data) => (amount, code) => {
+  if (!amount || !code) return null;
+  const c = (data?.currencies || []).find((x) => x.code === code);
+  if (!c) return null;
+  if (c.id === "usd") return amount;
+  const mid = c.buyRate && c.sellRate ? (c.buyRate + c.sellRate) / 2 : (c.buyRate || c.sellRate);
+  return mid ? amount / mid : null;
+};
+
+/* نیشاندانی بەرامبەری دۆلار */
+const UsdHint = ({ v, className = "" }) =>
+  v == null ? null : <span className={`text-slate-400 ${className}`} style={num}>≈ {fmt(v, 0)} $</span>;
+
 /* وێنەی فیش لە Storage — بە لینکی کاتی */
 function ReceiptImg({ path, className }) {
   const [url, setUrl] = useState(null);
@@ -1400,7 +1459,7 @@ function ReceiptImg({ path, className }) {
 }
 
 /* ─────────── ئەپلۆدکەری فیش ─────────── */
-function ReceiptUploader({ customerId, customerName, uploaderId, onDone, flash }) {
+function ReceiptUploader({ customerId, customerName, uploaderId, onDone, flash, data }) {
   const [rows, setRows] = useState([]);
   const [working, setWorking] = useState(false);
   const [prog, setProg] = useState(null);
@@ -1599,7 +1658,7 @@ function ReceiptUploader({ customerId, customerName, uploaderId, onDone, flash }
             ))}
           </Card>
 
-          <ReceiptTotals gross={gross} fees={fees} net={net} byRecv={byRecv} n={good.length} dupN={dupN} />
+          <ReceiptTotals gross={gross} fees={fees} net={net} byRecv={byRecv} n={good.length} dupN={dupN} data={data} />
 
           <Btn className="w-full" onClick={send} disabled={sending || !good.length}>
             {sending ? "ناردن..." : `ناردنی ${good.length} فیش`}
@@ -1611,8 +1670,9 @@ function ReceiptUploader({ customerId, customerName, uploaderId, onDone, flash }
 }
 
 /* کۆکردنەوەی فیشەکان */
-function ReceiptTotals({ gross, fees, net, byRecv, n, dupN }) {
+function ReceiptTotals({ gross, fees, net, byRecv, n, dupN, data }) {
   const recvList = Object.entries(byRecv || {}).sort((a, b) => b[1].n - a[1].n);
+  const u = usdConv(data);
   return (
     <>
       {recvList.length > 0 && (
@@ -1626,7 +1686,10 @@ function ReceiptTotals({ gross, fees, net, byRecv, n, dupN }) {
               </div>
               <div className="text-left">
                 {Object.entries(v.cur).map(([c, a]) => (
-                  <div key={c} className="text-lg font-bold text-slate-900" style={num}>{fmt(a, 0)} <span className="text-xs font-normal text-slate-500">{c}</span></div>
+                  <div key={c}>
+                    <div className="text-lg font-bold text-slate-900" style={num}>{fmt(a, 0)} <span className="text-xs font-normal text-slate-500">{c}</span></div>
+                    <div className="text-[11px]"><UsdHint v={u(a, c)} /></div>
+                  </div>
                 ))}
               </div>
             </div>
@@ -1651,11 +1714,22 @@ function ReceiptTotals({ gross, fees, net, byRecv, n, dupN }) {
               )}
               <div className="flex justify-between pt-2.5 mt-1 border-t border-stone-200 items-baseline">
                 <span className="text-sm font-bold text-slate-800">بێ فی (گەیشتووە)</span>
-                <span className="text-2xl font-bold text-emerald-700" style={num}>{fmt(net[c], 0)}</span>
+                <div className="text-left">
+                  <div className="text-2xl font-bold text-emerald-700" style={num}>{fmt(net[c], 0)}</div>
+                  <div className="text-xs"><UsdHint v={u(net[c], c)} /></div>
+                </div>
               </div>
             </div>
           ))}
-        <div className="text-xs text-slate-400 mt-2" style={num}>{n} فیش{dupN ? ` · ${dupN} دووبارە دەرکراوە` : ""}</div>
+        <div className="text-xs text-slate-400 mt-2 flex flex-wrap gap-x-3" style={num}>
+          <span>{n} فیش{dupN ? ` · ${dupN} دووبارە دەرکراوە` : ""}</span>
+          {Object.keys(gross).map((c) => {
+            const cc = (data?.currencies || []).find((x) => x.code === c);
+            if (!cc || cc.id === "usd") return null;
+            const mid = cc.buyRate && cc.sellRate ? (cc.buyRate + cc.sellRate) / 2 : (cc.buyRate || cc.sellRate);
+            return mid ? <span key={c}>نرخی {c}: {fmt(mid, 4)}</span> : null;
+          })}
+        </div>
       </Card>
     </>
   );
@@ -1663,6 +1737,7 @@ function ReceiptTotals({ gross, fees, net, byRecv, n, dupN }) {
 
 /* ─────────── ئینباکسی ئەدمین ─────────── */
 function ReceiptInbox({ data, usr, batches, reloadBatches, flash, onMakeTx, profile }) {
+  const u = usdConv(data);
   const [sel, setSel] = useState(null);
   const [tab, setTab] = useState("new");
   const [addFor, setAddFor] = useState("");
@@ -1710,6 +1785,7 @@ function ReceiptInbox({ data, usr, batches, reloadBatches, flash, onMakeTx, prof
               <div className="text-left shrink-0">
                 <div className="text-xl font-bold text-emerald-700" style={num}>{fmt(b.total_net, 0)}</div>
                 <div className="text-[11px] text-slate-400">{b.currency} بێ فی</div>
+                {u(b.total_net, b.currency) != null && <div className="text-[11px] text-slate-500" style={num}>≈ {fmt(u(b.total_net, b.currency), 0)} $</div>}
                 {b.total_fee > 0 && <div className="text-[10px] text-slate-400" style={num}>بە فی {fmt(b.total_gross, 0)}</div>}
               </div>
             </div>
@@ -1724,7 +1800,7 @@ function ReceiptInbox({ data, usr, batches, reloadBatches, flash, onMakeTx, prof
         </Sel>
         {addFor && (
           <div className="mt-3">
-            <ReceiptUploader customerId={addFor} customerName={usr(addFor).name} uploaderId={profile?.id}
+            <ReceiptUploader customerId={addFor} customerName={usr(addFor).name} uploaderId={profile?.id} data={data}
               flash={flash} onDone={() => { setAddFor(""); reloadBatches(); }} />
           </div>
         )}
@@ -1780,7 +1856,7 @@ function BatchDetail({ id, back, usr, data, onMakeTx, flash, reloadBatches }) {
           : <Pill tone="slate">بەستراوە بە مامەڵە</Pill>}
       </div>
 
-      <ReceiptTotals gross={gross} fees={fees} net={net} byRecv={byRecv} n={good.length} dupN={recs.length - good.length} />
+      <ReceiptTotals gross={gross} fees={fees} net={net} byRecv={byRecv} n={good.length} dupN={recs.length - good.length} data={data} />
 
       {b.status === "new" && (
         <Card className="p-5 border-emerald-300 bg-emerald-50/40">
@@ -1894,7 +1970,8 @@ function ReceiptArchive({ customerId }) {
 }
 
 /* ─────────── فیشەکانی لای هاوبەشێک ─────────── */
-function PartnerReceipts({ partnerId, usr }) {
+function PartnerReceipts({ partnerId, usr, data }) {
+  const u = usdConv(data);
   const [recs, setRecs] = useState(null);
   const [mode, setMode] = useState("month");
   const [view, setView] = useState("list");
@@ -1940,12 +2017,15 @@ function PartnerReceipts({ partnerId, usr }) {
         ))}
       </div>
 
-      <Card className="p-5 bg-slate-900 border-slate-900 text-white">
+      <Card dark className="p-5">
         <div className="text-xs text-slate-400 mb-2">کۆی ئەو پارەیەی هاتووە</div>
         {Object.entries(tot).map(([c, v]) => (
-          <div key={c} className="flex justify-between items-baseline py-1">
+          <div key={c} className="flex justify-between items-baseline py-1.5">
             <span className="text-sm text-slate-300">{c}</span>
-            <span className="text-2xl font-bold" style={num}>{fmt(v, 0)}</span>
+            <div className="text-left">
+              <div className="text-2xl font-bold" style={num}>{fmt(v, 0)}</div>
+              {u(v, c) != null && <div className="text-[11px] text-amber-400" style={num}>≈ {fmt(u(v, c), 0)} $</div>}
+            </div>
           </div>
         ))}
         <div className="text-[11px] text-slate-400 mt-2" style={num}>{list.length} فیش</div>
@@ -1961,7 +2041,10 @@ function PartnerReceipts({ partnerId, usr }) {
             </div>
             <div className="text-left">
               {Object.entries(v.cur).map(([c, a]) => (
-                <div key={c} className="font-bold text-slate-900" style={num}>{fmt(a, 0)} <span className="text-xs font-normal text-slate-500">{c}</span></div>
+                <div key={c}>
+                  <div className="font-bold text-slate-900" style={num}>{fmt(a, 0)} <span className="text-xs font-normal text-slate-500">{c}</span></div>
+                  <div className="text-[11px]"><UsdHint v={u(a, c)} /></div>
+                </div>
               ))}
             </div>
           </div>
@@ -2267,7 +2350,7 @@ function InvestorDetail({ u, data, calc, cur, invUnpaid, mine }) {
       {!mine && <h2 className="text-xl font-bold text-slate-900">{u.name}</h2>}
 
       {/* کۆی گشتی */}
-      <Card className="p-5 bg-slate-900 border-slate-900 text-white">
+      <Card dark className="p-5">
         <div className="flex items-center justify-between mb-3">
           <div className="text-xs text-slate-400">{mine ? "کۆی ماڵی من" : `کۆی ماڵی ${u.name}`}</div>
           <span className="text-[11px] bg-slate-800 px-2 py-0.5 rounded-full">ڕێژەی خێر {u.rate}٪</span>
@@ -2511,7 +2594,7 @@ function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare, s
         <Card className="p-4"><div className="text-xs text-slate-500">مامەڵە</div><div className="text-2xl font-bold" style={num}>{txs.length}</div></Card>
         <Card className="p-4"><div className="text-xs text-slate-500">کڕین</div><div className="text-2xl font-bold text-emerald-700" style={num}>{txs.filter((t) => t.type === "buy").length}</div></Card>
         <Card className="p-4"><div className="text-xs text-slate-500">فرۆشتن</div><div className="text-2xl font-bold text-rose-700" style={num}>{txs.filter((t) => t.type === "sell").length}</div></Card>
-        <Card className="p-4 bg-emerald-700 text-white border-emerald-700">
+        <Card accent className="p-4">
           <div className="text-xs text-emerald-100">نەتی خۆم {ratesReady ? "(دۆلار)" : ""}</div>
           <div className="text-2xl font-bold" style={num}>{ratesReady ? fmt(sumUsd(net), 0) : Object.values(net).length ? fmt(Object.values(net)[0], 0) : 0}</div>
         </Card>
@@ -2789,7 +2872,7 @@ function CustomerPortal({ user, c, base, data, cur, usr, flash, reloadBatches })
               سکرینشۆتی ئەو فیشانە هەڵبژێرە کە پارەت پێ ناردووە. سیستەمەکە خۆی دەیانخوێنێتەوە، کۆیان دەکاتەوە، و دووبارەکان دەدۆزێتەوە.
             </div>
           </Card>
-          <ReceiptUploader customerId={user.id} customerName={user.name} uploaderId={user.id}
+          <ReceiptUploader customerId={user.id} customerName={user.name} uploaderId={user.id} data={data}
             flash={flash} onDone={() => { reloadBatches && reloadBatches(); setTab("archive"); }} />
         </>
       )}
@@ -2868,7 +2951,7 @@ function PartnerPortal({ user, data, calc, cur, usr }) {
         </div>
       )}
 
-      {tab === "receipts" && <PartnerReceipts partnerId={user.id} usr={usr} />}
+      {tab === "receipts" && <PartnerReceipts partnerId={user.id} usr={usr} data={data} />}
 
       {tab === "history" && (
         hist.length === 0 ? <Card><Empty t="هیچ نییە" /></Card> :

@@ -476,7 +476,8 @@ export default function App() {
 
   const saveRates = (rows) => run(async () => {
     for (const r of rows) {
-      const e = await supabase.from("currencies").update({ buy_rate: r.buyRate === "" ? null : +r.buyRate, sell_rate: r.sellRate === "" ? null : +r.sellRate, rate_updated: now() }).eq("id", r.id);
+      const r3 = (v) => (v === "" || v == null ? null : Math.round(+v * 1000) / 1000);
+      const e = await supabase.from("currencies").update({ buy_rate: r3(r.buyRate), sell_rate: r3(r.sellRate), rate_updated: now() }).eq("id", r.id);
       if (e.error) throw e.error;
     }
     // مێژووی نرخ تۆمار بکە
@@ -902,9 +903,9 @@ function Dashboard({ data, calc, cur, mySafe, profitIn, investorsProfitIn, sumUs
             <div key={c.id} className="flex justify-between items-center py-1.5 border-b border-stone-100 last:border-0 text-sm">
               <span className="text-slate-600 flex items-center gap-2"><CurBadge c={c} size="sm" /> {c.name}</span>
               <span style={num} className="text-slate-800">
-                <span className="text-emerald-700 font-semibold">{c.buyRate ? fmt(c.buyRate, 4) : "—"}</span>
+                <span className="text-emerald-700 font-semibold">{c.buyRate ? fmt(c.buyRate, 3) : "—"}</span>
                 <span className="text-slate-300 mx-1.5">/</span>
-                <span className="text-rose-700 font-semibold">{c.sellRate ? fmt(c.sellRate, 4) : "—"}</span>
+                <span className="text-rose-700 font-semibold">{c.sellRate ? fmt(c.sellRate, 3) : "—"}</span>
               </span>
             </div>
           ))}
@@ -1081,7 +1082,7 @@ function Rates({ data, saveRates }) {
               </div>
               {r.buyRate && r.sellRate && (
                 <div className="text-[11px] text-slate-400 mt-1.5" style={num}>
-                  جیاوازی: {fmt(Math.abs(+r.buyRate - +r.sellRate), 4)} — خێری تۆ لە هەر دۆلارێک
+                  جیاوازی: {fmt(Math.abs(+r.buyRate - +r.sellRate), 3)} — خێری تۆ لە هەر دۆلارێک
                 </div>
               )}
             </div>
@@ -1284,12 +1285,12 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
   const partners = data.users.filter((u) => u.role === "partner" && !u.deleted);
 
   const auto = autoRate(f.type, f.curId, f.againstId);          // نرخی یەک یەکە (ناوەکی)
-  const autoQuote = auto ? 1 / auto : null;                       // یەک بەرامبەر چەند
+  const autoQuote = auto ? Math.round((1 / auto) * 1000) / 1000 : null;   // یەک بەرامبەر چەند — ٣ خانە
   // نرخی ڕۆژ خۆکار دادەنرێت، بەڵام هەر کاتێک دەتوانیت بیگۆڕیت
   useEffect(() => {
     if (!f.manualRate && autoQuote) setF((x) => (+x.quote === autoQuote ? x : { ...x, quote: autoQuote }));
   }, [autoQuote, f.manualRate]);
-  const quote = +f.quote || 0;                                    // ئەوەی بەکارهێنەر دەینووسێت
+  const quote = +f.quote || 0;                                    // ئەوەی بەکارهێنەر دەینووسێت (٣ خانە)
   const rate = quote ? 1 / quote : 0;                             // بۆ حیسابی ناوەکی
   const offDay = autoQuote && quote && Math.abs(quote - autoQuote) > autoQuote * 0.0001;
   const amtR = Math.round(+f.amount || 0);
@@ -1300,7 +1301,10 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
   const willBeNeg = f.type === "sell" && srcBal - amtR < 0;
   const feeRate = f.partnerId ? (usr(f.partnerId).rate || 0) : 0;
 
-  const submit = () => onSave({ ...f, rate, batchId: batch?.id }, e);
+  const submit = () => {
+    const q3 = Math.round(quote * 1000) / 1000;       // ڕەیت بە ٣ خانە
+    onSave({ ...f, rate: q3 ? 1 / q3 : 0, batchId: batch?.id }, e);
+  };
 
   return (
     <div className="space-y-4">
@@ -1354,10 +1358,10 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
 
           <div className="flex items-center justify-between flex-wrap gap-2 mt-3 pt-3 border-t border-stone-200 text-xs">
             <span className="text-slate-500">
-              نرخی ڕۆژ: <b style={num} className="text-slate-700">{autoQuote ? fmt(autoQuote, 4) : "دانەنراوە"}</b>
+              نرخی ڕۆژ: <b style={num} className="text-slate-700">{autoQuote ? fmt(autoQuote, 3) : "دانەنراوە"}</b>
               {quote > 0 && amtR > 0 && (
                 <span className="text-slate-400 mr-2" style={num}>
-                  · {fmt(amtR, 0)} ÷ {fmt(quote, 4)} = {fmt(total, 0)}
+                  · {fmt(amtR, 0)} ÷ {fmt(quote, 3)} = {fmt(total, 0)}
                 </span>
               )}
             </span>
@@ -1372,7 +1376,7 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
 
           {(av !== null || estProfit !== null) && (
             <div className="flex gap-5 flex-wrap text-sm mt-3 pt-3 border-t border-stone-200">
-              {av !== null && av > 0 && <span className="text-slate-500">مامناوەندی کڕین: <span style={num}>{fmt(1 / av, 4)}</span></span>}
+              {av !== null && av > 0 && <span className="text-slate-500">مامناوەندی کڕین: <span style={num}>{fmt(1 / av, 3)}</span></span>}
               {estProfit !== null && <span className="text-slate-500">خێری خەمڵێنراو: <Money v={estProfit} dec={cur(f.againstId).dec} pos /></span>}
             </div>
           )}
@@ -1555,7 +1559,7 @@ function TxRow({ t, cur, usr, onEdit, onDel, flip, lite, settle, unsettle }) {
           <div className="flex items-center gap-x-3 gap-y-1 flex-wrap mt-1.5 text-xs text-slate-500">
             {t.code && <span className="font-bold text-slate-400" style={num}>#{t.code}</span>}
             {!lite && name && <span className="text-slate-700 font-semibold">{name}</span>}
-<span style={num}>ڕەیت {t.rate ? fmt(1 / t.rate, 4) : "—"}</span>
+<span style={num}>ڕەیت {t.rate ? fmt(1 / t.rate, 3) : "—"}</span>
             {!lite && t.partnerId && <span className="text-amber-700">لای {usr(t.partnerId).name}</span>}
             {!lite && t.profit != null && <span>خێر <b className="text-emerald-700" style={num}>{fmt(t.profit, 0)}</b></span>}
             {!lite && t.edited && <span className="text-slate-400">(ئیدیت)</span>}
@@ -1667,7 +1671,7 @@ function ReceiptTotals({ rows, data, title, compact }) {
                 <div className="flex items-center gap-2 mb-3">
                   {cc && <CurBadge c={cc} size="sm" />}
                   <span className="text-xs font-bold text-slate-500">{cc?.name || c}</span>
-                  {mid && <span className="text-[10px] text-slate-400 mr-auto" style={num}>نرخی ڕۆژ {fmt(mid, 4)}</span>}
+                  {mid && <span className="text-[10px] text-slate-400 mr-auto" style={num}>نرخی ڕۆژ {fmt(mid, 3)}</span>}
                 </div>
                 <div className="flex justify-between py-1.5 text-sm">
                   <span className="text-slate-600">کۆی گشتی (بە فییەوە)</span>

@@ -908,7 +908,7 @@ function Dashboard({ data, calc, cur, mySafe, profitIn, investorsProfitIn, sumUs
               </span>
             </div>
           ))}
-          <div className="text-[11px] text-slate-400 mt-2">کڕین / فرۆشتن — چەند یەکە بەرامبەر ١ دۆلار</div>
+          <div className="text-[11px] text-slate-400 mt-2">کڕین / فرۆشتن — ١ دۆلار بە چەند</div>
         </Card>
       </div>
 
@@ -1047,23 +1047,44 @@ function CurrencyBreakdown({ curId, data, calc, cur, owners, ratesReady }) {
 
 /* ══════════════════ نرخی ڕۆژانە ══════════════════ */
 function Rates({ data, saveRates }) {
-  const [rows, setRows] = useState(data.currencies.filter((c) => c.id !== "usd").map((c) => ({ id: c.id, code: c.code, name: c.name, buyRate: c.buyRate ?? "", sellRate: c.sellRate ?? "" })));
+  const [rows, setRows] = useState(data.currencies.filter((c) => c.id !== "usd").map((c) => ({ id: c.id, code: c.code, name: c.name, c, buyRate: c.buyRate ?? "", sellRate: c.sellRate ?? "" })));
   const upd = (id, k, v) => setRows(rows.map((r) => (r.id === id ? { ...r, [k]: v } : r)));
   const last = data.currencies.find((c) => c.rateUpdated)?.rateUpdated;
   return (
     <div className="space-y-4">
-      <H sub="چەند یەکە بەرامبەر ١ دۆلار — دوای دانانی نرخ، لە مامەڵەکاندا ئۆتۆماتیکی بەکاردێت">نرخی ئەمڕۆ</H>
+      <H sub="ڕەیتی هەر دراوێک بەرامبەر ١ دۆلار — لە مامەڵەکاندا ئۆتۆماتیکی بەکاردێت">نرخی ئەمڕۆ</H>
       <Card className="p-5">
-        <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 gap-y-2 items-center">
-          <div className="text-xs font-semibold text-slate-500">دراو</div>
-          <div className="text-xs font-semibold text-emerald-700 w-28 text-center">نرخی کڕین</div>
-          <div className="text-xs font-semibold text-rose-700 w-28 text-center">نرخی فرۆشتن</div>
+        <div className="text-xs text-slate-500 mb-4 bg-stone-50 rounded-xl p-3 leading-relaxed">
+          <b className="text-slate-700">١ دۆلار = چەند؟</b> — نموونە: گەر ١ دۆلار بە <b>٧.٢٠</b> یەن بکڕیت و بە <b>٧.١٥</b> یەن بیفرۆشیت، ئەو دوو ژمارەیە بنووسە.
+        </div>
+        <div className="space-y-4">
           {rows.map((r) => (
-            <React.Fragment key={r.id}>
-              <div className="text-sm text-slate-700 py-1">{r.name} <span className="text-slate-400 text-xs">({r.code})</span></div>
-              <Inp type="number" step="any" dir="ltr" value={r.buyRate} onChange={(e) => upd(r.id, "buyRate", e.target.value)} className="w-28 text-center" />
-              <Inp type="number" step="any" dir="ltr" value={r.sellRate} onChange={(e) => upd(r.id, "sellRate", e.target.value)} className="w-28 text-center" />
-            </React.Fragment>
+            <div key={r.id} className="pb-4 border-b border-stone-100 last:border-0 last:pb-0">
+              <div className="flex items-center gap-2.5 mb-2.5">
+                <CurBadge c={r.c} size="sm" />
+                <span className="text-sm font-semibold text-slate-800">{r.name}</span>
+                <span className="text-xs text-slate-400">({r.code})</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <div className="text-[11px] font-semibold text-emerald-700 mb-1">١ دۆلار بە چەند دەکڕم</div>
+                  <Inp type="number" step="any" dir="ltr" value={r.buyRate}
+                    onChange={(e) => upd(r.id, "buyRate", e.target.value)}
+                    className="text-center font-bold text-base" placeholder="7.20" />
+                </div>
+                <div>
+                  <div className="text-[11px] font-semibold text-rose-700 mb-1">١ دۆلار بە چەند دەفرۆشم</div>
+                  <Inp type="number" step="any" dir="ltr" value={r.sellRate}
+                    onChange={(e) => upd(r.id, "sellRate", e.target.value)}
+                    className="text-center font-bold text-base" placeholder="7.15" />
+                </div>
+              </div>
+              {r.buyRate && r.sellRate && (
+                <div className="text-[11px] text-slate-400 mt-1.5" style={num}>
+                  جیاوازی: {fmt(Math.abs(+r.buyRate - +r.sellRate), 4)} — خێری تۆ لە هەر دۆلارێک
+                </div>
+              )}
+            </div>
           ))}
         </div>
         <div className="mt-4 flex items-center gap-3">
@@ -1071,11 +1092,7 @@ function Rates({ data, saveRates }) {
           {last && <span className="text-xs text-slate-400">دوا نوێکردنەوە: {new Date(last).toLocaleString("en-GB")}</span>}
         </div>
       </Card>
-      <Card className="p-4 bg-stone-50/60">
-        <div className="text-xs text-slate-500 leading-relaxed">
-          نموونە: گەر یەن بە <b>٧.٢٠</b> دەکڕیت و بە <b>٧.١٥</b> دەیفرۆشیت، واتا بەرامبەر ١ دۆلار ٧.٢٠ یەن وەردەگریت و ٧.١٥ یەن دەفرۆشیت — جیاوازییەکە خێری تۆیە.
-        </div>
-      </Card>
+
     </div>
   );
 }
@@ -1254,7 +1271,7 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
     curId: e ? e.curId : (bCur || data.currencies.find((c) => c.id !== "usd")?.id || data.currencies[0]?.id),
     amount: e ? e.amount : (batch ? Math.round(batch.total_net) : ""),
     againstId: e ? e.againstId : "usd",
-    rate: e ? e.rate : "",
+    quote: e && e.rate ? 1 / e.rate : "",
     manualRate: !!e,
     cpMode: e ? (e.cpId ? "acc" : "free") : "acc",
     cpId: e ? e.cpId || "" : (lockCp || batch?.customer_id || ""),
@@ -1266,15 +1283,17 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
   const customers = data.users.filter((u) => u.role === "customer" && !u.deleted);
   const partners = data.users.filter((u) => u.role === "partner" && !u.deleted);
 
-  const auto = autoRate(f.type, f.curId, f.againstId);
+  const auto = autoRate(f.type, f.curId, f.againstId);          // نرخی یەک یەکە (ناوەکی)
+  const autoQuote = auto ? 1 / auto : null;                       // یەک بەرامبەر چەند
   // نرخی ڕۆژ خۆکار دادەنرێت، بەڵام هەر کاتێک دەتوانیت بیگۆڕیت
   useEffect(() => {
-    if (!f.manualRate && auto) setF((x) => (+x.rate === auto ? x : { ...x, rate: auto }));
-  }, [auto, f.manualRate]);
-  const rate = +f.rate || 0;
-  const offDay = auto && rate && Math.abs(rate - auto) > auto * 0.0001;
+    if (!f.manualRate && autoQuote) setF((x) => (+x.quote === autoQuote ? x : { ...x, quote: autoQuote }));
+  }, [autoQuote, f.manualRate]);
+  const quote = +f.quote || 0;                                    // ئەوەی بەکارهێنەر دەینووسێت
+  const rate = quote ? 1 / quote : 0;                             // بۆ حیسابی ناوەکی
+  const offDay = autoQuote && quote && Math.abs(quote - autoQuote) > autoQuote * 0.0001;
   const amtR = Math.round(+f.amount || 0);
-  const total = Math.round(amtR * rate);
+  const total = quote ? Math.round(amtR / quote) : 0;             // بەشکردن، نەک لێکدان
   const av = f.type === "sell" ? avgRate(f.curId, f.againstId) : null;
   const estProfit = f.type === "sell" && av !== null ? Math.round(total - av * amtR) : null;
   const srcBal = f.partnerId ? ((calc.partner[f.partnerId] || {})[f.curId] || 0) : (calc.atMe[f.curId] || 0);
@@ -1304,7 +1323,7 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
       <Card className="p-5 space-y-5">
         <div className="flex gap-2">
           {["buy", "sell"].map((t) => (
-            <button key={t} onClick={() => setF({ ...f, type: t, manualRate: false, status: "completed" })}
+            <button key={t} onClick={() => setF({ ...f, type: t, manualRate: false, quote: "", status: "completed" })}
               className={`flex-1 py-2.5 rounded-xl font-bold text-sm transition ${f.type === t ? (t === "buy" ? "bg-emerald-700 text-white shadow-sm" : "bg-rose-700 text-white shadow-sm") : "bg-stone-100 text-slate-500 hover:bg-stone-200"}`}>
               {t === "buy" ? "کڕین" : "فرۆشتن"}
             </button>
@@ -1312,9 +1331,9 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-          <div><Lbl>دراو</Lbl><Sel value={f.curId} onChange={(ev) => setF({ ...f, curId: ev.target.value, manualRate: false })}>{data.currencies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Sel></div>
+          <div><Lbl>دراو</Lbl><Sel value={f.curId} onChange={(ev) => setF({ ...f, curId: ev.target.value, manualRate: false, quote: "" })}>{data.currencies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Sel></div>
           <div><Lbl>بڕ</Lbl><Inp type="number" value={f.amount} onChange={(ev) => setF({ ...f, amount: ev.target.value })} placeholder="0" /></div>
-          <div><Lbl>بەرامبەر دراوی</Lbl><Sel value={f.againstId} onChange={(ev) => setF({ ...f, againstId: ev.target.value, manualRate: false })}>{data.currencies.filter((c) => c.id !== f.curId).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Sel></div>
+          <div><Lbl>بەرامبەر دراوی</Lbl><Sel value={f.againstId} onChange={(ev) => setF({ ...f, againstId: ev.target.value, manualRate: false, quote: "" })}>{data.currencies.filter((c) => c.id !== f.curId).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Sel></div>
         </div>
 
         <div className="bg-stone-50 border border-stone-200 rounded-xl p-4">
@@ -1324,21 +1343,28 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
               <div className="text-2xl"><Money v={total} dec={cur(f.againstId).dec} /> <span className="text-sm text-slate-500">{cur(f.againstId).code}</span></div>
             </div>
             <div className="text-left">
-              <div className="text-xs text-slate-500 mb-1">نرخی یەک یەکە</div>
-              <Inp type="number" step="any" dir="ltr" value={f.rate}
-                onChange={(ev) => setF({ ...f, rate: ev.target.value, manualRate: true })}
-                className={`w-36 text-center font-bold ${offDay ? "border-amber-500 bg-amber-50" : ""}`} />
+              <div className="text-xs text-slate-500 mb-1">
+                یەک {cur(f.againstId).code} چەند {cur(f.curId).code}ە؟
+              </div>
+              <Inp type="number" step="any" dir="ltr" value={f.quote}
+                onChange={(ev) => setF({ ...f, quote: ev.target.value, manualRate: true })}
+                className={`w-36 text-center font-bold text-lg ${offDay ? "border-amber-500 bg-amber-50" : ""}`} />
             </div>
           </div>
 
           <div className="flex items-center justify-between flex-wrap gap-2 mt-3 pt-3 border-t border-stone-200 text-xs">
             <span className="text-slate-500">
-              نرخی ڕۆژ: <b style={num} className="text-slate-700">{auto ? fmt(auto, 6) : "دانەنراوە"}</b>
+              نرخی ڕۆژ: <b style={num} className="text-slate-700">{autoQuote ? fmt(autoQuote, 4) : "دانەنراوە"}</b>
+              {quote > 0 && amtR > 0 && (
+                <span className="text-slate-400 mr-2" style={num}>
+                  · {fmt(amtR, 0)} ÷ {fmt(quote, 4)} = {fmt(total, 0)}
+                </span>
+              )}
             </span>
             {offDay && (
               <div className="flex items-center gap-2">
                 <span className="text-amber-700 font-semibold">نرخێکی تایبەت بەکاردێت</span>
-                <button onClick={() => setF({ ...f, manualRate: false, rate: auto })}
+                <button onClick={() => setF({ ...f, manualRate: false, quote: autoQuote })}
                   className="text-emerald-700 font-semibold underline">گەڕانەوە بۆ نرخی ڕۆژ</button>
               </div>
             )}
@@ -1346,7 +1372,7 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
 
           {(av !== null || estProfit !== null) && (
             <div className="flex gap-5 flex-wrap text-sm mt-3 pt-3 border-t border-stone-200">
-              {av !== null && <span className="text-slate-500">مامناوەندی کڕین: <span style={num}>{fmt(av, 6)}</span></span>}
+              {av !== null && av > 0 && <span className="text-slate-500">مامناوەندی کڕین: <span style={num}>{fmt(1 / av, 4)}</span></span>}
               {estProfit !== null && <span className="text-slate-500">خێری خەمڵێنراو: <Money v={estProfit} dec={cur(f.againstId).dec} pos /></span>}
             </div>
           )}
@@ -1529,7 +1555,7 @@ function TxRow({ t, cur, usr, onEdit, onDel, flip, lite, settle, unsettle }) {
           <div className="flex items-center gap-x-3 gap-y-1 flex-wrap mt-1.5 text-xs text-slate-500">
             {t.code && <span className="font-bold text-slate-400" style={num}>#{t.code}</span>}
             {!lite && name && <span className="text-slate-700 font-semibold">{name}</span>}
-            <span style={num}>نرخ {fmt(t.rate, 6)}</span>
+<span style={num}>ڕەیت {t.rate ? fmt(1 / t.rate, 4) : "—"}</span>
             {!lite && t.partnerId && <span className="text-amber-700">لای {usr(t.partnerId).name}</span>}
             {!lite && t.profit != null && <span>خێر <b className="text-emerald-700" style={num}>{fmt(t.profit, 0)}</b></span>}
             {!lite && t.edited && <span className="text-slate-400">(ئیدیت)</span>}
@@ -2842,9 +2868,9 @@ function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare, s
   const investors = data.users.filter((u) => u.role === "investor" && !u.deleted);
 
   const exportCsv = () => {
-    const head = ["کۆد", "جۆر", "بەروار", "لایەن", "دراو", "بڕ", "نرخ", "بەرامبەر", "کۆ", "شوێن", "دۆخ", "خێر"];
+    const head = ["کۆد", "جۆر", "بەروار", "لایەن", "دراو", "بڕ", "ڕەیت", "بەرامبەر", "کۆ", "شوێن", "دۆخ", "خێر"];
     const rows = txs.map((t) => [t.code || "", t.type === "buy" ? "کڕین" : "فرۆشتن", new Date(t.date).toLocaleString("en-GB"),
-      t.cpId ? usr(t.cpId).name : t.cpName, cur(t.curId).code, t.amount, t.rate, cur(t.againstId).code, t.total,
+      t.cpId ? usr(t.cpId).name : t.cpName, cur(t.curId).code, t.amount, t.rate ? +(1 / t.rate).toFixed(6) : "", cur(t.againstId).code, t.total,
       t.partnerId ? "لای " + usr(t.partnerId).name : "قاسەی گشتی", t.status === "pending" ? "چاوەڕوان" : "تەواو", t.profit ?? ""]);
     const csv = "\uFEFF" + [head, ...rows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
     const a = document.createElement("a");

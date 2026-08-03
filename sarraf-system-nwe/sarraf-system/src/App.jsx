@@ -176,7 +176,8 @@ export default function App() {
         currencies: (c.data || []).map((r) => ({ id: r.id, code: r.code, name: r.name, symbol: r.symbol, dec: r.dec, buyRate: r.buy_rate == null ? null : +r.buy_rate, sellRate: r.sell_rate == null ? null : +r.sell_rate, rateUpdated: r.rate_updated })),
         users: (u.data || []).map((r) => ({ id: r.id, authId: r.auth_id, name: r.name, role: r.role, rate: +r.rate || 0, phone: r.phone, address: r.address, note: r.note, deleted: r.deleted })),
         ledger: (l.data || []).map((r) => ({ id: r.id, type: r.type, owner: r.owner, investorId: r.investor_id, curId: r.cur_id, amount: +r.amount, partnerId: r.partner_id, txId: r.tx_id, note: r.note, date: r.date })),
-        txs: (t.data || []).map((r) => ({ id: r.id, code: r.code, type: r.type, direct: !!r.direct, cpId: r.cp_id, cpName: r.cp_name, curId: r.cur_id, amount: +r.amount, rate: +r.rate, againstId: r.against_id, total: +r.total, partnerId: r.partner_id, status: r.status, paidAt: r.paid_at, profit: r.profit == null ? null : +r.profit, profitCurId: r.profit_cur_id, note: r.note, date: r.date, edited: r.edited, deleted: r.deleted })),
+        txs: (t.data || []).map((r) => ({ id: r.id, code: r.code, type: r.type, direct: !!r.direct,
+          buyRate: r.buy_rate == null ? null : +r.buy_rate, buyTotal: r.buy_total == null ? null : +r.buy_total, cpId: r.cp_id, cpName: r.cp_name, curId: r.cur_id, amount: +r.amount, rate: +r.rate, againstId: r.against_id, total: +r.total, partnerId: r.partner_id, status: r.status, paidAt: r.paid_at, profit: r.profit == null ? null : +r.profit, profitCurId: r.profit_cur_id, note: r.note, date: r.date, edited: r.edited, deleted: r.deleted })),
         audit: (a.data || []).map((r) => ({ id: r.id, date: r.date, action: r.action, detail: r.detail })),
       };
       setData(d);
@@ -186,7 +187,8 @@ export default function App() {
 
   const A = (action, detail) => supabase.from("audit").insert({ id: uid(), date: now(), action, detail });
   const LR = (e) => ({ id: e.id, type: e.type, owner: e.owner || null, investor_id: e.investorId || null, cur_id: e.curId, amount: e.amount, partner_id: e.partnerId || null, tx_id: e.txId || null, note: e.note || null, date: e.date });
-  const TR = (t) => ({ id: t.id, code: t.code || null, type: t.type, direct: !!t.direct, cp_id: t.cpId, cp_name: t.cpName, cur_id: t.curId, amount: t.amount, rate: t.rate, against_id: t.againstId, total: t.total, partner_id: t.partnerId, status: t.status, paid_at: t.paidAt, profit: t.profit, profit_cur_id: t.profitCurId, note: t.note || null, date: t.date, edited: !!t.edited, deleted: !!t.deleted });
+  const TR = (t) => ({ id: t.id, code: t.code || null, type: t.type, direct: !!t.direct,
+    buy_rate: t.buyRate ?? null, buy_total: t.buyTotal ?? null, cp_id: t.cpId, cp_name: t.cpName, cur_id: t.curId, amount: t.amount, rate: t.rate, against_id: t.againstId, total: t.total, partner_id: t.partnerId, status: t.status, paid_at: t.paidAt, profit: t.profit, profit_cur_id: t.profitCurId, note: t.note || null, date: t.date, edited: !!t.edited, deleted: !!t.deleted });
 
   const lockRef = useRef(false);
   const run = async (fn) => {
@@ -320,9 +322,11 @@ export default function App() {
   }, [data, calc, mySafe]);
 
   /* مامناوەندی نرخی کڕین (بۆ حیسابی خێر لە کاتی فرۆشتن) */
+  // مامناوەندی کێشدار — مامەڵەی ڕاستەوخۆ ناچێتە ناوی (چوونکە لە قاسەدا نامێنێتەوە)
   const avgRate = (curId, againstId) => {
     let a = 0, v = 0;
-    for (const t of data.txs) if (!t.deleted && t.type === "buy" && t.curId === curId && t.againstId === againstId) { a += t.amount; v += t.amount * t.rate; }
+    for (const t of data.txs)
+      if (!t.deleted && !t.direct && t.type === "buy" && t.curId === curId && t.againstId === againstId) { a += t.amount; v += t.amount * t.rate; }
     return a > 0 ? v / a : null;
   };
 
@@ -349,7 +353,18 @@ export default function App() {
   /* دروستکردنی تۆمارەکانی دەفتەر بۆ مامەڵەیەک */
   const buildEntries = (t) => {
     const es = [];
-    // مامەڵەی ڕاستەوخۆ: هیچ عمولەیەک نییە
+    // ── مامەڵەی ڕاستەوخۆ: کڕین و فرۆشتن پێکەوە، تەنها خێرەکەی دەمێنێتەوە ──
+    if (t.direct) {
+      // دراوەکە دێت و دەڕوات (لە قاسەدا نامێنێتەوە)
+      es.push({ id: uid(), type: "buy", curId: t.curId, amount: +t.amount, partnerId: null, txId: t.id, date: t.date });
+      es.push({ id: uid(), type: "sell", curId: t.curId, amount: -t.amount, partnerId: null, txId: t.id, date: t.date });
+      // پارەی کڕین دەڕوات (گەر خۆم دابێتم)
+      if (t.status === "completed" && t.buyTotal) es.push({ id: uid(), type: "buy", curId: t.againstId, amount: -t.buyTotal, partnerId: null, txId: t.id, date: t.date });
+      // پارەی فرۆشتن دێت (گەر وەرمگرتبێت)
+      if (t.status === "completed" && t.total) es.push({ id: uid(), type: "sell", curId: t.againstId, amount: +t.total, partnerId: null, txId: t.id, date: t.date });
+      return es;
+    }
+    // مامەڵەی ئاسایی
     const feeRate = (!t.direct && t.partnerId) ? (usr(t.partnerId).rate || 0) : 0;
     if (t.type === "buy") {
       // دراوی کڕدراو دێتە ژوورەوە (لای خۆم یان لای هاوبەش)
@@ -368,18 +383,34 @@ export default function App() {
   const saveTx = async (f, existing) => {
     const amount = Math.round(+f.amount), rate = +f.rate, total = Math.round(amount * rate);
     if (!(amount > 0)) { flash("بڕ دەبێت لە سفر گەورەتر بێت"); return false; }
-    if (!(rate > 0)) { flash("نرخ دەبێت لە سفر گەورەتر بێت"); return false; }
+    if (f.direct) {
+      if (!(+f.buyQuote > 0)) { flash("ڕەیتی کڕین پێویستە"); return false; }
+      if (!(+f.sellQuote > 0)) { flash("ڕەیتی فرۆشتن پێویستە"); return false; }
+    } else if (!(rate > 0)) { flash("نرخ دەبێت لە سفر گەورەتر بێت"); return false; }
     if (f.curId === f.againstId) { flash("ناکرێت دراوەکە لەگەڵ خۆی مامەڵەی پێبکرێت"); return false; }
     if (!f.cpId && !f.cpName) { flash("لایەنی بەرامبەر دیاری بکە"); return false; }
-    if (!(total > 0)) { flash("کۆی گشتی ناتوانێت سفر بێت"); return false; }
+    if (!f.direct && !(total > 0)) { flash("کۆی گشتی ناتوانێت سفر بێت"); return false; }
     return await run(async () => {
       let profit = null, profitCurId = null;
-      if (f.type === "sell") {
+      if (f.direct) {
+        // مامەڵەی ڕاستەوخۆ: خێر لە جووتەکەی خۆیەوە دەژمێردرێت
+        const bq = Math.round((+f.buyQuote || 0) * 1000) / 1000;   // بە چەند کڕدراوە
+        const sq = Math.round((+f.sellQuote || 0) * 1000) / 1000;  // بە چەند فرۆشراوە
+        if (bq > 0 && sq > 0) {
+          profit = Math.round(amount / sq) - Math.round(amount / bq);
+          profitCurId = f.againstId;
+        }
+      } else if (f.type === "sell") {
         const av = avgRate(f.curId, f.againstId);
         if (av !== null) { profit = Math.round(total - av * amount); profitCurId = f.againstId; }
       }
       const code = existing ? existing.code : Math.max(1000, ...data.txs.map((x) => x.code || 0)) + 1;
-      const t = { id: existing ? existing.id : uid(), code, type: f.type, cpId: f.cpId || null, cpName: f.cpId ? null : f.cpName, curId: f.curId, amount, rate, againstId: f.againstId, total, partnerId: f.direct ? null : (f.partnerId || null), direct: !!f.direct, status: f.status || "completed", paidAt: existing ? existing.paidAt : null, profit, profitCurId, note: f.note || "", date: existing ? existing.date : now(), edited: !!existing };
+      const bq3 = Math.round((+f.buyQuote || 0) * 1000) / 1000;
+      const sq3 = Math.round((+f.sellQuote || 0) * 1000) / 1000;
+      const buyTotal = f.direct && bq3 > 0 ? Math.round(amount / bq3) : null;
+      const t = { id: existing ? existing.id : uid(), code, type: f.direct ? "buy" : f.type, cpId: f.cpId || null, cpName: f.cpId ? null : f.cpName, curId: f.curId, amount,
+        rate: f.direct && sq3 > 0 ? 1 / sq3 : rate, buyRate: f.direct && bq3 > 0 ? 1 / bq3 : null, buyTotal,
+        againstId: f.againstId, total: f.direct && sq3 > 0 ? Math.round(amount / sq3) : total, partnerId: f.direct ? null : (f.partnerId || null), direct: !!f.direct, status: f.status || "completed", paidAt: existing ? existing.paidAt : null, profit, profitCurId, note: f.note || "", date: existing ? existing.date : now(), edited: !!existing };
       if (existing) {
         let r = await supabase.from("ledger").delete().eq("tx_id", t.id); if (r.error) throw r.error;
         r = await supabase.from("txs").update(TR(t)).eq("id", t.id); if (r.error) throw r.error;
@@ -1353,6 +1384,8 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
     cpName: e ? e.cpName || "" : "",
     partnerId: e ? e.partnerId || "" : (batch?.partner_id || ""),
     direct: e ? !!e.direct : false,
+    buyQuote: e && e.buyRate ? Math.round((1 / e.buyRate) * 1000) / 1000 : "",
+    sellQuote: e && e.direct && e.rate ? Math.round((1 / e.rate) * 1000) / 1000 : "",
     status: e ? e.status : "completed",
     note: e ? e.note : "",
   });
@@ -1368,6 +1401,11 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
   const quote = +f.quote || 0;                                    // ئەوەی بەکارهێنەر دەینووسێت (٣ خانە)
   const rate = quote ? 1 / quote : 0;                             // بۆ حیسابی ناوەکی
   const offDay = autoQuote && quote && Math.abs(quote - autoQuote) > autoQuote * 0.0001;
+  // ── مامەڵەی ڕاستەوخۆ ──
+  const bq = +f.buyQuote || 0, sq = +f.sellQuote || 0;
+  const dBuyTotal = bq ? Math.round((Math.round(+f.amount || 0)) / bq) : 0;
+  const dSellTotal = sq ? Math.round((Math.round(+f.amount || 0)) / sq) : 0;
+  const dProfit = bq && sq ? dSellTotal - dBuyTotal : null;
   const amtR = Math.round(+f.amount || 0);
   const total = quote ? Math.round(amtR / quote) : 0;             // بەشکردن، نەک لێکدان
   const av = f.type === "sell" ? avgRate(f.curId, f.againstId) : null;
@@ -1379,7 +1417,8 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
   const blank = {
     type: f.type, curId: f.curId, amount: "", againstId: f.againstId, quote: f.quote,
     manualRate: f.manualRate, cpMode: "acc", cpId: lockCp || "", cpName: "",
-    partnerId: "", status: "completed", note: "", direct: false,
+    partnerId: "", status: "completed", note: "",
+    direct: f.direct, buyQuote: f.buyQuote, sellQuote: f.sellQuote,
   };
   const submit = async () => {
     if (sending || busy) return;                       // ڕێگری لە دوو جار کلیک
@@ -1443,6 +1482,51 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
           <div><Lbl>بەرامبەر دراوی</Lbl><Sel value={f.againstId} onChange={(ev) => setF({ ...f, againstId: ev.target.value, manualRate: false, quote: "" })}>{data.currencies.filter((c) => c.id !== f.curId).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Sel></div>
         </div>
 
+        {f.direct ? (
+          <div className="bg-violet-50/60 border border-violet-200 rounded-xl p-4 space-y-3">
+            <div className="text-xs font-bold text-violet-900">ڕەیتی کڕین و فرۆشتن</div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <div className="text-[11px] font-semibold text-emerald-700 mb-1">بە چەند دەیکڕم</div>
+                <Inp type="number" step="any" dir="ltr" value={f.buyQuote}
+                  onChange={(ev) => setF({ ...f, buyQuote: ev.target.value })}
+                  className="text-center font-bold text-base" placeholder={autoQuote ? String(autoQuote) : "7.20"} />
+              </div>
+              <div>
+                <div className="text-[11px] font-semibold text-rose-700 mb-1">بە چەند دەیفرۆشم</div>
+                <Inp type="number" step="any" dir="ltr" value={f.sellQuote}
+                  onChange={(ev) => setF({ ...f, sellQuote: ev.target.value })}
+                  className="text-center font-bold text-base" placeholder="7.15" />
+              </div>
+            </div>
+            {bq > 0 && sq > 0 && amtR > 0 && (
+              <div className="bg-white rounded-xl p-3 space-y-1.5">
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-600">دەدەم (کڕین)</span>
+                  <span className="font-bold text-rose-700" style={num}>{fmt(dBuyTotal, 0)} {cur(f.againstId).code}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-600">وەردەگرم (فرۆشتن)</span>
+                  <span className="font-bold text-emerald-700" style={num}>{fmt(dSellTotal, 0)} {cur(f.againstId).code}</span>
+                </div>
+                <div className="flex justify-between pt-2 mt-1 border-t border-stone-200">
+                  <span className="text-sm font-bold text-slate-900">خێر</span>
+                  <span className={`text-xl font-bold ${dProfit >= 0 ? "text-emerald-700" : "text-rose-700"}`} style={num}>
+                    {dProfit > 0 ? "+" : ""}{fmt(dProfit, 0)} {cur(f.againstId).code}
+                  </span>
+                </div>
+                {dProfit < 0 && <div className="text-[11px] text-rose-700 font-semibold">ئاگاداری: بە زەرەر دەفرۆشیت</div>}
+              </div>
+            )}
+            {autoQuote && (
+              <div className="text-[11px] text-slate-500 flex items-center gap-2">
+                <span style={num}>نرخی ڕۆژ: {fmt(autoQuote, 3)}</span>
+                <button onClick={() => setF({ ...f, buyQuote: autoQuote, sellQuote: autoQuote })}
+                  className="text-emerald-700 font-semibold underline">بەکارهێنانی نرخی ڕۆژ</button>
+              </div>
+            )}
+          </div>
+        ) : (
         <div className="bg-stone-50 border border-stone-200 rounded-xl p-4">
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div>
@@ -1484,6 +1568,7 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
             </div>
           )}
         </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div className={f.direct ? "hidden" : ""}>
@@ -1553,8 +1638,8 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
         <div><Lbl>تێبینی</Lbl><Inp value={f.note} onChange={(ev) => setF({ ...f, note: ev.target.value })} /></div>
 
         <div className="flex gap-2">
-          <Btn kind={f.type === "buy" ? "primary" : "danger"} onClick={submit} disabled={sending || busy}>
-            {sending || busy ? "تۆمارکردن..." : e ? "پاشەکەوتی ئیدیت" : f.type === "buy" ? "تۆمارکردنی کڕین" : "تۆمارکردنی فرۆشتن"}
+          <Btn kind={f.direct ? "gold" : f.type === "buy" ? "primary" : "danger"} onClick={submit} disabled={sending || busy}>
+            {sending || busy ? "تۆمارکردن..." : e ? "پاشەکەوتی ئیدیت" : f.direct ? "تۆمارکردنی مامەڵەی ڕاستەوخۆ" : f.type === "buy" ? "تۆمارکردنی کڕین" : "تۆمارکردنی فرۆشتن"}
           </Btn>
           {e && <Btn kind="ghost" onClick={onCancel}>پاشگەزبوونەوە</Btn>}
         </div>
@@ -1664,7 +1749,9 @@ function TxRow({ t, cur, usr, onEdit, onDel, flip, lite, settle, unsettle }) {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5 flex-wrap">
-            <Pill tone={shown === "buy" ? "green" : "red"}>{shown === "buy" ? "کڕین" : "فرۆشتن"}</Pill>
+            {t.direct
+              ? <Pill tone="amber">ڕاستەوخۆ</Pill>
+              : <Pill tone={shown === "buy" ? "green" : "red"}>{shown === "buy" ? "کڕین" : "فرۆشتن"}</Pill>}
             <span className="font-bold text-slate-900" style={num}>{fmt(t.amount, 0)}</span>
             <span className="text-sm text-slate-500">{cur(t.curId).code}</span>
             <span className="text-slate-300 mx-0.5">←</span>
@@ -1676,7 +1763,7 @@ function TxRow({ t, cur, usr, onEdit, onDel, flip, lite, settle, unsettle }) {
             {!lite && name && <span className="text-slate-700 font-semibold">{name}</span>}
 <span style={num}>ڕەیت {t.rate ? fmt(1 / t.rate, 3) : "—"}</span>
             {!lite && t.partnerId && <span className="text-amber-700">لای {usr(t.partnerId).name}</span>}
-            {!lite && t.direct && <span className="text-violet-700">ڕاستەوخۆ</span>}
+            {!lite && t.direct && t.buyRate && <span style={num} className="text-slate-500">کڕی {fmt(1 / t.buyRate, 3)}</span>}
             {!lite && t.profit != null && <span>خێر <b className="text-emerald-700" style={num}>{fmt(t.profit, 0)}</b></span>}
             {!lite && t.edited && <span className="text-slate-400">(ئیدیت)</span>}
             <span className="text-slate-400" style={num}>{new Date(t.date).toLocaleDateString("en-GB")}</span>

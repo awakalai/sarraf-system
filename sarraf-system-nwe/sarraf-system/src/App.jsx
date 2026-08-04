@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Vault, ArrowLeftRight, ListOrdered, Users, Handshake,
   TrendingUp, Building2, UserCog, PieChart, History, Plus, Trash2, Pencil,
   CheckCircle2, AlertTriangle, Eye, LogOut, Wallet, ChevronLeft, Coins,
-  Receipt, TrendingDown, ScanLine, Upload, XCircle, SlidersHorizontal, MoreHorizontal, X, Share2, Database, Download, ClipboardCheck, RotateCcw
+  Receipt, TrendingDown, ScanLine, Upload, XCircle, SlidersHorizontal, MoreHorizontal, X, Share2, Database, Download, ClipboardCheck, RotateCcw, MessageCircle
 } from "lucide-react";
 
 /* ══════════════════ یارمەتیدەرەکان ══════════════════ */
@@ -938,7 +938,10 @@ function Dashboard({ data, calc, cur, mySafe, profitIn, investorsProfitIn, sumUs
   const alerts = [];
   if (noRates) alerts.push({ tone: "amber", Ic: AlertTriangle, t: "نرخی هەموو دراوەکان دانەنراوە — کلیک بکە", go: () => go("rates") });
   const newBatches = (batches || []).filter((b) => b.status === "new").length;
-  if (newBatches) alerts.push({ tone: "green", Ic: ScanLine, t: `${newBatches} کۆمەڵەی فیشی نوێ چاوەڕوانی پشکنینن`, go: () => go("receipts") });
+  const waBatches = (batches || []).filter((b) => b.status === "new" && b.source === "whatsapp").length;
+  if (newBatches) alerts.push({ tone: "green", Ic: waBatches ? MessageCircle : ScanLine,
+    t: waBatches ? `${newBatches} کۆمەڵەی فیشی نوێ (${waBatches} لە واتساپەوە)` : `${newBatches} کۆمەڵەی فیشی نوێ چاوەڕوانی پشکنینن`,
+    go: () => go("receipts") });
   const oldPend = data.txs.filter((t) => !t.deleted && t.status === "pending" && (Date.now() - new Date(t.date).getTime()) > 3 * 86400000).length;
   if (oldPend) alerts.push({ tone: "amber", Ic: AlertTriangle, t: `${oldPend} مامەڵە زیاتر لە ٣ ڕۆژە چاوەڕوانی پارەن`, go: () => go("txs") });
   const negP = data.users.filter((u) => u.role === "partner" && !u.deleted && Object.values(calc.partner[u.id] || {}).some((v) => v < 0));
@@ -2118,6 +2121,7 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
   const [working, setWorking] = useState(false);
   const [prog, setProg] = useState(null);
   const [sending, setSending] = useState(false);
+  const [share, setShare] = useState(false);
   const maxAge = 7;
 
   const onFiles = async (files) => {
@@ -2343,6 +2347,15 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
           </Card>
 
           <ReceiptTotals rows={rows} data={data} title="کۆی گشتی" />
+
+          <Btn kind="gold" className="w-full flex items-center justify-center gap-2" onClick={() => setShare(true)}>
+            <Share2 className="w-4 h-4" /> ناردنی خشتەی وردەکاری
+          </Btn>
+          {share && (
+            <ShareTable rows={rows} data={data} who={customerName} title="وردەکاری فیشەکان"
+              flash={flash} onClose={() => setShare(false)} />
+          )}
+
           <RejectedReceipts rows={rows} title="ئەمانە هەژمار ناکرێن" />
 
           <Btn className="w-full" onClick={send} disabled={sending || (!good.length && !bad.length)}>
@@ -2370,7 +2383,8 @@ function ReceiptsHub({ data, usr, batches, reloadBatches, flash, onMakeTx, profi
   const newN = (batches || []).filter((b) => b.status === "new").length;
   const inbox = (batches || []).filter((b) => (tab === "inbox" ? b.status === "new" : b.status !== "new"));
 
-  const TABS = [["inbox", `ئینباکس (${newN})`], ["done", "بەستراوەکان"], ["loc", "لای کێ"], ["add", "ناردنی فیش"]];
+  const waN = (batches || []).filter((b) => b.status === "new" && b.source === "whatsapp").length;
+  const TABS = [["inbox", `ئینباکس (${newN})`], ["done", "بەستراوەکان"], ["loc", "لای کێ"], ["add", "ناردنی فیش"], ["wa", "واتساپ"]];
 
   return (
     <div className="space-y-4">
@@ -2392,6 +2406,11 @@ function ReceiptsHub({ data, usr, batches, reloadBatches, flash, onMakeTx, profi
                   <div className="font-semibold text-slate-800">{b.customer_name || (b.partner_id ? usr(b.partner_id).name : "—")}</div>
                   <div className="text-xs text-slate-500 mt-0.5" style={num}>{b.n} فیش · {new Date(b.created_at).toLocaleString("en-GB")}</div>
                   <div className="flex gap-1.5 mt-1.5 flex-wrap">
+                    {b.source === "whatsapp" && (
+                      <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-600 text-white flex items-center gap-1">
+                        <MessageCircle className="w-3 h-3" /> واتساپ
+                      </span>
+                    )}
                     <Pill tone={b.direction === "out" ? "amber" : "green"}>{DIR_KU[b.direction || "in"]}</Pill>
                     {b.status === "new" ? <Pill tone="green">نوێ</Pill> : <Pill tone="slate">بەستراوە</Pill>}
                     {(b.rejected_n || b.dup_n) > 0 && <Pill tone="red">{b.rejected_n || b.dup_n} ڕەتکراو</Pill>}
@@ -2419,10 +2438,12 @@ function ReceiptsHub({ data, usr, batches, reloadBatches, flash, onMakeTx, profi
                 className={`whitespace-nowrap px-4 py-2 rounded-lg text-sm ${loc === p.id ? "bg-emerald-700 text-white font-semibold" : "text-slate-600"}`}>{p.name}</button>
             ))}
           </div>
-          <LocationReceipts partnerId={loc === "me" ? null : loc} data={data}
+          <LocationReceipts partnerId={loc === "me" ? null : loc} data={data} flash={flash}
             title={loc === "me" ? "فیشەکانی لای خۆم" : `فیشەکانی لای ${usr(loc).name}`} />
         </>
       )}
+
+      {tab === "wa" && <WhatsAppInfo batches={batches} waN={waN} />}
 
       {tab === "add" && (
         <Card className="p-5">
@@ -2447,11 +2468,352 @@ function ReceiptsHub({ data, usr, batches, reloadBatches, flash, onMakeTx, profi
   );
 }
 
+/* ─────────── خشتەی وردەکاری بۆ ناردن ─────────── */
+function ShareTable({ rows, data, who, title, onClose, flash }) {
+  const [mode, setMode] = useState("full");
+  const [phone, setPhone] = useState("");
+  const u = usdConv(data);
+  const today = new Date().toLocaleDateString("en-GB");
+
+  const counted = (rows || []).filter((r) => r.counted !== false && r.status !== "dup" && r.status !== "error");
+  const rejected = (rows || []).filter((r) => r.counted === false || r.status === "dup" || r.status === "error");
+
+  const gross = {}, fees = {}, net = {}, byWho = {}, byPlat = {};
+  counted.forEach((r) => {
+    const c = r.currency || "?";
+    const g = +(r.amount) || 0, f = +(r.fee) || 0;
+    const n = r.net != null ? +r.net : (r.net_amount != null ? +r.net_amount : g - f);
+    gross[c] = (gross[c] || 0) + g; fees[c] = (fees[c] || 0) + f; net[c] = (net[c] || 0) + n;
+    const k = (r.receiver || r.sender || "نەزانراو").trim();
+    byWho[k] = byWho[k] || { n: 0, cur: {} };
+    byWho[k].n++; byWho[k].cur[c] = (byWho[k].cur[c] || 0) + n;
+    const pl = r.platform || detectPlatform(r.bank) || "نەزانراو";
+    byPlat[pl] = byPlat[pl] || { n: 0, cur: {} };
+    byPlat[pl].n++; byPlat[pl].cur[c] = (byPlat[pl].cur[c] || 0) + n;
+  });
+  const curs = Object.keys(gross);
+  const whoList = Object.entries(byWho).sort((a, b) => b[1].n - a[1].n);
+  const platList = Object.entries(byPlat).sort((a, b) => b[1].n - a[1].n);
+
+  /* ── دەقی واتساپ ── */
+  const text = (() => {
+    const L = [];
+    L.push(`*${title || "وردەکاری فیشەکان"}*`);
+    if (who) L.push(`👤 ${who}`);
+    L.push(`📅 ${today}`);
+    L.push("");
+
+    if (mode === "rej") {
+      L.push(`⚠️ *${rejected.length} فیش ڕەت کراوەتەوە*`);
+      L.push("");
+      rejected.forEach((r, i) => {
+        const amt = r.amount ? `${fmt(r.net_amount ?? r.net ?? r.amount, 0)} ${r.currency || ""}` : "—";
+        L.push(`${i + 1}. ${amt}`);
+        L.push(`   ❌ ${r.reject_reason || r.rejectReason || r.note || "نەزانراو"}`);
+        const bits = [];
+        if (r.ref_no || r.refNo) bits.push(`ژمارە: ${r.ref_no || r.refNo}`);
+        if (r.tx_time || r.txTime) bits.push(`کات: ${r.tx_time || r.txTime}`);
+        if (bits.length) L.push(`   ${bits.join(" · ")}`);
+        const od = r.dup_of_date || r.dupOfDate;
+        if (od) L.push(`   ↩️ ڕەسەنەکەی: ${new Date(od).toLocaleString("en-GB")}${(r.dup_of_who || r.dupOfWho) ? ` — ${r.dup_of_who || r.dupOfWho}` : ""}`);
+        L.push("");
+      });
+      return L.join("\n");
+    }
+
+    if (mode !== "short") {
+      L.push("```");
+      L.push("#   بڕ         فی    گەیشتوو   وەرگر");
+      L.push("───────────────────────────────────────");
+      counted.forEach((r, i) => {
+        const n = r.net != null ? +r.net : (r.net_amount ?? r.amount);
+        const num2 = String(i + 1).padEnd(3);
+        const am = fmt(r.amount, 0).padStart(9);
+        const fe = (r.fee ? fmt(r.fee, 0) : "—").padStart(5);
+        const nt = fmt(n, 0).padStart(9);
+        const rc = String(r.receiver || "—").slice(0, 12);
+        L.push(`${num2} ${am} ${fe} ${nt}  ${rc}`);
+      });
+      L.push("```");
+      L.push("");
+    }
+
+    if (platList.length > 1) {
+      L.push("*بەپێی پلاتفۆرم*");
+      platList.forEach(([pl, v]) => {
+        const t = Object.entries(v.cur).map(([c, a]) => `${fmt(a, 0)} ${c}`).join(" / ");
+        L.push(`• ${platMeta(pl).ku}: ${t}  (${v.n})`);
+      });
+      L.push("");
+    }
+
+    L.push("*بەپێی وەرگر*");
+    whoList.forEach(([n, v]) => {
+      const t = Object.entries(v.cur).map(([c, a]) => `${fmt(a, 0)} ${c}`).join(" / ");
+      L.push(`• ${n}: ${t}  (${v.n})`);
+    });
+    L.push("");
+
+    L.push("*کۆی گشتی*");
+    curs.forEach((c) => {
+      L.push(`${c}:`);
+      L.push(`   بە فییەوە: ${fmt(gross[c], 0)}`);
+      if (fees[c] > 0) L.push(`   فی: −${fmt(fees[c], 0)}`);
+      L.push(`   ✅ گەیشتوو: ${fmt(net[c], 0)}`);
+      const usd = u(net[c], c);
+      if (usd != null) L.push(`   ≈ ${fmt(usd, 0)} USD`);
+    });
+    L.push("");
+    L.push(`📄 ${counted.length} فیش هەژمار کراوە`);
+
+    if (rejected.length) {
+      L.push("");
+      L.push(`⚠️ *${rejected.length} فیش ڕەت کراوەتەوە — هەژمار نەکراون*`);
+      L.push("");
+      rejected.forEach((r, i) => {
+        const amt = r.amount ? `${fmt(r.net_amount ?? r.net ?? r.amount, 0)} ${r.currency || ""}` : "—";
+        L.push(`${i + 1}. ${amt}`);
+        L.push(`   ❌ ${r.reject_reason || r.rejectReason || r.note || REJECT_KU[r.reject_code || r.rejectCode] || "نەزانراو"}`);
+        const bits = [];
+        if (r.ref_no || r.refNo) bits.push(`ژمارە: ${r.ref_no || r.refNo}`);
+        if (r.tx_time || r.txTime) bits.push(`کات: ${r.tx_time || r.txTime}`);
+        if (r.receiver) bits.push(`وەرگر: ${r.receiver}`);
+        if (bits.length) L.push(`   ${bits.join(" · ")}`);
+        const od = r.dup_of_date || r.dupOfDate;
+        if (od) L.push(`   ↩️ ڕەسەنەکەی: ${new Date(od).toLocaleString("en-GB")}${(r.dup_of_who || r.dupOfWho) ? ` — ${r.dup_of_who || r.dupOfWho}` : ""}`);
+      });
+    }
+    return L.join("\n");
+  })();
+
+  const cleanPhone = (p) => {
+    let x = String(p).replace(/\D/g, "");
+    if (x.startsWith("00")) x = x.slice(2);
+    if (x.startsWith("0")) x = "964" + x.slice(1);       // عێراق
+    return x;
+  };
+
+  const sendWa = () => {
+    const p = cleanPhone(phone);
+    const url = p
+      ? `https://wa.me/${p}?text=${encodeURIComponent(text)}`
+      : `https://wa.me/?text=${encodeURIComponent(text)}`;
+    window.open(url, "_blank");
+  };
+  const copy = () => navigator.clipboard.writeText(text).then(() => flash("کۆپی کرا ✓"));
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-end md:items-center justify-center md:p-6" onClick={onClose}>
+      <div className="bg-white w-full max-w-lg rounded-t-3xl md:rounded-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="sticky top-0 bg-white border-b border-stone-200 px-5 py-3.5 flex items-center justify-between">
+          <div className="font-bold text-slate-900">ناردنی خشتە</div>
+          <button onClick={onClose} className="p-1.5 text-slate-400"><X className="w-5 h-5" /></button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          <div className="flex gap-1 bg-stone-100 rounded-xl p-1">
+            {[["full", "خشتەی تەواو"], ["short", "تەنها کۆکان"], ["rej", "تەنها ڕەتکراوەکان"]].map(([k, t]) => (
+              <button key={k} onClick={() => setMode(k)}
+                className={`flex-1 py-2 rounded-lg text-sm ${mode === k ? "bg-white text-emerald-700 font-bold shadow-sm" : "text-slate-500"}`}>{t}</button>
+            ))}
+          </div>
+
+          {/* پێشبینین */}
+          <div className="border border-stone-200 rounded-2xl overflow-hidden">
+            <div className="bg-slate-900 text-white px-4 py-3">
+              <div className="font-bold">{title || "وردەکاری فیشەکان"}</div>
+              <div className="text-xs text-slate-400 mt-0.5">{who ? `${who} · ` : ""}<span style={num}>{today}</span></div>
+            </div>
+            <div className="p-4 space-y-3">
+              {mode === "full" && counted.length > 0 && (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-slate-400 border-b border-stone-200">
+                        <th className="text-right py-1.5 w-6">#</th>
+                        <th className="text-right">بڕ</th>
+                        <th className="text-right">فی</th>
+                        <th className="text-right">گەیشتوو</th>
+                        <th className="text-right">وەرگر</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {counted.map((r, i) => (
+                        <tr key={r.id || i} className="border-b border-stone-50">
+                          <td className="py-1.5 text-slate-400" style={num}>{i + 1}</td>
+                          <td style={num}>{fmt(r.amount, 0)}</td>
+                          <td style={num} className={r.fee ? "text-rose-600" : "text-slate-300"}>{r.fee ? fmt(r.fee, 0) : "—"}</td>
+                          <td style={num} className="font-bold">{fmt(r.net ?? r.net_amount ?? r.amount, 0)}</td>
+                          <td className="text-slate-600 truncate max-w-[80px]">{r.receiver || "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {platList.length > 1 && (
+                <div>
+                  <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">بەپێی پلاتفۆرم</div>
+                  {platList.map(([pl, v]) => (
+                    <div key={pl} className="flex justify-between text-xs py-1">
+                      <span className="text-slate-600">{platMeta(pl).ku} <span className="text-slate-300">({v.n})</span></span>
+                      <span className="font-bold" style={num}>{Object.entries(v.cur).map(([c, a]) => `${fmt(a, 0)} ${c}`).join(" / ")}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div>
+                <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">بەپێی وەرگر</div>
+                {whoList.map(([n, v]) => (
+                  <div key={n} className="flex justify-between text-xs py-1">
+                    <span className="text-slate-600">{n} <span className="text-slate-300">({v.n})</span></span>
+                    <span className="font-bold" style={num}>{Object.entries(v.cur).map(([c, a]) => `${fmt(a, 0)} ${c}`).join(" / ")}</span>
+                  </div>
+                ))}
+              </div>
+
+              {curs.map((c) => (
+                <div key={c} className="bg-stone-50 rounded-xl p-3">
+                  <div className="text-[10px] font-bold text-slate-400 mb-1">{c}</div>
+                  <div className="flex justify-between text-xs py-0.5"><span className="text-slate-600">بە فییەوە</span><span style={num}>{fmt(gross[c], 0)}</span></div>
+                  {fees[c] > 0 && <div className="flex justify-between text-xs py-0.5"><span className="text-slate-600">فی</span><span style={num} className="text-rose-700">−{fmt(fees[c], 0)}</span></div>}
+                  <div className="flex justify-between pt-1.5 mt-1 border-t border-stone-200 items-baseline">
+                    <span className="text-xs font-bold">گەیشتوو</span>
+                    <div className="text-left">
+                      <div className="text-lg font-bold text-emerald-700" style={num}>{fmt(net[c], 0)}</div>
+                      {u(net[c], c) != null && <div className="text-[10px] text-slate-400" style={num}>≈ {fmt(u(net[c], c), 0)} $</div>}
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              <div className="text-[11px] text-slate-400" style={num}>{counted.length} فیش هەژمار کراوە</div>
+
+              {rejected.length > 0 && (
+                <div className="border border-rose-200 bg-rose-50/60 rounded-xl p-3 mt-2">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-rose-900 mb-2">
+                    <AlertTriangle className="w-3.5 h-3.5" />
+                    {rejected.length} فیش ڕەت کراوەتەوە — هەژمار نەکراون
+                  </div>
+                  <div className="space-y-2">
+                    {rejected.map((r, i) => (
+                      <div key={r.id || i} className="bg-white rounded-lg p-2.5">
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-[10px] text-slate-400" style={num}>{i + 1}.</span>
+                          <span className="text-sm font-bold text-slate-400 line-through" style={num}>
+                            {r.amount ? fmt(r.net_amount ?? r.net ?? r.amount, 0) : "—"}
+                          </span>
+                          <span className="text-[10px] text-slate-400">{r.currency || ""}</span>
+                        </div>
+                        <div className="text-[11px] text-rose-800 mt-1 leading-snug">
+                          ❌ {r.reject_reason || r.rejectReason || r.note || REJECT_KU[r.reject_code || r.rejectCode] || "نەزانراو"}
+                        </div>
+                        <div className="text-[10px] text-slate-400 mt-0.5 flex flex-wrap gap-x-2" style={num}>
+                          {(r.ref_no || r.refNo) && <span>ژمارە {r.ref_no || r.refNo}</span>}
+                          {(r.tx_time || r.txTime) && <span>· {r.tx_time || r.txTime}</span>}
+                          {r.receiver && <span>· {r.receiver}</span>}
+                        </div>
+                        {(r.dup_of_date || r.dupOfDate) && (
+                          <div className="text-[10px] text-slate-500 mt-1 bg-stone-50 rounded px-1.5 py-1" style={num}>
+                            ↩️ ڕەسەنەکەی: {new Date(r.dup_of_date || r.dupOfDate).toLocaleString("en-GB")}
+                            {(r.dup_of_who || r.dupOfWho) && ` — ${r.dup_of_who || r.dupOfWho}`}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* ناردن */}
+          <div>
+            <Lbl>ژمارەی واتساپ (ئارەزوومەندانە)</Lbl>
+            <Inp type="tel" dir="ltr" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="07701234567" />
+            <div className="text-[11px] text-slate-400 mt-1">بەتاڵی بهێڵەرەوە بۆ هەڵبژاردنی کەس لە واتساپ</div>
+          </div>
+
+          <div className="flex gap-2">
+            <Btn className="flex-1 flex items-center justify-center gap-1.5" onClick={sendWa}>
+              <MessageCircle className="w-4 h-4" /> ناردن بە واتساپ
+            </Btn>
+            <Btn kind="ghost" className="flex-1" onClick={copy}>کۆپیکردن</Btn>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─────────── ڕێنمایی واتساپ ─────────── */
+function WhatsAppInfo({ batches, waN }) {
+  const wa = (batches || []).filter((b) => b.source === "whatsapp");
+  const today = new Date().toISOString().slice(0, 10);
+  const todayN = wa.filter((b) => (b.created_at || "").slice(0, 10) === today).length;
+  return (
+    <div className="space-y-4">
+      <Card className="p-5 bg-emerald-600 border-emerald-600 text-white">
+        <div className="flex items-center gap-2.5 mb-3">
+          <MessageCircle className="w-6 h-6" />
+          <div className="font-bold">وەرگرتنی فیش لە واتساپەوە</div>
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          <div>
+            <div className="text-[11px] text-emerald-100">کۆی کۆمەڵەکان</div>
+            <div className="text-2xl font-bold" style={num}>{wa.length}</div>
+          </div>
+          <div>
+            <div className="text-[11px] text-emerald-100">ئەمڕۆ</div>
+            <div className="text-2xl font-bold" style={num}>{todayN}</div>
+          </div>
+          <div>
+            <div className="text-[11px] text-emerald-100">چاوەڕوان</div>
+            <div className="text-2xl font-bold" style={num}>{waN}</div>
+          </div>
+        </div>
+      </Card>
+
+      <Card className="p-5">
+        <SecLbl>چۆن کار دەکات</SecLbl>
+        <div className="space-y-3 text-sm text-slate-600 leading-relaxed">
+          <div className="flex gap-3">
+            <span className="w-6 h-6 rounded-full bg-emerald-700 text-white flex items-center justify-center text-xs font-bold shrink-0">١</span>
+            <span>کڕیار فیشەکان لە واتساپەوە <b>فۆرۆرد</b> دەکات بۆ ژمارەی کۆمپانیاکە</span>
+          </div>
+          <div className="flex gap-3">
+            <span className="w-6 h-6 rounded-full bg-emerald-700 text-white flex items-center justify-center text-xs font-bold shrink-0">٢</span>
+            <span>سیستەمەکە خۆکار وێنەکان دەخوێنێتەوە و دووبارەکان دەدۆزێتەوە</span>
+          </div>
+          <div className="flex gap-3">
+            <span className="w-6 h-6 rounded-full bg-emerald-700 text-white flex items-center justify-center text-xs font-bold shrink-0">٣</span>
+            <span>کۆمەڵەیەکی نوێ لە <b>ئینباکس</b> دەردەکەوێت — تۆ تەنها مامەڵەکەی لێ درووست دەکەیت</span>
+          </div>
+        </div>
+        <div className="mt-4 pt-4 border-t border-stone-100 text-xs text-slate-500 leading-relaxed">
+          <b className="text-slate-700">تێبینی:</b> فیشەکان کە بە ماوەی ١٥ خولەک بنێردرێن، هەموویان لە یەک کۆمەڵەدا کۆدەبنەوە.
+          کڕیارەکە بە ژمارەی مۆبایلەکەی دەناسرێتەوە — بۆیە دڵنیابە ژمارەکەی لە ئەکاونتەکەیدا دروستە.
+        </div>
+      </Card>
+
+      <Card className="p-4 bg-stone-50/60">
+        <div className="text-xs text-slate-500 leading-relaxed">
+          <b className="text-slate-700">نرخ:</b> وەرگرتنی نامە لە کڕیارەکانەوە <b>بەخۆڕاییە</b> — تەنها ئەگەر تۆ وەڵامیان بدەیتەوە پارەی لەسەرە.
+          سیستەمەکە بە شێوەی بنەڕەت وەڵام نادات.
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 /* ─────────── فیشەکانی شوێنێک (لای خۆم یان لای هاوبەشێک) ─────────── */
-function LocationReceipts({ partnerId, data, title }) {
+function LocationReceipts({ partnerId, data, title, flash }) {
   const [recs, setRecs] = useState(null);
   const [mode, setMode] = useState("month");
   const [dir, setDir] = useState("all");
+  const [share, setShare] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -2509,6 +2871,15 @@ function LocationReceipts({ partnerId, data, title }) {
         ))}
       </div>
       <ReceiptTotals rows={list} data={data} />
+
+      <Btn kind="gold" className="w-full flex items-center justify-center gap-2" onClick={() => setShare(true)}>
+        <Share2 className="w-4 h-4" /> ناردنی خشتەی وردەکاری
+      </Btn>
+      {share && (
+        <ShareTable rows={list} data={data} title={title || "فیشەکان"}
+          flash={flash} onClose={() => setShare(false)} />
+      )}
+
       <RejectedReceipts rows={list} />
       <ReceiptList rows={list} showFrom />
     </div>
@@ -2520,6 +2891,7 @@ function BatchDetail({ id, back, usr, data, onMakeTx, flash, reloadBatches }) {
   const [b, setB] = useState(null);
   const [recs, setRecs] = useState(null);
   const [split, setSplit] = useState(false);
+  const [share, setShare] = useState(false);
   const [pick, setPick] = useState({});        // {receiptId: partnerId|""}
   const [saving, setSaving] = useState(false);
   const partners = data.users.filter((u) => u.role === "partner" && !u.deleted);
@@ -2580,6 +2952,15 @@ function BatchDetail({ id, back, usr, data, onMakeTx, flash, reloadBatches }) {
       </div>
 
       <ReceiptTotals rows={recs} data={data} />
+
+      <Btn kind="gold" className="w-full flex items-center justify-center gap-2" onClick={() => setShare(true)}>
+        <Share2 className="w-4 h-4" /> ناردنی خشتەی وردەکاری
+      </Btn>
+      {share && (
+        <ShareTable rows={recs} data={data} who={b.customer_name || (b.partner_id ? usr(b.partner_id).name : "")}
+          title="وردەکاری فیشەکان" flash={flash} onClose={() => setShare(false)} />
+      )}
+
       <RejectedReceipts rows={recs} />
 
       {/* دابەشکردن بەسەر هاوبەشەکان */}
@@ -2698,8 +3079,9 @@ function BatchDetail({ id, back, usr, data, onMakeTx, flash, reloadBatches }) {
 }
 
 /* ─────────── ئەرشیفی فیشەکانی کڕیارێک ─────────── */
-function ReceiptArchive({ customerId, data }) {
+function ReceiptArchive({ customerId, data, flash }) {
   const [recs, setRecs] = useState(null);
+  const [share, setShare] = useState(false);
   const [q, setQ] = useState(""); const [from, setFrom] = useState(""); const [to, setTo] = useState("");
 
   useEffect(() => {
@@ -2726,6 +3108,12 @@ function ReceiptArchive({ customerId, data }) {
         </div>
       </Card>
       <ReceiptTotals rows={list} data={data} compact />
+
+      <Btn kind="gold" className="w-full flex items-center justify-center gap-2" onClick={() => setShare(true)}>
+        <Share2 className="w-4 h-4" /> ناردنی خشتەی وردەکاری
+      </Btn>
+      {share && <ShareTable rows={list} data={data} title="ئەرشیفی فیشەکان" flash={flash} onClose={() => setShare(false)} />}
+
       <RejectedReceipts rows={list} />
       <ReceiptList rows={list} />
     </div>
@@ -2733,8 +3121,8 @@ function ReceiptArchive({ customerId, data }) {
 }
 
 /* ─────────── فیشەکانی هاوبەشێک (پۆرتاڵی خۆی) ─────────── */
-function PartnerReceipts({ partnerId, data }) {
-  return <LocationReceipts partnerId={partnerId} data={data} />;
+function PartnerReceipts({ partnerId, data, flash }) {
+  return <LocationReceipts partnerId={partnerId} data={data} flash={flash} />;
 }
 
 /* کەشف حساب — پوختەی حیسابی کڕیارێک بۆ ناردن */
@@ -3087,7 +3475,7 @@ function CustomerDetail({ id, back, data, calc, cur, usr, onSave, settle, flash,
         ))}
       </div>
 
-      {tab === "receipts" ? <ReceiptArchive customerId={id} data={data} /> : tab === "new" ? (
+      {tab === "receipts" ? <ReceiptArchive customerId={id} data={data} flash={flash} /> : tab === "new" ? (
         <TxForm data={data} calc={calc} cur={cur} usr={usr} {...rest} onSave={(fm, e) => onSave({ ...fm, cpMode: "acc", cpId: id, cpName: "" }, e)} lockCp={id} />
       ) : (
         <>
@@ -3951,7 +4339,7 @@ function CustomerPortal({ user, c, base, data, cur, usr, flash, reloadBatches })
         </>
       )}
 
-      {tab === "archive" && <ReceiptArchive customerId={user.id} data={data} />}
+      {tab === "archive" && <ReceiptArchive customerId={user.id} data={data} flash={flash} />}
 
       {tab === "account" && (<>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -4025,7 +4413,7 @@ function PartnerPortal({ user, data, calc, cur, usr, flash, reloadBatches }) {
         </div>
       )}
 
-      {tab === "receipts" && <PartnerReceipts partnerId={user.id} data={data} />}
+      {tab === "receipts" && <PartnerReceipts partnerId={user.id} data={data} flash={flash} />}
 
       {tab === "send" && (
         <>

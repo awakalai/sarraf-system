@@ -3549,7 +3549,7 @@ function AccountMoney({ data, cur, usr, accountMove, accountTransfer, flash }) {
 }
 
 /* ══════════════════ قاسەی ئەکاونتێک ══════════════════ */
-function AccountSafe({ userId, data, calc, cur, usr, accountMove, accountTransfer, flash, compact }) {
+function AccountSafe({ userId, data, calc, cur, usr, accountMove, accountTransfer, flash, compact, readOnly }) {
   const [tab, setTab] = useState("balance");
   const u = usr(userId);
   const bal = calc.acctCash[userId] || {};
@@ -3566,7 +3566,7 @@ function AccountSafe({ userId, data, calc, cur, usr, accountMove, accountTransfe
   return (
     <div className="space-y-4">
       <div className="flex gap-1 bg-white border border-stone-200 rounded-xl p-1 overflow-x-auto">
-        {[["balance", "قاسە"], ["move", "زیادکردن / کەمکردن"], ["transfer", "گواستنەوە"], ["hist", "مێژوو"]].map(([k, t]) => (
+        {(readOnly ? [["balance", "قاسە"], ["hist", "مێژوو"]] : [["balance", "قاسە"], ["move", "زیادکردن / کەمکردن"], ["transfer", "گواستنەوە"], ["hist", "مێژوو"]]).map(([k, t]) => (
           <button key={k} onClick={() => setTab(k)}
             className={`flex-1 whitespace-nowrap px-3 py-2.5 rounded-lg text-sm ${tab === k ? "bg-emerald-700 text-white font-semibold" : "text-slate-600 hover:bg-stone-100"}`}>{t}</button>
         ))}
@@ -3583,7 +3583,9 @@ function AccountSafe({ userId, data, calc, cur, usr, accountMove, accountTransfe
                   <Money v={v} dec={0} />
                 </div>
               ))}
-            <div className="text-[11px] text-slate-400 mt-3">پارەی ڕاستەقینەی ئەم کەسە کە لای من دانراوە</div>
+            <div className="text-[11px] text-slate-400 mt-3">
+              {readOnly ? "بۆ زیادکردن یان دەرهێنانی پارە، پەیوەندی بە نووسینگە بکە" : "پارەی ڕاستەقینەی ئەم کەسە کە لای من دانراوە"}
+            </div>
           </Card>
 
           <Card className="p-5">
@@ -3608,7 +3610,7 @@ function AccountSafe({ userId, data, calc, cur, usr, accountMove, accountTransfe
         </div>
       )}
 
-      {tab === "move" && (
+      {tab === "move" && !readOnly && (
         <Card className="p-5">
           <SecLbl>زیادکردن یان کەمکردنی پارە</SecLbl>
           <div className="grid grid-cols-2 gap-3">
@@ -3638,7 +3640,7 @@ function AccountSafe({ userId, data, calc, cur, usr, accountMove, accountTransfe
         </Card>
       )}
 
-      {tab === "transfer" && (
+      {tab === "transfer" && !readOnly && (
         <Card className="p-5">
           <SecLbl>گواستنەوە بۆ حسابێکی تر</SecLbl>
           <Inp value={q} onChange={(e) => setQ(e.target.value)} placeholder="گەڕان بە ناو یان ژمارە..." className="mb-2" />
@@ -3976,7 +3978,7 @@ function InvestorDetail({ u, data, calc, cur, invUnpaid, mine }) {
 
 
 /* ══════════════════ نووسینگە ══════════════════ */
-function Office({ data, cur, usr, officePay, calc, accountMove, accountTransfer, flash, officeId }) {
+function Office({ data, cur, usr, officePay, calc, accountMove, accountTransfer, flash, officeId, readOnlyUser }) {
   const [tab, setTab] = useState("pending");
   const [q, setQ] = useState("");
   const [from, setFrom] = useState("");
@@ -4082,7 +4084,7 @@ function Office({ data, cur, usr, officePay, calc, accountMove, accountTransfer,
 
       {tab === "safe" && officeId && (
         <AccountSafe userId={officeId} data={data} calc={calc} cur={cur} usr={usr}
-          accountMove={accountMove} accountTransfer={accountTransfer} flash={flash} />
+          accountMove={accountMove} accountTransfer={accountTransfer} flash={flash} readOnly={!!readOnlyUser} />
       )}
     </div>
   );
@@ -4818,7 +4820,7 @@ function PartnerPortal({ user, data, calc, cur, usr, flash, reloadBatches, accou
         </div>
       )}
 
-      {tab === "safe" && <AccountSafe userId={user.id} data={data} calc={calc} cur={cur} usr={usr} accountMove={accountMove} accountTransfer={accountTransfer} flash={flash} />}
+      {tab === "safe" && <AccountSafe userId={user.id} data={data} calc={calc} cur={cur} usr={usr} flash={flash} readOnly />}
       {tab === "receipts" && <PartnerReceipts partnerId={user.id} data={data} flash={flash} />}
 
       {tab === "send" && (
@@ -4852,7 +4854,7 @@ function PartnerPortal({ user, data, calc, cur, usr, flash, reloadBatches, accou
 
 /* ══════════════════ پۆرتاڵی ڕۆڵەکانی تر ══════════════════ */
 function Portal({ user, data, calc, cur, usr, officePay, settle, invUnpaid, flash, reloadBatches, accountMove, accountTransfer }) {
-  if (user.role === "office") return <Office data={data} cur={cur} usr={usr} officePay={officePay} calc={calc} officeId={user.id} accountMove={accountMove} accountTransfer={accountTransfer} flash={flash} />;
+  if (user.role === "office") return <Office data={data} cur={cur} usr={usr} officePay={officePay} calc={calc} officeId={user.id} flash={flash} readOnlyUser />;
 
   if (user.role === "customer") {
     const c = calc.cust[user.id] || { owe: {}, due: {} };

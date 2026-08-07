@@ -165,20 +165,24 @@ export default function App() {
   const loadAll = async () => {
     try {
       reloadBatches();
-      const [c, u, l, t, a] = await Promise.all([
+      const [c, u, l, t, a, ac] = await Promise.all([
         supabase.from("currencies").select("*").order("code"),
         supabase.from("app_users").select("*").order("created_at"),
         supabase.from("ledger").select("*").order("date"),
         supabase.from("txs").select("*").order("date"),
         supabase.from("audit").select("*").order("date", { ascending: false }).limit(300),
+        supabase.from("account_ledger").select("*").order("created_at", { ascending: false }).limit(5000),
       ]);
       const d = {
-        currencies: (c.data || []).map((r) => ({ id: r.id, code: r.code, name: r.name, symbol: r.symbol, dec: r.dec, buyRate: r.buy_rate == null ? null : +r.buy_rate, sellRate: r.sell_rate == null ? null : +r.sell_rate, rateUpdated: r.rate_updated })),
-        users: (u.data || []).map((r) => ({ id: r.id, authId: r.auth_id, name: r.name, role: r.role, rate: +r.rate || 0, phone: r.phone, address: r.address, note: r.note, deleted: r.deleted })),
+        currencies: (c.data || []).map((r) => ({ id: r.id, code: r.code, name: r.name, symbol: r.symbol, dec: r.dec, external: !!r.external, buyRate: r.buy_rate == null ? null : +r.buy_rate, sellRate: r.sell_rate == null ? null : +r.sell_rate, rateUpdated: r.rate_updated })),
+        users: (u.data || []).map((r) => ({ id: r.id, authId: r.auth_id, name: r.name, role: r.role, rate: +r.rate || 0, scope: Array.isArray(r.scope_curs) ? r.scope_curs : [], phone: r.phone, address: r.address, note: r.note, deleted: r.deleted })),
         ledger: (l.data || []).map((r) => ({ id: r.id, type: r.type, owner: r.owner, investorId: r.investor_id, curId: r.cur_id, amount: +r.amount, partnerId: r.partner_id, txId: r.tx_id, note: r.note, date: r.date })),
         txs: (t.data || []).map((r) => ({ id: r.id, code: r.code, type: r.type, direct: !!r.direct,
+          pairId: r.pair_id, directRole: r.direct_role, ownMoney: !!r.own_money,
           buyRate: r.buy_rate == null ? null : +r.buy_rate, buyTotal: r.buy_total == null ? null : +r.buy_total, cpId: r.cp_id, cpName: r.cp_name, curId: r.cur_id, amount: +r.amount, rate: +r.rate, againstId: r.against_id, total: +r.total, partnerId: r.partner_id, status: r.status, paidAt: r.paid_at, profit: r.profit == null ? null : +r.profit, profitCurId: r.profit_cur_id, note: r.note, date: r.date, edited: r.edited, deleted: r.deleted })),
         audit: (a.data || []).map((r) => ({ id: r.id, date: r.date, action: r.action, detail: r.detail })),
+        acct: (ac.data || []).map((r) => ({ id: r.id, userId: r.user_id, kind: r.kind, curId: r.cur_id,
+          amount: +r.amount, type: r.type, refId: r.ref_id, note: r.note, date: r.created_at })),
       };
       setData(d);
       if (session) setProfile(d.users.find((x) => x.authId === session.user.id) || null);
@@ -188,6 +192,7 @@ export default function App() {
   const A = (action, detail) => supabase.from("audit").insert({ id: uid(), date: now(), action, detail });
   const LR = (e) => ({ id: e.id, type: e.type, owner: e.owner || null, investor_id: e.investorId || null, cur_id: e.curId, amount: e.amount, partner_id: e.partnerId || null, tx_id: e.txId || null, note: e.note || null, date: e.date });
   const TR = (t) => ({ id: t.id, code: t.code || null, type: t.type, direct: !!t.direct,
+    pair_id: t.pairId ?? null, direct_role: t.directRole ?? null, own_money: !!t.ownMoney,
     buy_rate: t.buyRate ?? null, buy_total: t.buyTotal ?? null, cp_id: t.cpId, cp_name: t.cpName, cur_id: t.curId, amount: t.amount, rate: t.rate, against_id: t.againstId, total: t.total, partner_id: t.partnerId, status: t.status, paid_at: t.paidAt, profit: t.profit, profit_cur_id: t.profitCurId, note: t.note || null, date: t.date, edited: !!t.edited, deleted: !!t.deleted });
 
   const lockRef = useRef(false);
@@ -230,7 +235,7 @@ export default function App() {
       const atP = Object.values(partner).reduce((s, m) => s + (m[c.id] || 0), 0);
       atMe[c.id] = (phys[c.id] || 0) - atP;
     }
-    // باڵانسی دووسەرەی کڕیارەکان
+    // باڵانسی دووسەرەی کڕیارەکان (قەرز)
     const cust = {};
     for (const t of data.txs) {
       if (t.deleted || t.status !== "pending") continue;
@@ -241,17 +246,33 @@ export default function App() {
       const side = t.type === "buy" ? "owe" : "due";
       cust[key][side][t.againstId] = (cust[key][side][t.againstId] || 0) + t.total;
     }
-    return { phys, partner, atMe, invCap, invTotal, selfCap, invPaid, expenses, fees, cust, pending: cust };
+    // ── باڵانسی قاسە و قەرزی هەر حسابێک ──
+    const acctCash = {}, acctDebt = {};
+    for (const e of (data.acct || [])) {
+      const box = e.kind === "debt" ? acctDebt : acctCash;
+      box[e.userId] = box[e.userId] || {};
+      box[e.userId][e.curId] = (box[e.userId][e.curId] || 0) + e.amount;
+    }
+    // قەرزی مامەڵە چاوەڕوانەکان دەخرێتە سەر دەفتەری قەرز
+    for (const t of data.txs) {
+      if (t.deleted || t.status !== "pending" || !t.cpId) continue;
+      acctDebt[t.cpId] = acctDebt[t.cpId] || {};
+      const sign = t.type === "buy" ? +1 : -1;   // کڕین = قەرزاری ئەوم | فرۆشتن = ئەو قەرزارە
+      acctDebt[t.cpId][t.againstId] = (acctDebt[t.cpId][t.againstId] || 0) + sign * t.total;
+    }
+    return { phys, partner, atMe, invCap, invTotal, selfCap, invPaid, expenses, fees, cust, pending: cust, acctCash, acctDebt };
   }, [data]);
 
   const cur = (id) => data?.currencies.find((c) => c.id === id) || {};
   const usr = (id) => data?.users.find((u) => u.id === id) || {};
 
   /* خێری فرۆشتنەکان لە ماوەیەکدا، بۆ هەر دراوێک */
+  // خێری هاوبەش (دابەش دەکرێت) — مامەڵەی ڕاستەوخۆ لێی دەرکراوە
   const profitIn = (from, to) => {
     const m = {};
     for (const t of data.txs) {
-      if (t.deleted || t.type !== "sell" || t.profit == null) continue;
+      if (t.deleted || t.profit == null || t.direct) continue;
+      if (t.type !== "sell") continue;
       const d = dOnly(t.date);
       if (from && d < from) continue;
       if (to && d > to) continue;
@@ -259,15 +280,44 @@ export default function App() {
     }
     return m;
   };
+  // خێری تایبەتی خۆم (مامەڵەی ڕاستەوخۆ) — دابەش ناکرێت
+  const ownProfitIn = (from, to) => {
+    const m = {};
+    for (const t of data.txs) {
+      if (t.deleted || t.profit == null || !t.direct) continue;
+      const d = dOnly(t.date);
+      if (from && d < from) continue;
+      if (to && d > to) continue;
+      m[t.profitCurId] = (m[t.profitCurId] || 0) + t.profit;
+    }
+    return m;
+  };
+  const ownProfitAll = useMemo(() => (data ? ownProfitIn(null, null) : {}), [data]);
   const profitAll = useMemo(() => (data ? profitIn(null, null) : {}), [data]);
 
   /* بەشی وەبەرهێنەرێک لە خێری دراوێک */
+  // ئایا ئەم وەبەرهێنەرە لەم دراوەدا شەریکە؟ (بەتاڵ = لە هەموویان)
+  const inScope = (iid, curId) => {
+    const sc = usr(iid).scope || [];
+    return !sc.length || sc.includes(curId);
+  };
+  // کۆی سەرمایەی ئەوانەی لەم دراوەدا شەریکن
+  const scopedCap = (curId) => {
+    let s2 = calc.selfCap[curId] || 0;
+    data.users.forEach((u) => {
+      if (u.role === "investor" && !u.deleted && inScope(u.id, curId))
+        s2 += (calc.invCap[u.id] || {})[curId] || 0;
+    });
+    return s2;
+  };
   const invShare = (iid, curId, totalProfit) => {
-    const totalCap = (calc.selfCap[curId] || 0) + (calc.invTotal[curId] || 0);
+    if (!inScope(iid, curId)) return 0;
+    const totalCap = scopedCap(curId);
     const cap = (calc.invCap[iid] || {})[curId] || 0;
     if (totalCap <= 0 || cap <= 0 || !totalProfit) return 0;
     return totalProfit * (cap / totalCap) * ((usr(iid).rate || 0) / 100);
   };
+  // دابەشکردن تەنها لەسەر خێری هاوبەش دەکرێت (نەک ڕاستەوخۆ)
   const investorsProfitIn = (pm) => {
     const out = {};
     const invs = data.users.filter((u) => u.role === "investor" && !u.deleted);
@@ -283,11 +333,12 @@ export default function App() {
     const invP = investorsProfitIn(profitAll);
     const out = {};
     for (const c of data.currencies) {
-      const myProfit = (profitAll[c.id] || 0) - (invP[c.id] || 0);
-      out[c.id] = (calc.selfCap[c.id] || 0) + myProfit - (calc.expenses[c.id] || 0) - (calc.fees[c.id] || 0);
+      const shared = (profitAll[c.id] || 0) - (invP[c.id] || 0);   // بەشی من لە خێری هاوبەش
+      const own = ownProfitAll[c.id] || 0;                          // خێری ڕاستەوخۆ — ١٠٠٪ هی من
+      out[c.id] = (calc.selfCap[c.id] || 0) + shared + own - (calc.expenses[c.id] || 0) - (calc.fees[c.id] || 0);
     }
     return out;
-  }, [data, calc, profitAll]);
+  }, [data, calc, profitAll, ownProfitAll]);
 
   /* خێری نەدراوی وەبەرهێنەرێک */
   const invUnpaid = (iid, curId) => invShare(iid, curId, profitAll[curId] || 0) - ((calc.invPaid[iid] || {})[curId] || 0);
@@ -383,39 +434,80 @@ export default function App() {
   const saveTx = async (f, existing) => {
     const amount = Math.round(+f.amount), rate = +f.rate, total = Math.round(amount * rate);
     if (!(amount > 0)) { flash("بڕ دەبێت لە سفر گەورەتر بێت"); return false; }
+    if (f.curId === f.againstId) { flash("ناکرێت دراوەکە لەگەڵ خۆی مامەڵەی پێبکرێت"); return false; }
+
+    // ── مامەڵەی ڕاستەوخۆ: کڕیار + فرۆشیار ──
     if (f.direct) {
       if (!(+f.buyQuote > 0)) { flash("ڕەیتی کڕین پێویستە"); return false; }
       if (!(+f.sellQuote > 0)) { flash("ڕەیتی فرۆشتن پێویستە"); return false; }
-    } else if (!(rate > 0)) { flash("نرخ دەبێت لە سفر گەورەتر بێت"); return false; }
-    if (f.curId === f.againstId) { flash("ناکرێت دراوەکە لەگەڵ خۆی مامەڵەی پێبکرێت"); return false; }
+      if (!f.fromId && !f.fromName) { flash("لە کێ دەیکڕیت؟"); return false; }
+      if (!f.toId && !f.toName) { flash("بە کێ دەیفرۆشیت؟"); return false; }
+
+      return await run(async () => {
+        const bq = Math.round((+f.buyQuote) * 1000) / 1000;
+        const sq = Math.round((+f.sellQuote) * 1000) / 1000;
+        const buyTotal = Math.round(amount / bq);
+        const sellTotal = Math.round(amount / sq);
+        const profit = sellTotal - buyTotal;
+        const pair = uid();
+        const base = Math.max(1000, ...data.txs.map((x) => x.code || 0));
+
+        // مامەڵەی کڕین
+        const t1 = {
+          id: uid(), code: base + 1, type: "buy", direct: true, pairId: pair, directRole: "buy",
+          ownMoney: true, cpId: f.fromId || null, cpName: f.fromId ? null : f.fromName,
+          curId: f.curId, amount, rate: 1 / bq, againstId: f.againstId, total: buyTotal,
+          partnerId: null, status: f.buyStatus || "completed", paidAt: null,
+          profit: null, profitCurId: null, note: f.note || "", date: now(), edited: false,
+        };
+        // مامەڵەی فرۆشتن
+        const t2 = {
+          id: uid(), code: base + 2, type: "sell", direct: true, pairId: pair, directRole: "sell",
+          ownMoney: true, cpId: f.toId || null, cpName: f.toId ? null : f.toName,
+          curId: f.curId, amount, rate: 1 / sq, againstId: f.againstId, total: sellTotal,
+          partnerId: null, status: f.sellStatus || "completed", paidAt: null,
+          profit, profitCurId: f.againstId, note: f.note || "", date: now(), edited: false,
+        };
+
+        let r = await supabase.from("txs").insert([TR(t1), TR(t2)]); if (r.error) throw r.error;
+
+        // تۆمارەکانی دەفتەر — بە پارەی خۆم، خێری ١٠٠٪ هی خۆم
+        const es = [];
+        es.push({ id: uid(), type: "buy", curId: t1.curId, amount: +amount, partnerId: null, txId: t1.id, date: t1.date });
+        if (t1.status === "completed") es.push({ id: uid(), type: "direct_buy", curId: t1.againstId, amount: -buyTotal, partnerId: null, txId: t1.id, note: "بە پارەی خۆم", date: t1.date });
+        es.push({ id: uid(), type: "sell", curId: t2.curId, amount: -amount, partnerId: null, txId: t2.id, date: t2.date });
+        if (t2.status === "completed") es.push({ id: uid(), type: "direct_sell", curId: t2.againstId, amount: +sellTotal, partnerId: null, txId: t2.id, note: "بۆ پارەی خۆم", date: t2.date });
+        r = await supabase.from("ledger").insert(es.map(LR)); if (r.error) throw r.error;
+
+        await A("مامەڵەی ڕاستەوخۆ", `#${t1.code}/${t2.code} — ${fmt(amount)} ${cur(f.curId).code} · خێر ${fmt(profit)} ${cur(f.againstId).code}`);
+        setEditTx(null);
+        flash(`مامەڵە تۆمار کرا ✓ — خێر ${fmt(profit)} ${cur(f.againstId).code}`);
+      });
+    }
+
+    // ── مامەڵەی ئاسایی ──
+    if (!(rate > 0)) { flash("نرخ دەبێت لە سفر گەورەتر بێت"); return false; }
     if (!f.cpId && !f.cpName) { flash("لایەنی بەرامبەر دیاری بکە"); return false; }
-    if (!f.direct && !(total > 0)) { flash("کۆی گشتی ناتوانێت سفر بێت"); return false; }
+    if (!(total > 0)) { flash("کۆی گشتی ناتوانێت سفر بێت"); return false; }
+    // دراوی دەرەوە: دەبێت لای تەرەفێک بێت
+    if (cur(f.curId).external && !f.partnerId) { flash(`${cur(f.curId).name} دەبێت لای تەرەفێک دابنرێت`); return false; }
+
     return await run(async () => {
       let profit = null, profitCurId = null;
-      if (f.direct) {
-        // مامەڵەی ڕاستەوخۆ: خێر لە جووتەکەی خۆیەوە دەژمێردرێت
-        const bq = Math.round((+f.buyQuote || 0) * 1000) / 1000;   // بە چەند کڕدراوە
-        const sq = Math.round((+f.sellQuote || 0) * 1000) / 1000;  // بە چەند فرۆشراوە
-        if (bq > 0 && sq > 0) {
-          profit = Math.round(amount / sq) - Math.round(amount / bq);
-          profitCurId = f.againstId;
-        }
-      } else if (f.type === "sell") {
+      if (f.type === "sell") {
         const av = avgRate(f.curId, f.againstId);
         if (av !== null) { profit = Math.round(total - av * amount); profitCurId = f.againstId; }
       }
       const code = existing ? existing.code : Math.max(1000, ...data.txs.map((x) => x.code || 0)) + 1;
-      const bq3 = Math.round((+f.buyQuote || 0) * 1000) / 1000;
-      const sq3 = Math.round((+f.sellQuote || 0) * 1000) / 1000;
-      const buyTotal = f.direct && bq3 > 0 ? Math.round(amount / bq3) : null;
-      const t = { id: existing ? existing.id : uid(), code, type: f.direct ? "buy" : f.type, cpId: f.cpId || null, cpName: f.cpId ? null : f.cpName, curId: f.curId, amount,
-        rate: f.direct && sq3 > 0 ? 1 / sq3 : rate, buyRate: f.direct && bq3 > 0 ? 1 / bq3 : null, buyTotal,
-        againstId: f.againstId, total: f.direct && sq3 > 0 ? Math.round(amount / sq3) : total, partnerId: f.direct ? null : (f.partnerId || null), direct: !!f.direct, status: f.status || "completed", paidAt: existing ? existing.paidAt : null, profit, profitCurId, note: f.note || "", date: existing ? existing.date : now(), edited: !!existing };
+      const t = { id: existing ? existing.id : uid(), code, type: f.type, cpId: f.cpId || null,
+        cpName: f.cpId ? null : f.cpName, curId: f.curId, amount, rate, againstId: f.againstId, total,
+        partnerId: f.partnerId || null, direct: false, status: f.status || "completed",
+        paidAt: existing ? existing.paidAt : null, profit, profitCurId, note: f.note || "",
+        date: existing ? existing.date : now(), edited: !!existing };
       if (existing) {
         let r = await supabase.from("ledger").delete().eq("tx_id", t.id); if (r.error) throw r.error;
         r = await supabase.from("txs").update(TR(t)).eq("id", t.id); if (r.error) throw r.error;
       } else {
-        // گەر کەسێکی تر لە هەمان ساتدا هەمان کۆدی بردبێت، کۆدی دواتر تاقی بکەوە
         let ok = false;
         for (let k = 0; k < 8 && !ok; k++) {
           const r = await supabase.from("txs").insert(TR({ ...t, code: t.code + k }));
@@ -425,17 +517,13 @@ export default function App() {
         if (!ok) throw new Error("نەتوانرا کۆدێکی بەردەست بدۆزرێتەوە");
       }
       const r2 = await supabase.from("ledger").insert(buildEntries(t).map(LR)); if (r2.error) throw r2.error;
-      // بەستنەوەی کۆمەڵەی فیش بە مامەڵەکەوە
       if (f.batchId) {
         await supabase.from("receipt_batches").update({
           status: "linked", tx_id: t.id, partner_id: t.partnerId || null, linked_at: now(),
         }).eq("id", f.batchId);
         setPendingBatch(null);
       }
-      // گەر مامەڵەیەکی بەستراو ئیدیت کرا، هاوبەشی کۆمەڵەکەش نوێ بکەرەوە
-      if (existing) {
-        await supabase.from("receipt_batches").update({ partner_id: t.partnerId || null }).eq("tx_id", t.id);
-      }
+      if (existing) await supabase.from("receipt_batches").update({ partner_id: t.partnerId || null }).eq("tx_id", t.id);
       reloadBatches();
       await A(existing ? "ئیدیتی مامەڵە" : (t.type === "buy" ? "کڕین" : "فرۆشتن"), `#${t.code} — ${fmt(amount)} ${cur(f.curId).code} — ${t.cpId ? usr(t.cpId).name : t.cpName}`);
       setEditTx(null);
@@ -524,7 +612,7 @@ export default function App() {
   });
 
   const addCurrency = (nc) => run(async () => {
-    const r = await supabase.from("currencies").insert({ id: nc.code.toLowerCase(), code: nc.code, name: nc.name, symbol: nc.symbol, dec: +nc.dec || 2 });
+    const r = await supabase.from("currencies").insert({ id: nc.code.toLowerCase(), code: nc.code, name: nc.name, symbol: nc.symbol, dec: +nc.dec || 2, external: !!nc.external });
     if (r.error) throw r.error;
     await A("زیادکردنی دراو", nc.code);
     flash("دراو زیاد کرا ✓");
@@ -536,7 +624,7 @@ export default function App() {
     const temp = createClient(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_ANON_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
     const { data: sd, error: se } = await temp.auth.signUp({ email: fakeEmail, password: f.password });
     if (se && !String(se.message).includes("already registered")) throw se;
-    const r = await supabase.from("app_users").insert({ id: uid(), auth_id: sd?.user?.id || null, name: f.name, role: f.role, rate: +f.rate || 0, phone: f.phone, address: f.address || null, note: f.note || null });
+    const r = await supabase.from("app_users").insert({ id: uid(), auth_id: sd?.user?.id || null, name: f.name, role: f.role, rate: +f.rate || 0, scope_curs: f.scope || [], phone: f.phone, address: f.address || null, note: f.note || null });
     if (r.error) throw r.error;
     await A("درووستکردنی ئەکاونت", `${f.name} (${ROLE_KU[f.role]}) — ${f.phone}`);
     flash("ئەکاونت درووست کرا ✓");
@@ -555,63 +643,75 @@ export default function App() {
     await A("گۆڕینی ڕێژە", `${u.name} → ${rate}%`);
   });
 
-  /* ── پارە دانان/دەرهێنان بۆ هەر حسابێک ── */
+  /* ── پارە دانان/دەرهێنان لە حسابی هەر کەسێک ── */
+  //  دوو لای هەیە: قاسەی گشتی + قاسەی خودی ئەو کەسە
   const accountMove = (f) => run(async () => {
     const amt = Math.round(Math.abs(+f.amount));
     if (!(amt > 0)) { flash("بڕ پێویستە"); return; }
     if (!f.userId) { flash("کەسەکە دیاری بکە"); return; }
     const u = usr(f.userId);
-    const sign = f.dir === "in" ? 1 : -1;
-    const es = [];
+    const sign = f.dir === "in" ? 1 : -1;      // in = پارە دەخەمە سەر حسابی
+
+    // ١) قاسەی خودی ئەو کەسە
+    const ae = {
+      id: uid(), user_id: f.userId, kind: "cash", cur_id: f.curId, amount: sign * amt,
+      type: f.dir === "in" ? "deposit" : "withdraw", note: f.note || null,
+      created_by: profile?.id || null,
+    };
+    let r = await supabase.from("account_ledger").insert(ae); if (r.error) throw r.error;
+
+    // ٢) قاسەی گشتی — پارەکە دێت یان دەڕوات
+    const ge = { id: uid(), type: sign > 0 ? "acc_in" : "acc_out", curId: f.curId,
+      amount: sign * amt, note: `${sign > 0 ? "دانان لە" : "دەرهێنان بۆ"} ${u.name}`, date: now() };
+    r = await supabase.from("ledger").insert(LR(ge)); if (r.error) throw r.error;
+
+    // ٣) وەبەرهێنەر: سەرمایەشی نوێ دەبێتەوە
     if (u.role === "investor") {
-      es.push({ id: uid(), type: sign > 0 ? "deposit" : "withdraw", owner: "investor", investorId: f.userId,
-        curId: f.curId, amount: sign * amt, note: f.note, date: now() });
-    } else if (u.role === "partner") {
-      es.push({ id: uid(), type: "transfer", curId: f.curId, amount: sign * amt, partnerId: f.userId, note: f.note, date: now() });
-      es.push({ id: uid(), type: "transfer", curId: f.curId, amount: -sign * amt, partnerId: null, note: f.note, date: now() });
-    } else {
-      // کڕیار: قەرز/باڵانس — پارە لە قاسە دەچێت یان دێت
-      es.push({ id: uid(), type: sign > 0 ? "cust_in" : "cust_out", curId: f.curId, amount: sign * amt,
-        note: `${sign > 0 ? "وەرگرتن لە" : "دان بە"} ${u.name}${f.note ? " — " + f.note : ""}`, date: now() });
+      const ie = { id: uid(), type: sign > 0 ? "deposit" : "withdraw", owner: "investor",
+        investorId: f.userId, curId: f.curId, amount: sign * amt, note: f.note, date: now() };
+      r = await supabase.from("ledger").insert(LR(ie)); if (r.error) throw r.error;
     }
-    const r = await supabase.from("ledger").insert(es.map(LR)); if (r.error) throw r.error;
-    // بۆ کڕیار: تۆماری حساب
-    if (u.role === "customer") {
-      const m = await supabase.from("account_moves").insert({
-        id: uid(), user_id: f.userId, user_name: u.name, dir: f.dir, cur_id: f.curId,
-        amount: amt, note: f.note || null, created_by: profile?.id || null,
-      });
-      if (m.error) throw m.error;
-    }
-    await A(f.dir === "in" ? "وەرگرتنی پارە" : "دانی پارە", `${fmt(amt)} ${cur(f.curId).code} — ${u.name}`);
+
+    await A(f.dir === "in" ? "دانانی پارە" : "دەرهێنانی پارە", `${fmt(amt)} ${cur(f.curId).code} — ${u.name}`);
     flash("تۆمار کرا ✓");
   });
 
   /* ── گواستنەوەی پارە: حساب بۆ حساب ── */
+  //  لای یەکێک کەم، لای ئەوی تر زیاد — قاسەی گشتی نەگۆڕ دەمێنێتەوە
   const accountTransfer = (f) => run(async () => {
     const amt = Math.round(Math.abs(+f.amount));
     if (!(amt > 0)) { flash("بڕ پێویستە"); return; }
     if (!f.fromId || !f.toId) { flash("هەردوو لایەن دیاری بکە"); return; }
     if (f.fromId === f.toId) { flash("ناکرێت بۆ هەمان کەس بگوازرێتەوە"); return; }
     const a = usr(f.fromId), b = usr(f.toId);
-    const r = await supabase.from("account_transfers").insert({
-      id: uid(), from_id: f.fromId, from_name: a.name, to_id: f.toId, to_name: b.name,
+    const ref = uid();
+
+    const rows = [
+      { id: uid(), user_id: f.fromId, kind: "cash", cur_id: f.curId, amount: -amt, type: "transfer_out",
+        ref_id: ref, note: `بۆ ${b.name}${f.note ? " — " + f.note : ""}`, created_by: profile?.id || null },
+      { id: uid(), user_id: f.toId, kind: "cash", cur_id: f.curId, amount: +amt, type: "transfer_in",
+        ref_id: ref, note: `لە ${a.name}${f.note ? " — " + f.note : ""}`, created_by: profile?.id || null },
+    ];
+    let r = await supabase.from("account_ledger").insert(rows); if (r.error) throw r.error;
+
+    // تۆماری مێژوو
+    r = await supabase.from("account_transfers").insert({
+      id: ref, from_id: f.fromId, from_name: a.name, to_id: f.toId, to_name: b.name,
       cur_id: f.curId, amount: amt, note: f.note || null, created_by: profile?.id || null,
     });
     if (r.error) throw r.error;
-    // گەر هەردووکیان هاوبەش بن، دەفتەریش نوێ دەبێتەوە
-    if (a.role === "partner" || b.role === "partner") {
-      const es = [];
-      if (a.role === "partner") es.push({ id: uid(), type: "transfer", curId: f.curId, amount: -amt, partnerId: f.fromId, note: `بۆ ${b.name}`, date: now() });
-      if (b.role === "partner") es.push({ id: uid(), type: "transfer", curId: f.curId, amount: +amt, partnerId: f.toId, note: `لە ${a.name}`, date: now() });
-      if (a.role !== "partner") es.push({ id: uid(), type: "transfer", curId: f.curId, amount: -amt, partnerId: null, note: `لە ${a.name}`, date: now() });
-      if (b.role !== "partner") es.push({ id: uid(), type: "transfer", curId: f.curId, amount: +amt, partnerId: null, note: `بۆ ${b.name}`, date: now() });
-      const e2 = await supabase.from("ledger").insert(es.map(LR)); if (e2.error) throw e2.error;
-    }
+
+    // وەبەرهێنەر: سەرمایە نوێ بکەرەوە
+    const inv = [];
+    if (a.role === "investor") inv.push({ id: uid(), type: "withdraw", owner: "investor", investorId: f.fromId, curId: f.curId, amount: -amt, note: `بۆ ${b.name}`, date: now() });
+    if (b.role === "investor") inv.push({ id: uid(), type: "deposit", owner: "investor", investorId: f.toId, curId: f.curId, amount: +amt, note: `لە ${a.name}`, date: now() });
+    if (inv.length) { r = await supabase.from("ledger").insert(inv.map(LR)); if (r.error) throw r.error; }
+
     await A("گواستنەوەی حساب", `${fmt(amt)} ${cur(f.curId).code} — لە ${a.name} بۆ ${b.name}`);
     flash("گواستنەوە تۆمار کرا ✓");
   });
 
+  /* ── بەستنی ڕۆژ ── */
   /* ── بەستنی ڕۆژ ── */
   const closeDay = (lines, note, adjust) => run(async () => {
     const totalDiff = lines.reduce((s2, l) => s2 + (l.diff || 0), 0);
@@ -726,7 +826,9 @@ export default function App() {
   ];
 
 
-  const shared = { data, calc, cur, usr, mySafe, profitAll, profitIn, investorsProfitIn, invShare, invUnpaid, autoRate, avgRate, toUsd, sumUsd, ratesReady, owners };
+  const shared = { data, calc, cur, usr, mySafe, profitAll, profitIn, ownProfitIn, ownProfitAll,
+    inScope, scopedCap, investorsProfitIn, invShare, invUnpaid, autoRate, avgRate,
+    toUsd, sumUsd, ratesReady, owners };
 
   return (
     <div dir="rtl" className="min-h-screen bg-[#F5F5F3] text-slate-800" style={{ fontFamily: "'Segoe UI', Tahoma, sans-serif" }}>
@@ -777,7 +879,7 @@ export default function App() {
       </header>
 
       {portalUser ? (
-        <main className="p-3 md:p-5 pb-10 max-w-3xl mx-auto"><Portal user={portalUser} {...shared} officePay={officePay} settle={settle} flash={flash} reloadBatches={reloadBatches} /></main>
+        <main className="p-3 md:p-5 pb-10 max-w-3xl mx-auto"><Portal user={portalUser} {...shared} officePay={officePay} settle={settle} flash={flash} reloadBatches={reloadBatches} accountMove={accountMove} accountTransfer={accountTransfer} /></main>
       ) : (
         <div className="flex flex-col md:flex-row">
           {/* لیستی لاتەنیشت — تەنها لە شاشەی گەورە */}
@@ -1065,7 +1167,9 @@ function SafeCards({ data, calc, cur, mySafe, sumUsd, ratesReady, owners, go }) 
               <div className="flex items-center gap-2.5">
                 <CurBadge c={cc} pulse={isOpen} />
                 <div className="min-w-0">
-                  <div className="text-[11px] text-slate-500 truncate">{cc.name}</div>
+                  <div className="text-[11px] text-slate-500 truncate">
+                    {cc.name}{cc.external && <span className="text-amber-600 mr-1">· دەرەوە</span>}
+                  </div>
                   <div className={`text-lg font-bold ${v < 0 ? "text-rose-700" : "text-slate-900"}`}>
                     <CountUp v={v} />
                   </div>
@@ -1363,6 +1467,16 @@ function Safes({ data, calc, cur, usr, mySafe, invUnpaid, owners, ratesReady, ad
           <div><Lbl>ناو</Lbl><Inp value={nc.name} onChange={(e) => setNc({ ...nc, name: e.target.value })} /></div>
           <div><Lbl>هێما</Lbl><Inp value={nc.symbol} onChange={(e) => setNc({ ...nc, symbol: e.target.value })} /></div>
           <div><Lbl>خانەی دەیمی</Lbl><Inp type="number" value={nc.dec} onChange={(e) => setNc({ ...nc, dec: +e.target.value })} /></div>
+          <div className="col-span-2 md:col-span-5">
+            <label className="flex items-start gap-2.5 cursor-pointer bg-stone-50 border border-stone-200 rounded-xl p-3">
+              <input type="checkbox" checked={!!nc.external} onChange={(e) => setNc({ ...nc, external: e.target.checked })}
+                className="mt-0.5 w-4 h-4 accent-emerald-700" />
+              <span className="text-sm text-slate-700">
+                <b>دراوی دەرەوە</b>
+                <div className="text-xs text-slate-500 mt-0.5">لای تەرەفەکان هەڵدەگیرێت، لە قاسەی گشتیدا نامێنێتەوە (وەک یەن)</div>
+              </span>
+            </label>
+          </div>
           <div className="flex items-end"><Btn kind="gold" className="w-full" onClick={() => { if (nc.code && nc.name) { addCurrency(nc); setNc({ code: "", name: "", symbol: "", dec: 2 }); } }}>زیادکردن</Btn></div>
         </div>
       </Card>
@@ -1389,6 +1503,8 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
     direct: e ? !!e.direct : false,
     buyQuote: e && e.buyRate ? Math.round((1 / e.buyRate) * 1000) / 1000 : "",
     sellQuote: e && e.direct && e.rate ? Math.round((1 / e.rate) * 1000) / 1000 : "",
+    fromId: "", fromName: "", toId: "", toName: "",
+    buyStatus: "completed", sellStatus: "completed",
     status: e ? e.status : "completed",
     note: e ? e.note : "",
   });
@@ -1528,6 +1644,36 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
                   className="text-emerald-700 font-semibold underline">بەکارهێنانی نرخی ڕۆژ</button>
               </div>
             )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-3 border-t border-violet-200">
+              <div>
+                <Lbl>لە کێ دەیکڕم؟</Lbl>
+                <Sel value={f.fromId} onChange={(ev) => setF({ ...f, fromId: ev.target.value, fromName: "" })}>
+                  <option value="">— ناوێکی ئازاد —</option>
+                  {customers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+                </Sel>
+                {!f.fromId && <Inp className="mt-1.5" value={f.fromName} onChange={(ev) => setF({ ...f, fromName: ev.target.value })} placeholder="ناوی فرۆشیار..." />}
+                <Sel className="mt-1.5" value={f.buyStatus} onChange={(ev) => setF({ ...f, buyStatus: ev.target.value })}>
+                  <option value="completed">پارەم داوە</option>
+                  <option value="pending">چاوەڕوانی پارەدان</option>
+                </Sel>
+              </div>
+              <div>
+                <Lbl>بە کێ دەیفرۆشم؟</Lbl>
+                <Sel value={f.toId} onChange={(ev) => setF({ ...f, toId: ev.target.value, toName: "" })}>
+                  <option value="">— ناوێکی ئازاد —</option>
+                  {customers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+                </Sel>
+                {!f.toId && <Inp className="mt-1.5" value={f.toName} onChange={(ev) => setF({ ...f, toName: ev.target.value })} placeholder="ناوی کڕیار..." />}
+                <Sel className="mt-1.5" value={f.sellStatus} onChange={(ev) => setF({ ...f, sellStatus: ev.target.value })}>
+                  <option value="completed">پارەم وەرگرتووە</option>
+                  <option value="pending">چاوەڕوانی وەرگرتن</option>
+                </Sel>
+              </div>
+            </div>
+            <div className="text-[11px] text-violet-800 bg-violet-100/60 rounded-lg p-2.5">
+              دوو مامەڵە تۆمار دەکرێت: کڕینێک و فرۆشتنێک · بە پارەی خۆت · خێرەکەی ١٠٠٪ هی خۆتە
+            </div>
           </div>
         ) : (
         <div className="bg-stone-50 border border-stone-200 rounded-xl p-4">
@@ -1577,7 +1723,8 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
           <div className={f.direct ? "hidden" : ""}>
             <Lbl>{f.type === "buy" ? "لە کوێ دای دەنێیت؟" : "لە کوێوە دەفرۆشیت؟"}</Lbl>
             <Sel value={f.partnerId} onChange={(ev) => setF({ ...f, partnerId: ev.target.value })}>
-              <option value="">قاسەی گشتی — {fmt(calc.atMe[f.curId] || 0, cur(f.curId).dec)} {cur(f.curId).code}</option>
+              {!cur(f.curId).external && <option value="">قاسەی گشتی — {fmt(calc.atMe[f.curId] || 0, 0)} {cur(f.curId).code}</option>}
+              {cur(f.curId).external && <option value="">— تەرەفێک هەڵبژێرە —</option>}
               {partners.map((p) => {
                 const b = (calc.partner[p.id] || {})[f.curId] || 0;
                 return <option key={p.id} value={p.id}>{p.name} — {fmt(Math.abs(b), cur(f.curId).dec)} {cur(f.curId).code}{b < 0 ? " (قەرز)" : ""}</option>;
@@ -1621,6 +1768,12 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
           </div>
         )}
 
+        {cur(f.curId).external && !f.partnerId && !f.direct && (
+          <div className="flex items-start gap-2 text-amber-800 bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm">
+            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+            {cur(f.curId).name} لە قاسەی گشتیدا هەڵناگیرێت — دەبێت تەرەفێک هەڵبژێریت
+          </div>
+        )}
         {f.type === "sell" && av === null && amtR > 0 && (
           <div className="flex items-start gap-2 text-slate-600 bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm">
             <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-amber-600" />
@@ -1836,6 +1989,7 @@ const detectPlatform = (bank) => {
   return null;
 };
 const REJECT_KU = {
+  no_ref: "ژمارەی مامەڵەی نییە",
   same_image: "هەمان وێنە پێشتر ناردراوە",
   same_ref: "هەمان ژمارەی مامەڵە پێشتر تۆمار کراوە",
   same_batch: "لەم کۆمەڵەیەدا دووبارە بووەتەوە",
@@ -2180,6 +2334,12 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
 
         const rn = normRef(d.refNo);
         let status = "ok", note = "", rejectCode = null, rejectReason = null, dupOf = null, dupOfDate = null, dupOfWho = null;
+        // بێ ژمارەی مامەڵە → نەژمێردرێت
+        if (!rn) {
+          status = "dup"; rejectCode = "no_ref";
+          rejectReason = "ژمارەی مامەڵەی (Order No) نییە — ناتوانرێت پشتڕاست بکرێتەوە";
+          note = rejectReason;
+        }
         if (rn) {
           const bch = out.find((r) => r.refNo && normRef(r.refNo) === rn);
           let o = null;
@@ -3257,7 +3417,7 @@ function PeopleHub(p) {
       {tab === "partners" && <Partners {...p} />}
       {tab === "investors" && <Investors {...p} />}
       {tab === "money" && <AccountMoney {...p} />}
-      {tab === "office" && <Office {...p} />}
+      {tab === "office" && <Office {...p} officeId={(p.data.users.find((x) => x.role === "office" && !x.deleted) || {}).id} />}
       {tab === "manage" && <UsersAdmin {...p} />}
     </div>
   );
@@ -3388,6 +3548,140 @@ function AccountMoney({ data, cur, usr, accountMove, accountTransfer, flash }) {
   );
 }
 
+/* ══════════════════ قاسەی ئەکاونتێک ══════════════════ */
+function AccountSafe({ userId, data, calc, cur, usr, accountMove, accountTransfer, flash, compact }) {
+  const [tab, setTab] = useState("balance");
+  const u = usr(userId);
+  const bal = calc.acctCash[userId] || {};
+  const debt = calc.acctDebt[userId] || {};
+  const moves = (data.acct || []).filter((e) => e.userId === userId).slice().reverse();
+  const all = data.users.filter((x) => x.role !== "admin" && !x.deleted && x.id !== userId);
+  const [mv, setMv] = useState({ dir: "in", curId: data.currencies[0]?.id, amount: "", note: "" });
+  const [tr, setTr] = useState({ toId: "", curId: data.currencies[0]?.id, amount: "", note: "" });
+  const [q, setQ] = useState("");
+
+  const rows = data.currencies.map((c) => ({ c, v: bal[c.id] || 0 })).filter((r) => r.v || !compact);
+  const TY = { deposit: "دانان", withdraw: "دەرهێنان", transfer_in: "هاتووە", transfer_out: "نێردراوە", settle: "حیسابکردنەوە" };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-1 bg-white border border-stone-200 rounded-xl p-1 overflow-x-auto">
+        {[["balance", "قاسە"], ["move", "زیادکردن / کەمکردن"], ["transfer", "گواستنەوە"], ["hist", "مێژوو"]].map(([k, t]) => (
+          <button key={k} onClick={() => setTab(k)}
+            className={`flex-1 whitespace-nowrap px-3 py-2.5 rounded-lg text-sm ${tab === k ? "bg-emerald-700 text-white font-semibold" : "text-slate-600 hover:bg-stone-100"}`}>{t}</button>
+        ))}
+      </div>
+
+      {tab === "balance" && (
+        <div className="grid md:grid-cols-2 gap-4">
+          <Card className="p-5">
+            <SecLbl>قاسە — پارەی لای من</SecLbl>
+            {rows.length === 0 ? <Empty t="بەتاڵە" /> :
+              rows.map(({ c, v }) => (
+                <div key={c.id} className="flex items-center justify-between py-2.5 border-b border-stone-100 last:border-0">
+                  <span className="text-sm text-slate-600 flex items-center gap-2"><CurBadge c={c} size="sm" /> {c.name}</span>
+                  <Money v={v} dec={0} />
+                </div>
+              ))}
+            <div className="text-[11px] text-slate-400 mt-3">پارەی ڕاستەقینەی ئەم کەسە کە لای من دانراوە</div>
+          </Card>
+
+          <Card className="p-5">
+            <SecLbl>قەرز — حیسابی مامەڵەکان</SecLbl>
+            {data.currencies.filter((c) => debt[c.id]).length === 0 ? <Empty t="حیساب پاکە" /> :
+              data.currencies.filter((c) => debt[c.id]).map((c) => {
+                const v = debt[c.id];
+                return (
+                  <div key={c.id} className="flex items-center justify-between py-2.5 border-b border-stone-100 last:border-0">
+                    <span className="text-sm text-slate-600 flex items-center gap-2"><CurBadge c={c} size="sm" /> {c.name}</span>
+                    <div className="text-left">
+                      <Money v={Math.abs(v)} dec={0} />
+                      <div className={`text-[10px] font-semibold ${v > 0 ? "text-rose-700" : "text-emerald-700"}`}>
+                        {v > 0 ? "قەرزاری ئەوم" : "ئەو قەرزارە"}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            <div className="text-[11px] text-slate-400 mt-3">لە مامەڵە چاوەڕوانەکانەوە</div>
+          </Card>
+        </div>
+      )}
+
+      {tab === "move" && (
+        <Card className="p-5">
+          <SecLbl>زیادکردن یان کەمکردنی پارە</SecLbl>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Lbl>جۆر</Lbl>
+              <Sel value={mv.dir} onChange={(e) => setMv({ ...mv, dir: e.target.value })}>
+                <option value="in">زیادکردن (پارە دەخەمە سەری)</option>
+                <option value="out">کەمکردن (پارە دەردەهێنم)</option>
+              </Sel>
+            </div>
+            <div><Lbl>دراو</Lbl><Sel value={mv.curId} onChange={(e) => setMv({ ...mv, curId: e.target.value })}>{data.currencies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Sel></div>
+            <div><Lbl>بڕ</Lbl><Inp type="number" value={mv.amount} onChange={(e) => setMv({ ...mv, amount: e.target.value })} placeholder="0" /></div>
+            <div><Lbl>تێبینی</Lbl><Inp value={mv.note} onChange={(e) => setMv({ ...mv, note: e.target.value })} /></div>
+          </div>
+          {+mv.amount > 0 && (
+            <div className="mt-3 text-sm bg-stone-50 border border-stone-200 rounded-xl p-3">
+              باڵانسی ئێستا <b style={num}>{fmt(bal[mv.curId] || 0, 0)}</b>
+              <span className="mx-2 text-slate-300">←</span>
+              دوای ئەمە <b style={num} className={mv.dir === "in" ? "text-emerald-700" : "text-rose-700"}>
+                {fmt((bal[mv.curId] || 0) + (mv.dir === "in" ? 1 : -1) * Math.round(+mv.amount), 0)}
+              </b> {cur(mv.curId).code}
+            </div>
+          )}
+          <Btn className="w-full mt-4" onClick={() => { accountMove({ ...mv, userId }); setMv({ ...mv, amount: "", note: "" }); }}>
+            تۆمارکردن
+          </Btn>
+        </Card>
+      )}
+
+      {tab === "transfer" && (
+        <Card className="p-5">
+          <SecLbl>گواستنەوە بۆ حسابێکی تر</SecLbl>
+          <Inp value={q} onChange={(e) => setQ(e.target.value)} placeholder="گەڕان بە ناو یان ژمارە..." className="mb-2" />
+          <div className="max-h-40 overflow-y-auto mb-3 space-y-1">
+            {all.filter((x) => !q || (x.name || "").includes(q) || (x.phone || "").includes(q)).map((x) => (
+              <button key={x.id} onClick={() => setTr({ ...tr, toId: x.id })}
+                className={`w-full text-right px-3 py-2 rounded-lg transition ${tr.toId === x.id ? "bg-emerald-700 text-white" : "hover:bg-stone-100"}`}>
+                <div className="text-sm font-semibold">{x.name}</div>
+                <div className={`text-[10px] ${tr.toId === x.id ? "text-emerald-100" : "text-slate-400"}`}>{ROLE_KU[x.role]}</div>
+              </button>
+            ))}
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><Lbl>دراو</Lbl><Sel value={tr.curId} onChange={(e) => setTr({ ...tr, curId: e.target.value })}>{data.currencies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Sel></div>
+            <div><Lbl>بڕ</Lbl><Inp type="number" value={tr.amount} onChange={(e) => setTr({ ...tr, amount: e.target.value })} placeholder="0" /></div>
+          </div>
+          {tr.toId && +tr.amount > 0 && (
+            <div className="mt-3 text-sm bg-emerald-50 border border-emerald-200 rounded-xl p-3">
+              <b style={num}>{fmt(+tr.amount, 0)} {cur(tr.curId).code}</b> لە <b>{u.name}</b> دەبڕدرێت و دەچێتە حسابی <b>{usr(tr.toId).name}</b>
+            </div>
+          )}
+          <Btn kind="gold" className="w-full mt-4" disabled={!tr.toId}
+            onClick={() => { accountTransfer({ ...tr, fromId: userId }); setTr({ ...tr, amount: "", note: "" }); }}>
+            گواستنەوە
+          </Btn>
+        </Card>
+      )}
+
+      {tab === "hist" && (
+        moves.length === 0 ? <Card><Empty t="هیچ جوڵانەوەیەک نییە" /></Card> :
+          moves.map((e) => (
+            <Card key={e.id} className="p-3.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+              <Pill tone={e.amount >= 0 ? "green" : "red"}>{TY[e.type] || e.type}</Pill>
+              <span className="font-bold" style={num}>{e.amount >= 0 ? "+" : ""}{fmt(e.amount, 0)} {cur(e.curId).code}</span>
+              {e.note && <span className="text-xs text-slate-500">{e.note}</span>}
+              <span className="text-[11px] text-slate-400 mr-auto" style={num}>{new Date(e.date).toLocaleString("en-GB")}</span>
+            </Card>
+          ))
+      )}
+    </div>
+  );
+}
+
 /* ══════════════════ کڕیاران ══════════════════ */
 function Customers({ data, calc, cur, usr, detailId, setDetailId, onSave, settle, flash, ...rest }) {
   const customers = data.users.filter((u) => u.role === "customer" && !u.deleted);
@@ -3469,13 +3763,14 @@ function CustomerDetail({ id, back, data, calc, cur, usr, onSave, settle, flash,
       </div>
 
       <div className="flex gap-1 bg-white border border-stone-200 rounded-xl p-1 overflow-x-auto">
-        {[["history", "مێژوو"], ["receipts", "فیشەکان"], ["new", "مامەڵەی نوێ"]].map(([k, t]) => (
+        {[["history", "مێژوو"], ["safe", "قاسە"], ["receipts", "فیشەکان"], ["new", "مامەڵەی نوێ"]].map(([k, t]) => (
           <button key={k} onClick={() => setTab(k)}
             className={`flex-1 px-4 py-2.5 rounded-lg text-sm ${tab === k ? "bg-emerald-700 text-white font-semibold" : "text-slate-600 hover:bg-stone-100"}`}>{t}</button>
         ))}
       </div>
 
-      {tab === "receipts" ? <ReceiptArchive customerId={id} data={data} flash={flash} /> : tab === "new" ? (
+      {tab === "safe" ? <AccountSafe userId={id} data={data} calc={calc} cur={cur} usr={usr} flash={flash} {...rest} />
+      : tab === "receipts" ? <ReceiptArchive customerId={id} data={data} flash={flash} /> : tab === "new" ? (
         <TxForm data={data} calc={calc} cur={cur} usr={usr} {...rest} onSave={(fm, e) => onSave({ ...fm, cpMode: "acc", cpId: id, cpName: "" }, e)} lockCp={id} />
       ) : (
         <>
@@ -3681,9 +3976,15 @@ function InvestorDetail({ u, data, calc, cur, invUnpaid, mine }) {
 
 
 /* ══════════════════ نووسینگە ══════════════════ */
-function Office({ data, cur, usr, officePay }) {
+function Office({ data, cur, usr, officePay, calc, accountMove, accountTransfer, flash, officeId }) {
+  const [tab, setTab] = useState("pending");
+  const [q, setQ] = useState("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+
   const pending = data.txs.filter((t) => !t.deleted && t.type === "buy" && t.status === "pending");
   const paid = data.txs.filter((t) => !t.deleted && t.paidAt);
+
   const t0 = new Date(); const d0 = new Date(t0.toDateString());
   const w0 = new Date(d0); w0.setDate(w0.getDate() - w0.getDay());
   const m0 = new Date(t0.getFullYear(), t0.getMonth(), 1);
@@ -3692,9 +3993,26 @@ function Office({ data, cur, usr, officePay }) {
     <Card className="p-4 flex-1 min-w-[150px]">
       <div className="text-xs text-slate-500 mb-1">{title}</div>
       {Object.keys(m).length === 0 ? <div className="text-sm text-slate-400">0</div> :
-        Object.entries(m).map(([cid, v]) => <div key={cid} className="text-sm"><Money v={v} dec={cur(cid).dec} /> {cur(cid).code}</div>)}
+        Object.entries(m).map(([cid, v]) => <div key={cid} className="text-sm"><Money v={v} dec={0} /> {cur(cid).code}</div>)}
     </Card>
   );
+
+  // مێژووی پارەدانەکان بە گەڕان
+  const hist = paid.filter((t) => {
+    const d = dOnly(t.paidAt);
+    if (from && d < from) return false;
+    if (to && d > to) return false;
+    if (!q) return true;
+    const nm = t.cpId ? (usr(t.cpId).name || "") : (t.cpName || "");
+    return `${t.code || ""} ${nm} ${cur(t.againstId).code}`.includes(q);
+  }).sort((a, b) => new Date(b.paidAt) - new Date(a.paidAt));
+
+  const histTot = {};
+  hist.forEach((t) => (histTot[t.againstId] = (histTot[t.againstId] || 0) + t.total));
+
+  const TABS = [["pending", `چاوەڕوان (${pending.length})`], ["hist", "مێژووی پارەدان"]];
+  if (officeId) TABS.push(["safe", "قاسەی نووسینگە"]);
+
   return (
     <div className="space-y-4">
       <div className="flex gap-3 flex-wrap">
@@ -3702,24 +4020,78 @@ function Office({ data, cur, usr, officePay }) {
         <S title="ئەم هەفتەیە" m={sums((t) => new Date(t.paidAt) >= w0)} />
         <S title="ئەم مانگە" m={sums((t) => new Date(t.paidAt) >= m0)} />
       </div>
-      <SecLbl>مامەڵە چاوەڕوانەکان ({pending.length})</SecLbl>
-      {pending.length === 0 ? <Card><Empty t="هیچ مامەڵەیەکی چاوەڕوان نییە ✓" /></Card> :
-        pending.map((t) => (
-          <Card key={t.id} className="p-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
-            {t.code && <span className="text-[11px] font-bold text-slate-400 bg-stone-100 px-2 py-0.5 rounded" style={num}>#{t.code}</span>}
-            <span className="font-semibold text-slate-800">{t.cpId ? usr(t.cpId).name : t.cpName}</span>
-            <span>بدرێتێ: <Money v={t.total} dec={cur(t.againstId).dec} /> {cur(t.againstId).code}</span>
-            <span className="text-[11px] text-slate-400" style={num}>{new Date(t.date).toLocaleString("en-GB")}</span>
-            <Btn className="mr-auto flex items-center gap-1.5" onClick={() => officePay(t)}><CheckCircle2 className="w-4 h-4" /> پارەم دا</Btn>
-          </Card>
+
+      <div className="flex gap-1 bg-white border border-stone-200 rounded-xl p-1 overflow-x-auto">
+        {TABS.map(([k, t]) => (
+          <button key={k} onClick={() => setTab(k)}
+            className={`flex-1 whitespace-nowrap px-3 py-2.5 rounded-lg text-sm ${tab === k ? "bg-emerald-700 text-white font-semibold" : "text-slate-600 hover:bg-stone-100"}`}>{t}</button>
         ))}
+      </div>
+
+      {tab === "pending" && (
+        pending.length === 0 ? <Card><Empty t="هیچ مامەڵەیەکی چاوەڕوان نییە ✓" /></Card> :
+          pending.map((t) => (
+            <Card key={t.id} className="p-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+              {t.code && <span className="text-[11px] font-bold text-slate-400 bg-stone-100 px-2 py-0.5 rounded" style={num}>#{t.code}</span>}
+              <span className="font-semibold text-slate-800">{t.cpId ? usr(t.cpId).name : t.cpName}</span>
+              <span>بدرێتێ: <Money v={t.total} dec={0} /> {cur(t.againstId).code}</span>
+              <span className="text-[11px] text-slate-400" style={num}>{new Date(t.date).toLocaleString("en-GB")}</span>
+              <Btn className="mr-auto flex items-center gap-1.5" onClick={() => officePay(t)}>
+                <CheckCircle2 className="w-4 h-4" /> پارەم دا
+              </Btn>
+            </Card>
+          ))
+      )}
+
+      {tab === "hist" && (
+        <>
+          <Card className="p-4 space-y-2.5">
+            <Inp value={q} onChange={(e) => setQ(e.target.value)} placeholder="گەڕان بە ناو یان کۆد..." />
+            <div className="grid grid-cols-2 gap-2.5">
+              <div><Lbl>لە بەرواری</Lbl><Inp type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
+              <div><Lbl>بۆ بەرواری</Lbl><Inp type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
+            </div>
+            <div className="flex gap-1.5 flex-wrap pt-1">
+              {[["ئەمڕۆ", 0], ["٧ ڕۆژ", 7], ["٣٠ ڕۆژ", 30]].map(([lbl, dd]) => (
+                <button key={lbl} onClick={() => {
+                  const x = new Date(); x.setDate(x.getDate() - dd);
+                  setFrom(x.toISOString().slice(0, 10)); setTo(new Date().toISOString().slice(0, 10));
+                }} className="px-3 py-1.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-xs font-semibold text-slate-600">{lbl}</button>
+              ))}
+              <button onClick={() => { setQ(""); setFrom(""); setTo(""); }}
+                className="px-3 py-1.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-xs font-semibold text-slate-600">سڕینەوە</button>
+            </div>
+            <div className="flex gap-4 flex-wrap text-xs text-slate-500 pt-2 border-t border-stone-100">
+              <span><b style={num}>{hist.length}</b> پارەدان</span>
+              {Object.entries(histTot).map(([cid, v]) => <span key={cid}>{cur(cid).code}: <b style={num}>{fmt(v, 0)}</b></span>)}
+            </div>
+          </Card>
+
+          {hist.length === 0 ? <Card><Empty t="هیچ نەدۆزرایەوە" /></Card> :
+            hist.map((t) => (
+              <Card key={t.id} className="p-3.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                {t.code && <span className="text-[11px] font-bold text-slate-400" style={num}>#{t.code}</span>}
+                <Pill tone="green">دراوە</Pill>
+                <span className="font-semibold text-slate-800">{t.cpId ? usr(t.cpId).name : t.cpName}</span>
+                <span className="font-bold" style={num}>{fmt(t.total, 0)} {cur(t.againstId).code}</span>
+                <span className="text-[11px] text-slate-400 mr-auto" style={num}>{new Date(t.paidAt).toLocaleString("en-GB")}</span>
+              </Card>
+            ))}
+        </>
+      )}
+
+      {tab === "safe" && officeId && (
+        <AccountSafe userId={officeId} data={data} calc={calc} cur={cur} usr={usr}
+          accountMove={accountMove} accountTransfer={accountTransfer} flash={flash} />
+      )}
     </div>
   );
 }
 
+
 /* ══════════════════ بەڕێوەبردنی ئەکاونت ══════════════════ */
-function UsersAdmin({ data, createUser, deleteUser, setUserRate, flash }) {
-  const [f, setF] = useState({ name: "", role: "customer", rate: "", phone: "", address: "", note: "", password: "" });
+function UsersAdmin({ data, cur, createUser, deleteUser, setUserRate, flash }) {
+  const [f, setF] = useState({ name: "", role: "customer", rate: "", scope: [], phone: "", address: "", note: "", password: "" });
   const roles = ["customer", "partner", "investor", "office"];
   const list = data.users.filter((u) => u.role !== "admin" && !u.deleted);
   return (
@@ -3730,6 +4102,34 @@ function UsersAdmin({ data, createUser, deleteUser, setUserRate, flash }) {
           <div><Lbl>ناوی تەواو *</Lbl><Inp value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></div>
           <div><Lbl>ڕۆڵ *</Lbl><Sel value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}>{roles.map((r) => <option key={r} value={r}>{ROLE_KU[r]}</option>)}</Sel></div>
           {(f.role === "partner" || f.role === "investor") && <div><Lbl>{f.role === "partner" ? "ڕێژەی عمولە ٪" : "ڕێژەی خێر ٪"}</Lbl><Inp type="number" value={f.rate} onChange={(e) => setF({ ...f, rate: e.target.value })} /></div>}
+          {f.role === "investor" && (
+            <div className="col-span-2 md:col-span-3">
+              <Lbl>لە کام دراوەکاندا شەریکە؟</Lbl>
+              <div className="flex gap-1.5 flex-wrap">
+                <button onClick={() => setF({ ...f, scope: [] })}
+                  className={`px-3 py-2 rounded-xl text-xs font-semibold border transition ${!f.scope?.length ? "bg-emerald-700 text-white border-emerald-700" : "bg-white border-stone-300 text-slate-600"}`}>
+                  هەموو دراوەکان
+                </button>
+                {data.currencies.map((c) => {
+                  const on = (f.scope || []).includes(c.id);
+                  return (
+                    <button key={c.id} onClick={() => {
+                      const sc = new Set(f.scope || []);
+                      on ? sc.delete(c.id) : sc.add(c.id);
+                      setF({ ...f, scope: [...sc] });
+                    }} className={`px-3 py-2 rounded-xl text-xs font-semibold border transition flex items-center gap-1.5 ${on ? "bg-emerald-700 text-white border-emerald-700" : "bg-white border-stone-300 text-slate-600"}`}>
+                      <CurBadge c={c} size="sm" /> {c.name}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="text-[11px] text-slate-400 mt-1.5">
+                {(f.scope || []).length === 0
+                  ? "لە خێری هەموو دراوەکاندا بەشی هەیە"
+                  : `تەنها لە خێری ${(f.scope || []).map((x) => cur(x).name).join("، ")} بەشی هەیە`}
+              </div>
+            </div>
+          )}
           <div><Lbl>ژمارەی مۆبایل * (لۆگین)</Lbl><Inp type="tel" dir="ltr" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} placeholder="07701234567" /></div>
           <div><Lbl>وشەی نهێنی * (٦ پیت)</Lbl><Inp type="password" dir="ltr" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} placeholder="••••••" /></div>
           <div><Lbl>ناونیشان</Lbl><Inp value={f.address} onChange={(e) => setF({ ...f, address: e.target.value })} /></div>
@@ -3738,7 +4138,7 @@ function UsersAdmin({ data, createUser, deleteUser, setUserRate, flash }) {
         <div className="mt-4">
           <Btn className="flex items-center gap-1.5" onClick={() => {
             if (!f.name || !f.phone || !f.password) return flash("ناو، ژمارە، و وشەی نهێنی پێویستن");
-            createUser(f); setF({ name: "", role: "customer", rate: "", phone: "", address: "", note: "", password: "" });
+            createUser(f); setF({ name: "", role: "customer", rate: "", scope: [], phone: "", address: "", note: "", password: "" });
           }}><Plus className="w-4 h-4" /> درووستکردن</Btn>
         </div>
       </Card>
@@ -3749,6 +4149,11 @@ function UsersAdmin({ data, createUser, deleteUser, setUserRate, flash }) {
             <div className="text-xs text-slate-500 mt-0.5">
               {ROLE_KU[u.role]}{u.phone && <span style={num}> · {u.phone}</span>}{u.address && ` · ${u.address}`}
             </div>
+            {u.role === "investor" && (
+              <div className="text-[11px] text-emerald-700 mt-0.5">
+                {(u.scope || []).length === 0 ? "لە هەموو دراوەکاندا" : `تەنها: ${(u.scope || []).map((x) => cur(x).code).join("، ")}`}
+              </div>
+            )}
             {u.note && <div className="text-[11px] text-slate-400 mt-0.5">{u.note}</div>}
           </div>
           {(u.role === "partner" || u.role === "investor") && (
@@ -4374,7 +4779,7 @@ function CustomerPortal({ user, c, base, data, cur, usr, flash, reloadBatches })
 }
 
 /* پۆرتاڵی هاوبەش */
-function PartnerPortal({ user, data, calc, cur, usr, flash, reloadBatches }) {
+function PartnerPortal({ user, data, calc, cur, usr, flash, reloadBatches, accountMove, accountTransfer }) {
   const [tab, setTab] = useState("balance");
   const bal = calc.partner[user.id] || {};
   const hist = data.ledger.filter((e) => e.partnerId === user.id).slice().reverse();
@@ -4384,7 +4789,7 @@ function PartnerPortal({ user, data, calc, cur, usr, flash, reloadBatches }) {
     <div className="space-y-4">
       <H sub={`بەخێربێیت، ${user.name}`}>ئەکاونتی من</H>
       <div className="flex gap-1 bg-white border border-stone-200 rounded-xl p-1">
-        {[["balance", "باڵانس"], ["receipts", "فیشەکان"], ["send", "ناردنی فیش"], ["history", "مێژوو"]].map(([k, t]) => (
+        {[["balance", "باڵانس"], ["safe", "قاسە"], ["receipts", "فیشەکان"], ["send", "ناردنی فیش"], ["history", "مێژوو"]].map(([k, t]) => (
           <button key={k} onClick={() => setTab(k)}
             className={`flex-1 whitespace-nowrap px-2 py-2.5 rounded-lg text-sm ${tab === k ? "bg-emerald-700 text-white font-semibold" : "text-slate-600 hover:bg-stone-100"}`}>{t}</button>
         ))}
@@ -4413,6 +4818,7 @@ function PartnerPortal({ user, data, calc, cur, usr, flash, reloadBatches }) {
         </div>
       )}
 
+      {tab === "safe" && <AccountSafe userId={user.id} data={data} calc={calc} cur={cur} usr={usr} accountMove={accountMove} accountTransfer={accountTransfer} flash={flash} />}
       {tab === "receipts" && <PartnerReceipts partnerId={user.id} data={data} flash={flash} />}
 
       {tab === "send" && (
@@ -4445,8 +4851,8 @@ function PartnerPortal({ user, data, calc, cur, usr, flash, reloadBatches }) {
 }
 
 /* ══════════════════ پۆرتاڵی ڕۆڵەکانی تر ══════════════════ */
-function Portal({ user, data, calc, cur, usr, officePay, settle, invUnpaid, flash, reloadBatches }) {
-  if (user.role === "office") return <Office data={data} cur={cur} usr={usr} officePay={officePay} />;
+function Portal({ user, data, calc, cur, usr, officePay, settle, invUnpaid, flash, reloadBatches, accountMove, accountTransfer }) {
+  if (user.role === "office") return <Office data={data} cur={cur} usr={usr} officePay={officePay} calc={calc} officeId={user.id} accountMove={accountMove} accountTransfer={accountTransfer} flash={flash} />;
 
   if (user.role === "customer") {
     const c = calc.cust[user.id] || { owe: {}, due: {} };
@@ -4454,7 +4860,7 @@ function Portal({ user, data, calc, cur, usr, officePay, settle, invUnpaid, flas
     return <CustomerPortal user={user} c={c} base={base} data={data} cur={cur} usr={usr} flash={flash} reloadBatches={reloadBatches} />;
   }
 
-  if (user.role === "partner") return <PartnerPortal user={user} data={data} calc={calc} cur={cur} usr={usr} flash={flash} reloadBatches={reloadBatches} />;
+  if (user.role === "partner") return <PartnerPortal user={user} data={data} calc={calc} cur={cur} usr={usr} flash={flash} reloadBatches={reloadBatches} accountMove={accountMove} accountTransfer={accountTransfer} />;
 
   if (user.role === "__never__") {
     const bal = calc.partner[user.id] || {};

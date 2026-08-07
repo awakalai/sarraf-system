@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Vault, ArrowLeftRight, ListOrdered, Users, Handshake,
   TrendingUp, Building2, UserCog, PieChart, History, Plus, Trash2, Pencil,
   CheckCircle2, AlertTriangle, Eye, LogOut, Wallet, ChevronLeft, Coins,
-  Receipt, TrendingDown, ScanLine, Upload, XCircle, SlidersHorizontal, MoreHorizontal, X, Share2, Database, Download, ClipboardCheck, RotateCcw, MessageCircle
+  Receipt, TrendingDown, ScanLine, Upload, XCircle, SlidersHorizontal, MoreHorizontal, X, Share2, Database, Download, ClipboardCheck, RotateCcw, MessageCircle, Moon, Sun
 } from "lucide-react";
 
 /* ══════════════════ یارمەتیدەرەکان ══════════════════ */
@@ -21,31 +21,38 @@ const num = { fontVariantNumeric: "tabular-nums", direction: "ltr", unicodeBidi:
 
 /* ڕەنگ و هێمای دراوەکان */
 const CUR_STYLE = {
-  usd: { bg: "from-emerald-500 to-emerald-700", ring: "ring-emerald-500/20", txt: "text-emerald-700", sym: "$" },
-  eur: { bg: "from-blue-500 to-blue-700", ring: "ring-blue-500/20", txt: "text-blue-700", sym: "€" },
-  cny: { bg: "from-rose-500 to-rose-700", ring: "ring-rose-500/20", txt: "text-rose-700", sym: "¥" },
-  jpy: { bg: "from-rose-400 to-rose-600", ring: "ring-rose-400/20", txt: "text-rose-600", sym: "¥" },
-  iqd: { bg: "from-amber-500 to-amber-700", ring: "ring-amber-500/20", txt: "text-amber-700", sym: "ع" },
-  try: { bg: "from-cyan-500 to-cyan-700", ring: "ring-cyan-500/20", txt: "text-cyan-700", sym: "₺" },
-  gbp: { bg: "from-violet-500 to-violet-700", ring: "ring-violet-500/20", txt: "text-violet-700", sym: "£" },
-  aed: { bg: "from-teal-500 to-teal-700", ring: "ring-teal-500/20", txt: "text-teal-700", sym: "د.إ" },
-  gold: { bg: "from-yellow-400 to-amber-600", ring: "ring-yellow-500/20", txt: "text-amber-600", sym: "Au" },
-  _default: { bg: "from-slate-500 to-slate-700", ring: "ring-slate-500/20", txt: "text-slate-700", sym: "¤" },
+  usd:  { hi: "#3FBF95", mid: "#12876A", lo: "#075444", glow: "rgba(18,135,106,.45)",  txt: "text-[#0E7A6B]", sym: "$" },
+  eur:  { hi: "#5B9BE8", mid: "#2563B0", lo: "#143C6E", glow: "rgba(37,99,176,.45)",   txt: "text-[#2563B0]", sym: "€" },
+  cny:  { hi: "#F0715E", mid: "#C4362A", lo: "#7C1E16", glow: "rgba(196,54,42,.45)",   txt: "text-[#B4362C]", sym: "¥" },
+  jpy:  { hi: "#F08C7A", mid: "#CE4E3E", lo: "#872B21", glow: "rgba(206,78,62,.42)",   txt: "text-[#CE4E3E]", sym: "¥" },
+  iqd:  { hi: "#E0B063", mid: "#B8863B", lo: "#704E18", glow: "rgba(184,134,59,.48)",  txt: "text-[#B8863B]", sym: "ع" },
+  try:  { hi: "#4DC5D6", mid: "#1690A3", lo: "#0B5866", glow: "rgba(22,144,163,.45)",  txt: "text-[#1690A3]", sym: "₺" },
+  gbp:  { hi: "#9B7FE0", mid: "#6446B5", lo: "#3B2775", glow: "rgba(100,70,181,.45)",  txt: "text-[#6446B5]", sym: "£" },
+  aed:  { hi: "#4FC8AE", mid: "#149077", lo: "#0A594A", glow: "rgba(20,144,119,.45)",  txt: "text-[#149077]", sym: "د.إ" },
+  gold: { hi: "#FBDF8E", mid: "#D4A32C", lo: "#8A6410", glow: "rgba(212,163,44,.5)",   txt: "text-[#B8863B]", sym: "Au" },
+  slv:  { hi: "#E2E8EE", mid: "#A8B4C2", lo: "#6B7889", glow: "rgba(168,180,194,.5)",  txt: "text-[#7B8697]", sym: "Ag" },
+  _default: { hi: "#8E9BAB", mid: "#5A6678", lo: "#333C4A", glow: "rgba(90,102,120,.4)", txt: "text-[#5A6678]", sym: "¤" },
 };
 const curStyle = (c) => CUR_STYLE[(c?.id || "").toLowerCase()] || CUR_STYLE._default;
 
 /* نیشانەی دراو — گۆی ڕەنگاوڕەنگ */
 const CurBadge = ({ c, size = "md", pulse }) => {
   const st = curStyle(c);
-  const dim = size === "lg" ? "w-11 h-11 text-base" : size === "sm" ? "w-7 h-7 text-[11px]" : "w-9 h-9 text-sm";
+  const dim = size === "lg" ? "w-12 h-12 text-lg" : size === "sm" ? "w-7 h-7 text-[11px]" : "w-9 h-9 text-sm";
   return (
-    <div className={`${dim} rounded-full bg-gradient-to-br ${st.bg} text-white font-bold flex items-center justify-center shadow-sm ring-4 ${st.ring} shrink-0 ${pulse ? "cur-pop" : ""}`}>
+    <div className={`${dim} rounded-full font-bold flex items-center justify-center shrink-0 relative ${pulse ? "cur-pop" : ""}`}
+      style={{
+        background: `radial-gradient(circle at 32% 26%, ${st.hi}, ${st.mid} 46%, ${st.lo})`,
+        color: "#fff",
+        boxShadow: `0 1px 2px rgba(13,17,23,.2), 0 4px 10px -2px ${st.glow}, inset 0 1px 1px rgba(255,255,255,.45), inset 0 -2px 4px rgba(0,0,0,.18)`,
+        textShadow: "0 1px 2px rgba(0,0,0,.28)",
+      }}>
       {c?.symbol || st.sym}
     </div>
   );
 };
 
-/* گۆڕینی بڕێک بۆ دۆلار بەپێی نرخی ئەمڕۆ — بەپێی کۆدی دراو */
+/* گۆڕینی بڕێک بۆ دۆلار بەپێی نرخی ئەمڕۆ */
 const usdConv = (data) => (amount, code) => {
   if (!amount || !code) return null;
   const c = (data?.currencies || []).find((x) => x.code === code);
@@ -57,7 +64,7 @@ const usdConv = (data) => (amount, code) => {
 
 /* نیشاندانی بەرامبەری دۆلار */
 const UsdHint = ({ v, className = "" }) =>
-  v == null ? null : <span className={`text-slate-400 ${className}`} style={num}>≈ {fmt(v, 0)} $</span>;
+  v == null ? null : <span className={className} style={{ ...num, color: "var(--txt-3)" }}>≈ {fmt(v, 0)} $</span>;
 
 /* ژمارەی جوڵاو */
 function CountUp({ v, dec = 0, className = "", style }) {
@@ -83,52 +90,111 @@ function CountUp({ v, dec = 0, className = "", style }) {
 const dOnly = (d) => (d || "").slice(0, 10);
 
 /* ══════════════════ پێکهاتە بچووکەکان ══════════════════ */
-const Card = ({ children, className = "", onClick, dark, accent, style }) => {
-  const base = dark ? "bg-slate-900 border-slate-900 text-white"
-    : accent ? "bg-emerald-700 border-emerald-700 text-white"
-    : "bg-white border-stone-200/80";
+const Card = ({ children, className = "", onClick, dark, accent, brass, style }) => {
+  const bg = dark
+    ? { background: "linear-gradient(155deg, var(--ink-soft), var(--ink))", borderColor: "transparent", color: "#F2F5F9" }
+    : accent
+      ? { background: "linear-gradient(155deg, var(--jade-lt), var(--jade-dp))", borderColor: "transparent", color: "#fff" }
+      : { background: "var(--card)", borderColor: "var(--line)", color: "var(--txt)" };
   return (
-    <div onClick={onClick} style={style}
-      className={`${base} border rounded-2xl shadow-[0_1px_3px_rgba(0,0,0,0.04)] ${onClick ? "cursor-pointer lift press hover:border-emerald-500" : ""} ${className}`}>
+    <div onClick={onClick}
+      style={{ ...bg, boxShadow: dark || accent ? "var(--shadow-2)" : "var(--shadow-1), var(--inset)", ...style }}
+      className={`border rounded-2xl ${brass ? "brass-edge" : ""} ${onClick ? "cursor-pointer lift press" : ""} ${className}`}>
       {children}
     </div>
   );
 };
+
 const H = ({ children, sub }) => (
-  <div className="mb-4">
-    <h2 className="text-xl font-bold text-slate-900 tracking-tight">{children}</h2>
-    {sub && <p className="text-sm text-slate-500 mt-0.5">{sub}</p>}
+  <div className="mb-5">
+    <div className="flex items-center gap-2.5">
+      <span className="w-1 h-5 rounded-full" style={{ background: "linear-gradient(180deg, var(--brass-lt), var(--brass-dp))" }} />
+      <h2 className="text-[22px] font-bold tracking-tight" style={{ color: "var(--txt)" }}>{children}</h2>
+    </div>
+    {sub && <p className="text-[13px] mt-1 pr-3.5 leading-relaxed" style={{ color: "var(--txt-2)" }}>{sub}</p>}
   </div>
 );
-const SecLbl = ({ children }) => <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">{children}</div>;
-const Lbl = ({ children }) => <label className="block text-[13px] font-medium text-slate-600 mb-1.5">{children}</label>;
-const Inp = (p) => <input {...p} className={`w-full border border-stone-300 rounded-xl px-3 py-2.5 text-sm bg-white outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/15 transition ${p.className || ""}`} />;
-const Sel = (p) => <select {...p} className={`w-full border border-stone-300 rounded-xl px-3 py-2.5 text-sm bg-white outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/15 transition ${p.className || ""}`}>{p.children}</select>;
-const Btn = ({ kind = "primary", className = "", ...p }) => {
-  const k = {
-    primary: "bg-gradient-to-b from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white shadow-[0_2px_8px_rgba(4,120,87,.25)]",
-    danger: "bg-gradient-to-b from-rose-600 to-rose-700 hover:from-rose-700 hover:to-rose-800 text-white shadow-[0_2px_8px_rgba(190,18,60,.22)]",
-    ghost: "bg-white hover:bg-stone-50 text-slate-700 border border-stone-300 shadow-sm",
-    gold: "bg-gradient-to-b from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white shadow-[0_2px_8px_rgba(217,119,6,.25)]",
-  }[kind];
-  return <button {...p} className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition press disabled:opacity-50 disabled:shadow-none ${k} ${className}`} />;
-};
-const Money = ({ v, dec, pos }) => (
-  <span style={num} className={`font-bold ${v < 0 ? "text-rose-700" : pos ? "text-emerald-700" : "text-slate-900"}`}>{fmt(v, dec)}</span>
+
+const SecLbl = ({ children }) => (
+  <div className="text-[11px] font-bold uppercase tracking-[.12em] mb-3 flex items-center gap-2" style={{ color: "var(--txt-3)" }}>
+    {children}
+    <span className="flex-1 h-px" style={{ background: "var(--line-soft)" }} />
+  </div>
 );
-const Empty = ({ t }) => <div className="text-center text-slate-400 py-10 text-sm">{t}</div>;
+
+const Lbl = ({ children }) => (
+  <label className="block text-[12px] font-semibold mb-1.5" style={{ color: "var(--txt-2)" }}>{children}</label>
+);
+
+const fieldCls = "w-full border rounded-xl px-3.5 py-2.5 text-sm outline-none transition-all";
+const fieldSty = { background: "var(--card)", borderColor: "var(--line)", color: "var(--txt)" };
+const Inp = (p) => (
+  <input {...p} style={{ ...fieldSty, ...(p.style || {}) }}
+    onFocus={(e) => { e.target.style.borderColor = "var(--brass)"; e.target.style.boxShadow = "0 0 0 3px color-mix(in srgb, var(--brass) 16%, transparent)"; p.onFocus?.(e); }}
+    onBlur={(e) => { e.target.style.borderColor = "var(--line)"; e.target.style.boxShadow = "none"; p.onBlur?.(e); }}
+    className={`${fieldCls} ${p.className || ""}`} />
+);
+const Sel = (p) => (
+  <select {...p} style={{ ...fieldSty, ...(p.style || {}) }}
+    onFocus={(e) => { e.target.style.borderColor = "var(--brass)"; e.target.style.boxShadow = "0 0 0 3px color-mix(in srgb, var(--brass) 16%, transparent)"; }}
+    onBlur={(e) => { e.target.style.borderColor = "var(--line)"; e.target.style.boxShadow = "none"; }}
+    className={`${fieldCls} ${p.className || ""}`}>{p.children}</select>
+);
+
+const Btn = ({ kind = "primary", className = "", style, ...p }) => {
+  const k = {
+    primary: { background: "linear-gradient(180deg, var(--jade-lt), var(--jade))", color: "#fff", boxShadow: "0 1px 2px rgba(14,122,107,.3), 0 4px 12px -2px rgba(14,122,107,.35), inset 0 1px 0 rgba(255,255,255,.18)" },
+    danger:  { background: "linear-gradient(180deg, var(--verm-lt), var(--verm))", color: "#fff", boxShadow: "0 1px 2px rgba(180,54,44,.3), 0 4px 12px -2px rgba(180,54,44,.32), inset 0 1px 0 rgba(255,255,255,.18)" },
+    gold:    { background: "linear-gradient(180deg, var(--brass-lt), var(--brass))", color: "#fff", boxShadow: "0 1px 2px rgba(184,134,59,.3), 0 4px 12px -2px rgba(184,134,59,.35), inset 0 1px 0 rgba(255,255,255,.22)" },
+    ghost:   { background: "var(--card)", color: "var(--txt)", border: "1px solid var(--line)", boxShadow: "var(--shadow-1)" },
+  }[kind];
+  return <button {...p} style={{ ...k, ...style }}
+    className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition-all press disabled:opacity-45 disabled:shadow-none hover:brightness-[1.06] ${className}`} />;
+};
+
+const Money = ({ v, dec, pos }) => (
+  <span style={{ ...num, color: v < 0 ? "var(--verm)" : pos ? "var(--jade)" : "var(--txt)" }} className="font-bold">{fmt(v, dec)}</span>
+);
+
+const Empty = ({ t }) => (
+  <div className="text-center py-12 text-sm" style={{ color: "var(--txt-3)" }}>{t}</div>
+);
+
 const Back = ({ onClick, t }) => (
-  <button onClick={onClick} className="flex items-center gap-1 text-sm text-emerald-700 font-semibold mb-3 hover:gap-2 transition-all">
+  <button onClick={onClick} className="flex items-center gap-1.5 text-sm font-semibold mb-4 hover:gap-2.5 transition-all"
+    style={{ color: "var(--brass)" }}>
     <ChevronLeft className="w-4 h-4 rotate-180" /> {t}
   </button>
 );
+
 const Pill = ({ tone = "slate", children }) => {
   const t = {
-    slate: "bg-stone-100 text-slate-600", green: "bg-emerald-50 text-emerald-800",
-    red: "bg-rose-50 text-rose-800", amber: "bg-amber-50 text-amber-800",
+    slate: { bg: "color-mix(in srgb, var(--txt-3) 12%, transparent)", fg: "var(--txt-2)" },
+    green: { bg: "color-mix(in srgb, var(--jade) 13%, transparent)", fg: "var(--jade)" },
+    red:   { bg: "color-mix(in srgb, var(--verm) 13%, transparent)", fg: "var(--verm)" },
+    amber: { bg: "color-mix(in srgb, var(--amber) 15%, transparent)", fg: "var(--amber)" },
   }[tone];
-  return <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${t}`}>{children}</span>;
+  return <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold whitespace-nowrap"
+    style={{ background: t.bg, color: t.fg }}>{children}</span>;
 };
+
+/* تابەکان — یەک شێواز بۆ هەموو شوێنێک */
+const Tabs = ({ items, value, onChange, className = "" }) => (
+  <div className={`flex gap-1 p-1 rounded-2xl border overflow-x-auto ${className}`}
+    style={{ background: "var(--card)", borderColor: "var(--line)", boxShadow: "var(--shadow-1)" }}>
+    {items.map(([k, t]) => {
+      const on = value === k;
+      return (
+        <button key={k} onClick={() => onChange(k)}
+          style={on
+            ? { background: "linear-gradient(180deg, var(--jade-lt), var(--jade))", color: "#fff", boxShadow: "0 2px 8px -2px rgba(14,122,107,.4)" }
+            : { color: "var(--txt-2)" }}
+          className="flex-1 whitespace-nowrap px-3.5 py-2.5 rounded-xl text-sm transition-all press font-medium data-[on=true]:font-bold"
+          data-on={on}>{t}</button>
+      );
+    })}
+  </div>
+);
 
 /* ══════════════════ ئەپی سەرەکی ══════════════════ */
 export default function App() {
@@ -142,6 +208,16 @@ export default function App() {
   const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
   const [more, setMore] = useState(false);
+  const [theme, setTheme] = useState(() => {
+    try { return localStorage.getItem("theme") || "light"; } catch { return "light"; }
+  });
+  useEffect(() => {
+    try {
+      document.documentElement.setAttribute("data-theme", theme);
+      document.body.style.background = "var(--paper)";
+      localStorage.setItem("theme", theme);
+    } catch {}
+  }, [theme]);
   const [batches, setBatches] = useState([]);
   const [pendingBatch, setPendingBatch] = useState(null);
 
@@ -831,20 +907,99 @@ export default function App() {
     toUsd, sumUsd, ratesReady, owners };
 
   return (
-    <div dir="rtl" className="min-h-screen bg-[#F5F5F3] text-slate-800" style={{ fontFamily: "'Segoe UI', Tahoma, sans-serif" }}>
+    <div dir="rtl" className="min-h-screen" style={{ background: "var(--paper)", color: "var(--txt)" }}>
       <style>{`
-        @keyframes fadeUp { from { opacity:0; transform: translateY(8px) } to { opacity:1; transform:none } }
-        @keyframes popIn { 0% { transform: scale(.7); opacity:0 } 60% { transform: scale(1.08) } 100% { transform: scale(1); opacity:1 } }
-        @keyframes slideDown { from { opacity:0; transform: translateY(-14px) } to { opacity:1; transform:none } }
-        @keyframes shimmer { 0% { background-position: 200% 0 } 100% { background-position: -200% 0 } }
-        .fade-up { animation: fadeUp .32s cubic-bezier(.2,.8,.2,1) both }
-        .cur-pop { animation: popIn .4s cubic-bezier(.2,1.2,.3,1) both }
-        .toast-in { animation: slideDown .3s cubic-bezier(.2,.9,.2,1) both }
-        .press:active { transform: scale(.97) }
-        .lift { transition: transform .18s ease, box-shadow .18s ease }
-        .lift:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(15,23,42,.08) }
-        ::-webkit-scrollbar { width: 8px; height: 8px }
-        ::-webkit-scrollbar-thumb { background: #d6d3d1; border-radius: 8px }
+        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');
+
+        :root {
+          --ink:        #0D1117;
+          --ink-soft:   #161C26;
+          --paper:      #F6F7F9;
+          --card:       #FFFFFF;
+          --line:       #E3E6EB;
+          --line-soft:  #EDEFF3;
+          --txt:        #16202E;
+          --txt-2:      #5A6678;
+          --txt-3:      #8B95A5;
+          --brass:      #B8863B;
+          --brass-lt:   #D9A857;
+          --brass-dp:   #8C6425;
+          --jade:       #0E7A6B;
+          --jade-lt:    #14A08C;
+          --jade-dp:    #095A4F;
+          --verm:       #B4362C;
+          --verm-lt:    #D14A3C;
+          --amber:      #B4770E;
+          --shadow-1:   0 1px 2px rgba(13,17,23,.05), 0 1px 3px rgba(13,17,23,.04);
+          --shadow-2:   0 2px 4px rgba(13,17,23,.05), 0 6px 16px -4px rgba(13,17,23,.09);
+          --shadow-3:   0 8px 28px -6px rgba(13,17,23,.16), 0 2px 6px rgba(13,17,23,.06);
+          --inset:      inset 0 1px 0 rgba(255,255,255,.7);
+        }
+        [data-theme="dark"] {
+          --ink:        #05080C;
+          --ink-soft:   #0C1219;
+          --paper:      #0A0E14;
+          --card:       #141A23;
+          --line:       #232C38;
+          --line-soft:  #1B222C;
+          --txt:        #E8EDF4;
+          --txt-2:      #9BA7B8;
+          --txt-3:      #6B7688;
+          --brass:      #D9A857;
+          --brass-lt:   #E8C27E;
+          --jade:       #17A892;
+          --jade-lt:    #22C5AB;
+          --verm:       #E05A4A;
+          --verm-lt:    #F07666;
+          --amber:      #D99A2B;
+          --shadow-1:   0 1px 2px rgba(0,0,0,.4);
+          --shadow-2:   0 2px 6px rgba(0,0,0,.45), 0 8px 20px -6px rgba(0,0,0,.5);
+          --shadow-3:   0 10px 34px -8px rgba(0,0,0,.6);
+          --inset:      inset 0 1px 0 rgba(255,255,255,.05);
+        }
+
+        body, input, select, textarea, button { font-family: 'IBM Plex Sans Arabic', 'Segoe UI', Tahoma, sans-serif; }
+        .mono, [style*="tabular-nums"] { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-feature-settings: "tnum" 1; }
+
+        /* ── جووڵە ── */
+        @keyframes fadeUp   { from { opacity:0; transform: translateY(10px) } to { opacity:1; transform:none } }
+        @keyframes popIn    { 0% { transform: scale(.72) rotate(-8deg); opacity:0 } 60% { transform: scale(1.06) rotate(2deg) } 100% { transform: none; opacity:1 } }
+        @keyframes slideDn  { from { opacity:0; transform: translateY(-16px) scale(.96) } to { opacity:1; transform:none } }
+        @keyframes sheetUp  { from { transform: translateY(100%) } to { transform: none } }
+        @keyframes glowPulse{ 0%,100% { box-shadow: 0 0 0 0 rgba(184,134,59,.35) } 50% { box-shadow: 0 0 0 8px rgba(184,134,59,0) } }
+        .fade-up  { animation: fadeUp .42s cubic-bezier(.16,1,.3,1) both }
+        .cur-pop  { animation: popIn .5s cubic-bezier(.2,1.3,.35,1) both }
+        .toast-in { animation: slideDn .34s cubic-bezier(.16,1,.3,1) both }
+        .sheet-in { animation: sheetUp .32s cubic-bezier(.16,1,.3,1) both }
+        .glow     { animation: glowPulse 2.4s ease-in-out infinite }
+
+        /* ── قووڵایی ── */
+        .lift  { transition: transform .22s cubic-bezier(.16,1,.3,1), box-shadow .22s ease, border-color .22s ease }
+        .lift:hover  { transform: translateY(-3px); box-shadow: var(--shadow-3) }
+        .press:active { transform: scale(.975) }
+        .tilt { transition: transform .3s cubic-bezier(.16,1,.3,1) }
+        .tilt:hover { transform: perspective(700px) rotateX(3deg) translateY(-2px) }
+
+        /* ── ڕووکاری قاسە ── */
+        .vault {
+          background: linear-gradient(160deg, var(--card) 0%, var(--card) 62%, color-mix(in srgb, var(--line-soft) 55%, var(--card)) 100%);
+          box-shadow: var(--shadow-2), var(--inset);
+        }
+        .brass-edge { position: relative; overflow: hidden }
+        .brass-edge::before {
+          content:''; position:absolute; inset-inline-start:0; top:0; bottom:0; width:3px;
+          background: linear-gradient(180deg, var(--brass-lt), var(--brass), var(--brass-dp));
+        }
+
+        ::-webkit-scrollbar { width: 9px; height: 9px }
+        ::-webkit-scrollbar-track { background: transparent }
+        ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 9px; border: 2px solid transparent; background-clip: content-box }
+        ::-webkit-scrollbar-thumb:hover { background: var(--txt-3); background-clip: content-box }
+
+        *:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px }
+        @media (prefers-reduced-motion: reduce) {
+          *, *::before, *::after { animation-duration:.01ms !important; transition-duration:.01ms !important }
+        }
       `}</style>
       {msg && (
         <div className="fixed top-0 right-0 left-0 z-[60] flex justify-center px-4" style={{ paddingTop: "calc(env(safe-area-inset-top) + 12px)" }}>
@@ -856,13 +1011,17 @@ export default function App() {
       )}
       {busy && <div className="fixed top-0 right-0 left-0 h-0.5 bg-emerald-600 animate-pulse z-50" />}
 
-      <header className="bg-slate-900 text-white sticky top-0 z-40" style={{ paddingTop: "env(safe-area-inset-top)" }}>
+      <header className="text-white sticky top-0 z-40 backdrop-blur-xl"
+        style={{ paddingTop: "env(safe-area-inset-top)", background: "color-mix(in srgb, var(--ink) 94%, transparent)", borderBottom: "1px solid color-mix(in srgb, var(--brass) 22%, transparent)" }}>
         <div className="px-3 md:px-4 py-2.5 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2.5 min-w-0">
-            <Vault className="w-6 h-6 text-amber-400 shrink-0" />
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+              style={{ background: "linear-gradient(150deg, var(--brass-lt), var(--brass-dp))", boxShadow: "0 2px 8px -2px rgba(184,134,59,.5), inset 0 1px 0 rgba(255,255,255,.3)" }}>
+              <Vault className="w-[18px] h-[18px] text-white" />
+            </div>
             <div className="min-w-0">
               <div className="font-bold leading-tight text-sm md:text-base truncate">سیستەمی دراو</div>
-              <div className="text-[11px] text-slate-400 truncate">{profile.name} — {ROLE_KU[profile.role]}</div>
+              <div className="text-[11px] text-[var(--txt-3)] truncate">{profile.name} — {ROLE_KU[profile.role]}</div>
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -871,7 +1030,14 @@ export default function App() {
                 <LogOut className="w-3.5 h-3.5" /> گەڕانەوە
               </button>
             )}
-            <button onClick={signOut} className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700">
+            <button onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              className="p-2 rounded-xl border transition-all press"
+              style={{ background: "rgba(255,255,255,.06)", borderColor: "rgba(255,255,255,.1)" }}
+              title={theme === "dark" ? "ڕووناک" : "تاریک"}>
+              {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            </button>
+            <button onClick={signOut} className="p-2 rounded-xl border transition-all press"
+              style={{ background: "rgba(255,255,255,.06)", borderColor: "rgba(255,255,255,.1)" }}>
               <LogOut className="w-4 h-4" />
             </button>
           </div>
@@ -883,16 +1049,20 @@ export default function App() {
       ) : (
         <div className="flex flex-col md:flex-row">
           {/* لیستی لاتەنیشت — تەنها لە شاشەی گەورە */}
-          <nav className="hidden md:flex md:w-56 bg-white border-l border-stone-200 md:min-h-screen p-2 flex-col gap-1 sticky top-[57px] self-start">
+          <nav className="hidden md:flex md:w-60 md:min-h-screen p-3 flex-col gap-1 sticky top-[57px] self-start"
+            style={{ background: "var(--card)", borderInlineStart: "1px solid var(--line)" }}>
             {NAV.map(([id, t, Ic]) => (
               <button key={id} onClick={() => { setPage(id); setDetailId(null); setEditTx(null); }}
-                className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-sm whitespace-nowrap transition ${page === id ? "bg-emerald-700 text-white font-semibold shadow-sm" : "hover:bg-stone-100 text-slate-600"}`}>
+                style={page === id
+                  ? { background: "linear-gradient(180deg, var(--jade-lt), var(--jade))", color: "#fff", boxShadow: "0 2px 10px -3px rgba(14,122,107,.5)" }
+                  : { color: "var(--txt-2)" }}
+                className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm whitespace-nowrap transition-all press ${page === id ? "font-bold" : "font-medium hover:bg-[var(--line-soft)]"}`}>
                 <Ic className="w-[18px] h-[18px]" /> {t}
               </button>
             ))}
             {isAdmin && (
-              <div className="mt-4 pt-3 border-t border-stone-200">
-                <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-400 mb-1.5 px-1">
+              <div className="mt-4 pt-3 border-t border-[var(--line)]">
+                <div className="flex items-center gap-1.5 text-[11px] font-semibold text-[var(--txt-3)] mb-1.5 px-1">
                   <Eye className="w-3.5 h-3.5" /> بینین وەک
                 </div>
                 <ViewAsPicker users={data.users} onPick={setViewAs} compact />
@@ -918,35 +1088,41 @@ export default function App() {
           </main>
 
           {/* لیستی خوارەوە — تەنها لە مۆبایل */}
-          <nav className="md:hidden fixed bottom-0 right-0 left-0 z-40 bg-white border-t border-stone-200 flex" style={{ paddingBottom: "max(env(safe-area-inset-bottom), 4px)" }}>
+          <nav className="md:hidden fixed bottom-0 right-0 left-0 z-40 flex backdrop-blur-xl"
+            style={{ paddingBottom: "max(env(safe-area-inset-bottom), 4px)", background: "color-mix(in srgb, var(--card) 92%, transparent)", borderTop: "1px solid var(--line)", boxShadow: "0 -4px 20px -8px rgba(13,17,23,.14)" }}>
             {NAV.slice(0, 4).map(([id, t, Ic]) => (
               <button key={id} onClick={() => { setPage(id); setDetailId(null); setEditTx(null); setMore(false); }}
-                className={`flex-1 flex flex-col items-center gap-0.5 py-2.5 text-[10px] font-semibold transition ${page === id ? "text-emerald-700" : "text-slate-400"}`}>
-                <Ic className="w-5 h-5" /> {t}
+                style={{ color: page === id ? "var(--jade)" : "var(--txt-3)" }}
+                className="flex-1 flex flex-col items-center gap-1 py-2.5 text-[10px] font-bold transition-all press relative">
+                {page === id && <span className="absolute top-0 w-8 h-[3px] rounded-full" style={{ background: "linear-gradient(90deg, var(--brass-lt), var(--brass))" }} />}
+                <Ic className="w-[19px] h-[19px]" /> {t}
               </button>
             ))}
             <button onClick={() => setMore(!more)}
-              className={`flex-1 flex flex-col items-center gap-0.5 py-2.5 text-[10px] font-semibold ${NAV.slice(4).some(([id]) => id === page) ? "text-emerald-700" : "text-slate-400"}`}>
-              <MoreHorizontal className="w-5 h-5" /> زیاتر
+              style={{ color: NAV.slice(4).some(([id]) => id === page) ? "var(--jade)" : "var(--txt-3)" }}
+              className="flex-1 flex flex-col items-center gap-1 py-2.5 text-[10px] font-bold transition-all press">
+              <MoreHorizontal className="w-[19px] h-[19px]" /> زیاتر
             </button>
           </nav>
 
           {more && (
             <div className="md:hidden fixed inset-0 z-50 bg-slate-900/40" onClick={() => setMore(false)}>
-              <div className="absolute bottom-0 right-0 left-0 bg-white rounded-t-3xl p-4 pb-8" onClick={(e) => e.stopPropagation()}>
+              <div className="absolute bottom-0 right-0 left-0 rounded-t-[28px] p-4 pb-8 sheet-in"
+                style={{ background: "var(--card)", boxShadow: "0 -8px 40px -8px rgba(13,17,23,.3)" }} onClick={(e) => e.stopPropagation()}>
+                <div className="w-10 h-1 rounded-full mx-auto mb-4" style={{ background: "var(--line)" }} />
                 <div className="flex items-center justify-between mb-3">
-                  <div className="font-bold text-slate-800">بەشەکانی تر</div>
-                  <button onClick={() => setMore(false)} className="p-1.5 text-slate-400"><X className="w-5 h-5" /></button>
+                  <div className="font-bold text-[var(--txt)]">بەشەکانی تر</div>
+                  <button onClick={() => setMore(false)} className="p-1.5 text-[var(--txt-3)]"><X className="w-5 h-5" /></button>
                 </div>
                 {NAV.slice(4).map(([id, t, Ic]) => (
                   <button key={id} onClick={() => { setPage(id); setDetailId(null); setEditTx(null); setMore(false); }}
-                    className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm mb-1 ${page === id ? "bg-emerald-700 text-white font-semibold" : "text-slate-700 hover:bg-stone-100"}`}>
+                    className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm mb-1 ${page === id ? "bg-[var(--jade)] text-white font-semibold" : "text-[var(--txt)] hover:bg-[var(--line-soft)]"}`}>
                     <Ic className="w-5 h-5" /> {t}
                   </button>
                 ))}
                 {isAdmin && (
-                  <div className="mt-3 pt-3 border-t border-stone-200">
-                    <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 mb-2 px-1">
+                  <div className="mt-3 pt-3 border-t border-[var(--line)]">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-[var(--txt-2)] mb-2 px-1">
                       <Eye className="w-4 h-4" /> بینین وەک بەکارهێنەرێکی تر
                     </div>
                     <ViewAsPicker users={data.users} onPick={(id) => { setViewAs(id); setMore(false); }} />
@@ -971,12 +1147,12 @@ function ViewAsPicker({ users, onPick, compact }) {
       <Inp value={q} onChange={(e) => setQ(e.target.value)} placeholder="گەڕان بە ناو، ژمارە، یان ڕۆڵ..."
         className={compact ? "text-xs py-2" : ""} />
       <div className={`mt-1.5 space-y-1 overflow-y-auto ${compact ? "max-h-44" : "max-h-64"}`}>
-        {list.length === 0 ? <div className="text-xs text-slate-400 py-2 text-center">هیچ نەدۆزرایەوە</div> :
+        {list.length === 0 ? <div className="text-xs text-[var(--txt-3)] py-2 text-center">هیچ نەدۆزرایەوە</div> :
           list.map((u) => (
             <button key={u.id} onClick={() => onPick(u.id)}
-              className="w-full text-right px-3 py-2 rounded-lg hover:bg-emerald-700 hover:text-white transition group">
-              <div className={`font-semibold ${compact ? "text-xs" : "text-sm"} text-slate-800 group-hover:text-white`}>{u.name}</div>
-              <div className="text-[10px] text-slate-400 group-hover:text-emerald-100">
+              className="w-full text-right px-3 py-2 rounded-lg hover:bg-[var(--jade)] hover:text-white transition group">
+              <div className={`font-semibold ${compact ? "text-xs" : "text-sm"} text-[var(--txt)] group-hover:text-white`}>{u.name}</div>
+              <div className="text-[10px] text-[var(--txt-3)] group-hover:text-emerald-100">
                 {ROLE_KU[u.role]}{u.phone && <span style={num}> · {u.phone}</span>}
               </div>
             </button>
@@ -989,7 +1165,7 @@ function ViewAsPicker({ users, onPick, compact }) {
 /* ══════════════════ لۆگین ══════════════════ */
 function Splash({ t, signOut }) {
   return (
-    <div dir="rtl" className="min-h-screen flex flex-col items-center justify-center bg-[#F6F5F2] text-slate-500 gap-4 p-6 text-center">
+    <div dir="rtl" className="min-h-screen flex flex-col items-center justify-center bg-[#F6F5F2] text-[var(--txt-2)] gap-4 p-6 text-center">
       <Vault className="w-10 h-10 text-amber-500" />
       <div>{t}</div>
       {signOut && <Btn kind="ghost" onClick={signOut}>دەرچوون</Btn>}
@@ -998,32 +1174,89 @@ function Splash({ t, signOut }) {
 }
 
 function Login() {
-  const [phone, setPhone] = useState(""); const [pw, setPw] = useState("");
-  const [err, setErr] = useState(null); const [loading, setLoading] = useState(false);
-  const toEmail = (p) => (p.includes("@") ? p.trim() : p.replace(/\s/g, "") + "@sarraf.local");
+  const [phone, setPhone] = useState("");
+  const [pw, setPw] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
   const go = async () => {
     if (!phone || !pw) return setErr("ژمارە و وشەی نهێنی پێویستە");
-    setLoading(true); setErr(null);
-    const { error } = await supabase.auth.signInWithPassword({ email: toEmail(phone), password: pw });
+    setBusy(true); setErr("");
+    const email = `${String(phone).replace(/\D/g, "")}@sarraf.local`;
+    const { error } = await supabase.auth.signInWithPassword({ email, password: pw });
     if (error) setErr("ژمارە یان وشەی نهێنی هەڵەیە");
-    setLoading(false);
+    setBusy(false);
   };
+
   return (
-    <div dir="rtl" className="min-h-screen flex items-center justify-center bg-slate-900 p-4" style={{ fontFamily: "'Segoe UI', Tahoma, sans-serif" }}>
-      <div className="bg-white rounded-2xl shadow-2xl p-7 w-full max-w-sm space-y-5">
-        <div className="text-center">
-          <Vault className="w-11 h-11 text-amber-500 mx-auto mb-3" />
-          <div className="font-bold text-lg text-slate-900">سیستەمی کڕین و فرۆشتنی دراو</div>
-          <div className="text-xs text-slate-400 mt-1">چوونە ژوورەوە</div>
+    <div dir="rtl" className="min-h-screen flex items-center justify-center p-5 relative overflow-hidden"
+      style={{ background: "linear-gradient(165deg, var(--ink) 0%, #131A24 55%, #0A1015 100%)" }}>
+
+      {/* تیشکی پاشبنەما */}
+      <div className="absolute -top-40 -right-32 w-[520px] h-[520px] rounded-full pointer-events-none"
+        style={{ background: "radial-gradient(circle, rgba(184,134,59,.18), transparent 68%)" }} />
+      <div className="absolute -bottom-48 -left-40 w-[560px] h-[560px] rounded-full pointer-events-none"
+        style={{ background: "radial-gradient(circle, rgba(14,122,107,.16), transparent 68%)" }} />
+
+      <div className="w-full max-w-sm relative fade-up">
+        <div className="text-center mb-9">
+          <div className="w-[74px] h-[74px] rounded-[22px] mx-auto mb-5 flex items-center justify-center glow"
+            style={{ background: "linear-gradient(150deg, var(--brass-lt), var(--brass-dp))",
+                     boxShadow: "0 10px 32px -8px rgba(184,134,59,.55), inset 0 1px 0 rgba(255,255,255,.35)" }}>
+            <Vault className="w-9 h-9 text-white" />
+          </div>
+          <h1 className="text-[26px] font-bold text-white tracking-tight">سیستەمی دراو</h1>
+          <p className="text-[13px] mt-1.5" style={{ color: "rgba(255,255,255,.42)" }}>کڕین و فرۆشتن · قاسە · حیسابات</p>
         </div>
-        <div><Lbl>ژمارەی مۆبایل</Lbl><Inp type="text" dir="ltr" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="07701234567" /></div>
-        <div><Lbl>وشەی نهێنی</Lbl><Inp type="password" dir="ltr" value={pw} onChange={(e) => setPw(e.target.value)} onKeyDown={(e) => e.key === "Enter" && go()} /></div>
-        {err && <div className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-xl p-3">{err}</div>}
-        <Btn className="w-full" onClick={go} disabled={loading}>{loading ? "..." : "چوونە ژوورەوە"}</Btn>
+
+        <div className="rounded-[26px] p-7 backdrop-blur-2xl"
+          style={{ background: "rgba(255,255,255,.045)", border: "1px solid rgba(255,255,255,.09)",
+                   boxShadow: "0 24px 60px -14px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.09)" }}>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-[12px] font-semibold mb-2" style={{ color: "rgba(255,255,255,.62)" }}>ژمارەی مۆبایل</label>
+              <input dir="ltr" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="07701234567"
+                onKeyDown={(e) => e.key === "Enter" && go()}
+                className="w-full rounded-xl px-4 py-3 text-white text-sm outline-none transition-all placeholder:text-white/25"
+                style={{ background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)", fontFamily: "'IBM Plex Mono', monospace" }}
+                onFocus={(e) => { e.target.style.borderColor = "var(--brass)"; e.target.style.background = "rgba(255,255,255,.09)"; }}
+                onBlur={(e) => { e.target.style.borderColor = "rgba(255,255,255,.12)"; e.target.style.background = "rgba(255,255,255,.06)"; }} />
+            </div>
+            <div>
+              <label className="block text-[12px] font-semibold mb-2" style={{ color: "rgba(255,255,255,.62)" }}>وشەی نهێنی</label>
+              <input type="password" value={pw} onChange={(e) => setPw(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && go()}
+                className="w-full rounded-xl px-4 py-3 text-white text-sm outline-none transition-all"
+                style={{ background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)" }}
+                onFocus={(e) => { e.target.style.borderColor = "var(--brass)"; e.target.style.background = "rgba(255,255,255,.09)"; }}
+                onBlur={(e) => { e.target.style.borderColor = "rgba(255,255,255,.12)"; e.target.style.background = "rgba(255,255,255,.06)"; }} />
+            </div>
+
+            {err && (
+              <div className="text-[13px] rounded-xl px-3.5 py-2.5 flex items-center gap-2"
+                style={{ background: "rgba(224,90,74,.14)", color: "#F5A99E", border: "1px solid rgba(224,90,74,.24)" }}>
+                <AlertTriangle className="w-4 h-4 shrink-0" /> {err}
+              </div>
+            )}
+
+            <button onClick={go} disabled={busy}
+              className="w-full py-3.5 rounded-xl font-bold text-[15px] transition-all press disabled:opacity-55"
+              style={{ background: "linear-gradient(180deg, var(--brass-lt), var(--brass))", color: "#fff",
+                       boxShadow: "0 6px 20px -5px rgba(184,134,59,.55), inset 0 1px 0 rgba(255,255,255,.28)" }}>
+              {busy ? "چوونە ژوورەوە..." : "چوونە ژوورەوە"}
+            </button>
+          </div>
+        </div>
+
+        <p className="text-center text-[11px] mt-7" style={{ color: "rgba(255,255,255,.28)" }}>
+          ژمارەکەت لە بەڕێوەبەرەوە وەربگرە
+        </p>
       </div>
     </div>
   );
 }
+
+/* هەڵبژاردنی بەکارهێنەر بە گەڕان */
 
 /* ══════════════════ داشبۆرد ══════════════════ */
 function Dashboard({ data, calc, cur, mySafe, profitIn, investorsProfitIn, sumUsd, ratesReady, owners, batches, go }) {
@@ -1051,7 +1284,7 @@ function Dashboard({ data, calc, cur, mySafe, profitIn, investorsProfitIn, sumUs
 
   const Stat = ({ t, v, tone, i = 0 }) => (
     <Card className="p-4 fade-up" style={{ animationDelay: `${i * 50}ms` }}>
-      <div className="text-xs text-slate-500 mb-1">{t}</div>
+      <div className="text-xs text-[var(--txt-2)] mb-1">{t}</div>
       <div className={`text-2xl font-bold ${tone || ""}`} style={num}>{v}</div>
     </Card>
   );
@@ -1064,8 +1297,8 @@ function Dashboard({ data, calc, cur, mySafe, profitIn, investorsProfitIn, sumUs
         <div className="space-y-2">
           {alerts.map((a, i) => (
             <Card key={i} onClick={a.go} style={{ animationDelay: `${i * 50}ms` }}
-              className={`fade-up p-3.5 ${a.tone === "red" ? "border-rose-300 bg-rose-50/60" : a.tone === "amber" ? "border-amber-300 bg-amber-50/60" : "border-emerald-300 bg-emerald-50/50"}`}>
-              <div className={`flex items-center gap-2 text-sm font-semibold ${a.tone === "red" ? "text-rose-900" : a.tone === "amber" ? "text-amber-900" : "text-emerald-900"}`}>
+              className={`fade-up p-3.5 ${a.tone === "red" ? "border-[color-mix(in_srgb,var(--verm)_34%,transparent)] bg-[color-mix(in_srgb,var(--verm)_9%,transparent)]" : a.tone === "amber" ? "border-[color-mix(in_srgb,var(--amber)_34%,transparent)] bg-[color-mix(in_srgb,var(--amber)_10%,transparent)]" : "border-[color-mix(in_srgb,var(--jade)_34%,transparent)] bg-[color-mix(in_srgb,var(--jade)_9%,transparent)]"}`}>
+              <div className={`flex items-center gap-2 text-sm font-semibold ${a.tone === "red" ? "text-[var(--verm)]" : a.tone === "amber" ? "text-[var(--amber)]" : "text-[var(--jade)]"}`}>
                 <a.Ic className="w-4 h-4 shrink-0" />
                 <span className="flex-1">{a.t}</span>
                 <ChevronLeft className="w-4 h-4 opacity-40" />
@@ -1077,25 +1310,25 @@ function Dashboard({ data, calc, cur, mySafe, profitIn, investorsProfitIn, sumUs
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Stat t="مامەڵەی ئەمڕۆ" v={todayTxs.length} i={0} />
-        <Stat t="کڕین" v={todayTxs.filter((t) => t.type === "buy").length} tone="text-emerald-700" i={1} />
-        <Stat t="فرۆشتن" v={todayTxs.filter((t) => t.type === "sell").length} tone="text-rose-700" i={2} />
-        <Stat t="چاوەڕوانی پارە" v={pendingCount} tone={pendingCount ? "text-amber-600" : ""} i={3} />
+        <Stat t="کڕین" v={todayTxs.filter((t) => t.type === "buy").length} tone="text-[var(--jade)]" i={1} />
+        <Stat t="فرۆشتن" v={todayTxs.filter((t) => t.type === "sell").length} tone="text-[var(--verm)]" i={2} />
+        <Stat t="چاوەڕوانی پارە" v={pendingCount} tone={pendingCount ? "text-[var(--amber)]" : ""} i={3} />
       </div>
 
       <div className="grid md:grid-cols-2 gap-4">
         <Card className="p-5" onClick={() => go("profit")}>
           <div className="flex items-center justify-between mb-3">
             <SecLbl>خێری ئەمڕۆ</SecLbl>
-            <span className="text-xs text-emerald-700 font-semibold">وردەکاری ←</span>
+            <span className="text-xs text-[var(--jade)] font-semibold">وردەکاری ←</span>
           </div>
-          {Object.keys(pTod).length === 0 ? <div className="text-sm text-slate-400">هێشتا فرۆشتنێک نەکراوە</div> :
+          {Object.keys(pTod).length === 0 ? <div className="text-sm text-[var(--txt-3)]">هێشتا فرۆشتنێک نەکراوە</div> :
             Object.entries(pTod).map(([cid, v]) => (
-              <div key={cid} className="py-2 border-b border-stone-100 last:border-0">
+              <div key={cid} className="py-2 border-b border-[var(--line-soft)] last:border-0">
                 <div className="flex justify-between items-baseline">
-                  <span className="text-sm text-slate-600">{cur(cid).name}</span>
+                  <span className="text-sm text-[var(--txt-2)]">{cur(cid).name}</span>
                   <span className="text-lg"><Money v={v} dec={cur(cid).dec} pos /></span>
                 </div>
-                <div className="flex gap-4 text-[11px] text-slate-400 mt-1">
+                <div className="flex gap-4 text-[11px] text-[var(--txt-3)] mt-1">
                   <span>خۆم: <span style={num}>{fmt(v - (invTod[cid] || 0), cur(cid).dec)}</span></span>
                   <span>وەبەرهێنەران: <span style={num}>{fmt(invTod[cid] || 0, cur(cid).dec)}</span></span>
                 </div>
@@ -1106,19 +1339,19 @@ function Dashboard({ data, calc, cur, mySafe, profitIn, investorsProfitIn, sumUs
         <Card className="p-5" onClick={() => go("rates")}>
           <div className="flex items-center justify-between mb-3">
             <SecLbl>نرخی ئەمڕۆ</SecLbl>
-            <span className="text-xs text-emerald-700 font-semibold">گۆڕین ←</span>
+            <span className="text-xs text-[var(--jade)] font-semibold">گۆڕین ←</span>
           </div>
           {data.currencies.filter((c) => c.id !== "usd").map((c) => (
-            <div key={c.id} className="flex justify-between items-center py-1.5 border-b border-stone-100 last:border-0 text-sm">
-              <span className="text-slate-600 flex items-center gap-2"><CurBadge c={c} size="sm" /> {c.name}</span>
-              <span style={num} className="text-slate-800">
-                <span className="text-emerald-700 font-semibold">{c.buyRate ? fmt(c.buyRate, 3) : "—"}</span>
-                <span className="text-slate-300 mx-1.5">/</span>
-                <span className="text-rose-700 font-semibold">{c.sellRate ? fmt(c.sellRate, 3) : "—"}</span>
+            <div key={c.id} className="flex justify-between items-center py-1.5 border-b border-[var(--line-soft)] last:border-0 text-sm">
+              <span className="text-[var(--txt-2)] flex items-center gap-2"><CurBadge c={c} size="sm" /> {c.name}</span>
+              <span style={num} className="text-[var(--txt)]">
+                <span className="text-[var(--jade)] font-semibold">{c.buyRate ? fmt(c.buyRate, 3) : "—"}</span>
+                <span className="text-[var(--txt-3)] mx-1.5">/</span>
+                <span className="text-[var(--verm)] font-semibold">{c.sellRate ? fmt(c.sellRate, 3) : "—"}</span>
               </span>
             </div>
           ))}
-          <div className="text-[11px] text-slate-400 mt-2">کڕین / فرۆشتن — ١ دۆلار بە چەند</div>
+          <div className="text-[11px] text-[var(--txt-3)] mt-2">کڕین / فرۆشتن — ١ دۆلار بە چەند</div>
         </Card>
       </div>
 
@@ -1139,38 +1372,53 @@ function SafeCards({ data, calc, cur, mySafe, sumUsd, ratesReady, owners, go }) 
     <Card className="p-5">
       <div className="flex items-center justify-between mb-3">
         <SecLbl>قاسەی گشتی</SecLbl>
-        <button onClick={() => go("safes")} className="text-xs text-emerald-700 font-semibold">پارە و خەرجی ←</button>
+        <button onClick={() => go("safes")} className="text-xs text-[var(--jade)] font-semibold">پارە و خەرجی ←</button>
       </div>
 
       {ratesReady && (
-        <div className="grid grid-cols-2 gap-3 mb-4">
-          <div className="bg-slate-900 text-white rounded-xl p-4">
-            <div className="text-[11px] text-slate-400">کۆی گشتی بە دۆلار</div>
-            <div className="text-2xl font-bold"><CountUp v={sumUsd(calc.phys)} /> <span className="text-sm text-amber-400">$</span></div>
+        <div className="grid grid-cols-2 gap-3 mb-5">
+          <div className="rounded-2xl p-4 relative overflow-hidden fade-up"
+            style={{ background: "linear-gradient(150deg, var(--ink-soft), var(--ink))", boxShadow: "var(--shadow-2)" }}>
+            <div className="absolute -top-8 -left-8 w-28 h-28 rounded-full"
+              style={{ background: "radial-gradient(circle, rgba(184,134,59,.16), transparent 70%)" }} />
+            <div className="text-[11px] relative" style={{ color: "rgba(255,255,255,.5)" }}>کۆی گشتی</div>
+            <div className="text-[26px] font-bold text-white relative leading-tight">
+              <CountUp v={sumUsd(calc.phys)} />
+              <span className="text-sm mr-1" style={{ color: "var(--brass-lt)" }}>$</span>
+            </div>
           </div>
-          <div className="bg-emerald-700 text-white rounded-xl p-4">
-            <div className="text-[11px] text-emerald-100">ماڵی خۆم بە دۆلار</div>
-            <div className="text-2xl font-bold"><CountUp v={sumUsd(mySafe)} /> <span className="text-sm text-amber-300">$</span></div>
+          <div className="rounded-2xl p-4 relative overflow-hidden fade-up" style={{ animationDelay: "70ms",
+            background: "linear-gradient(150deg, var(--jade-lt), var(--jade-dp))", boxShadow: "0 4px 18px -4px rgba(14,122,107,.45)" }}>
+            <div className="absolute -bottom-10 -right-6 w-28 h-28 rounded-full"
+              style={{ background: "radial-gradient(circle, rgba(255,255,255,.14), transparent 70%)" }} />
+            <div className="text-[11px] relative" style={{ color: "rgba(255,255,255,.72)" }}>ماڵی خۆم</div>
+            <div className="text-[26px] font-bold text-white relative leading-tight">
+              <CountUp v={sumUsd(mySafe)} />
+              <span className="text-sm mr-1" style={{ color: "rgba(255,255,255,.7)" }}>$</span>
+            </div>
           </div>
         </div>
       )}
 
-      <div className="text-[11px] text-slate-400 mb-2">کلیک لە هەر دراوێک بکە بۆ وردەکاری</div>
+      <div className="text-[11px] text-[var(--txt-3)] mb-2">کلیک لە هەر دراوێک بکە بۆ وردەکاری</div>
       <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
         {data.currencies.map((cc, i) => {
           const isOpen = open === cc.id;
           const v = calc.phys[cc.id] || 0;
           return (
             <button key={cc.id} onClick={() => { setOpen(isOpen ? null : cc.id); setView("where"); }}
-              style={{ animationDelay: `${i * 45}ms` }}
-              className={`fade-up press text-right border rounded-2xl p-3.5 transition ${isOpen ? "border-emerald-600 bg-emerald-50/60 ring-2 ring-emerald-600/15" : "border-stone-200 bg-white hover:border-emerald-400 lift"}`}>
+              style={{ animationDelay: `${i * 45}ms`,
+                background: isOpen ? "color-mix(in srgb, var(--brass) 9%, var(--card))" : "var(--card)",
+                borderColor: isOpen ? "var(--brass)" : "var(--line)",
+                boxShadow: isOpen ? "0 0 0 3px color-mix(in srgb, var(--brass) 15%, transparent), var(--shadow-2)" : "var(--shadow-1), var(--inset)" }}
+              className={`fade-up press text-right border rounded-2xl p-3.5 transition-all ${isOpen ? "" : "lift"}`}>
               <div className="flex items-center gap-2.5">
                 <CurBadge c={cc} pulse={isOpen} />
                 <div className="min-w-0">
-                  <div className="text-[11px] text-slate-500 truncate">
-                    {cc.name}{cc.external && <span className="text-amber-600 mr-1">· دەرەوە</span>}
+                  <div className="text-[11px] text-[var(--txt-2)] truncate">
+                    {cc.name}{cc.external && <span className="text-[var(--amber)] mr-1">· دەرەوە</span>}
                   </div>
-                  <div className={`text-lg font-bold ${v < 0 ? "text-rose-700" : "text-slate-900"}`}>
+                  <div className={`text-lg font-bold ${v < 0 ? "text-[var(--verm)]" : "text-[var(--txt)]"}`}>
                     <CountUp v={v} />
                   </div>
                 </div>
@@ -1181,10 +1429,10 @@ function SafeCards({ data, calc, cur, mySafe, sumUsd, ratesReady, owners, go }) 
       </div>
 
       {open && (
-        <div className="mt-4 border-t border-stone-200 pt-4">
+        <div className="mt-4 border-t border-[var(--line)] pt-4">
           <div className="flex items-baseline justify-between mb-3">
-            <div className="font-bold text-slate-900">{c.name}</div>
-            <div className="text-xl font-bold text-slate-900" style={num}>{fmt(bal, 0)} <span className="text-sm text-amber-600">{c.symbol}</span></div>
+            <div className="font-bold text-[var(--txt)]">{c.name}</div>
+            <div className="text-xl font-bold text-[var(--txt)]" style={num}>{fmt(bal, 0)} <span className="text-sm text-[var(--amber)]">{c.symbol}</span></div>
           </div>
           <CurrencyBreakdown curId={open} data={data} calc={calc} cur={cur} owners={owners} ratesReady={ratesReady} />
         </div>
@@ -1201,31 +1449,31 @@ function CurrencyBreakdown({ curId, data, calc, cur, owners, ratesReady }) {
   const partners = data.users.filter((u) => u.role === "partner" && !u.deleted);
   return (
     <div>
-      <div className="flex gap-1 bg-stone-100 rounded-xl p-1 mb-3">
+      <div className="flex gap-1 bg-[var(--line-soft)] rounded-xl p-1 mb-3">
         {[["where", "لای کێیە؟"], ["whose", "هی کێیە؟"]].map(([k, t]) => (
           <button key={k} onClick={() => setView(k)}
-            className={`flex-1 py-2 rounded-lg text-sm transition ${view === k ? "bg-white text-emerald-700 font-bold shadow-sm" : "text-slate-500"}`}>{t}</button>
+            className={`flex-1 py-2 rounded-lg text-sm transition ${view === k ? "bg-[var(--card)] text-[var(--jade)] font-bold shadow-sm" : "text-[var(--txt-2)]"}`}>{t}</button>
         ))}
       </div>
 
       {view === "where" ? (
         <div>
-          <div className="flex justify-between items-center py-2.5 border-b border-stone-100">
-            <span className="text-sm text-slate-600">لای خۆم (قاسەی سەرەکی)</span>
+          <div className="flex justify-between items-center py-2.5 border-b border-[var(--line-soft)]">
+            <span className="text-sm text-[var(--txt-2)]">لای خۆم (قاسەی سەرەکی)</span>
             <Money v={calc.atMe[curId] || 0} dec={0} />
           </div>
           {partners.map((p) => {
             const v = (calc.partner[p.id] || {})[curId];
             if (!v) return null;
             return (
-              <div key={p.id} className="flex justify-between items-center py-2.5 border-b border-stone-100">
-                <span className="text-sm text-slate-600">لای {p.name}{v < 0 && <span className="text-rose-700 text-xs mr-1">(قەرز)</span>}</span>
+              <div key={p.id} className="flex justify-between items-center py-2.5 border-b border-[var(--line-soft)]">
+                <span className="text-sm text-[var(--txt-2)]">لای {p.name}{v < 0 && <span className="text-[var(--verm)] text-xs mr-1">(قەرز)</span>}</span>
                 <Money v={v} dec={0} />
               </div>
             );
           })}
           {partners.every((p) => !((calc.partner[p.id] || {})[curId])) && (
-            <div className="text-xs text-slate-400 py-2">هیچی لای هاوبەشەکان نییە</div>
+            <div className="text-xs text-[var(--txt-3)] py-2">هیچی لای هاوبەشەکان نییە</div>
           )}
           <div className="flex justify-between items-center pt-3 font-bold">
             <span className="text-sm">کۆی گشتی</span><Money v={bal} dec={0} />
@@ -1234,21 +1482,21 @@ function CurrencyBreakdown({ curId, data, calc, cur, owners, ratesReady }) {
       ) : (
         <div>
           {!ratesReady && (
-            <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2.5 mb-2">
+            <div className="text-xs text-[var(--amber)] bg-[color-mix(in_srgb,var(--amber)_11%,transparent)] border border-[color-mix(in_srgb,var(--amber)_26%,transparent)] rounded-lg p-2.5 mb-2">
               بۆ وردی زیاتر، نرخی هەموو دراوەکان دابنێ
             </div>
           )}
           {!owners || owners.total <= 0 ? <Empty t="هێشتا سەرمایە دانەنراوە" /> :
             owners.list.map((o) => (
-              <div key={o.id} className="flex justify-between items-center py-2.5 border-b border-stone-100 last:border-0">
+              <div key={o.id} className="flex justify-between items-center py-2.5 border-b border-[var(--line-soft)] last:border-0">
                 <div>
-                  <span className={`text-sm ${o.isMe ? "font-bold text-emerald-800" : "text-slate-600"}`}>{o.name}</span>
-                  <span className="text-xs text-slate-400 mr-2" style={num}>{(o.share * 100).toFixed(1)}٪</span>
+                  <span className={`text-sm ${o.isMe ? "font-bold text-[var(--jade)]" : "text-[var(--txt-2)]"}`}>{o.name}</span>
+                  <span className="text-xs text-[var(--txt-3)] mr-2" style={num}>{(o.share * 100).toFixed(1)}٪</span>
                 </div>
                 <Money v={bal * o.share} dec={0} pos={o.isMe} />
               </div>
             ))}
-          <div className="text-[11px] text-slate-400 mt-2.5">
+          <div className="text-[11px] text-[var(--txt-3)] mt-2.5">
             بەشی هەرکەس بەپێی ڕێژەی سەرمایەکەیەتی — چوونکە هەموو دراوەکان بە پارەی هاوبەش کڕدراون
           </div>
         </div>
@@ -1266,33 +1514,33 @@ function Rates({ data, saveRates }) {
     <div className="space-y-4">
       <H sub="ڕەیتی هەر دراوێک بەرامبەر ١ دۆلار — لە مامەڵەکاندا ئۆتۆماتیکی بەکاردێت">نرخی ئەمڕۆ</H>
       <Card className="p-5">
-        <div className="text-xs text-slate-500 mb-4 bg-stone-50 rounded-xl p-3 leading-relaxed">
-          <b className="text-slate-700">١ دۆلار = چەند؟</b> — نموونە: گەر ١ دۆلار بە <b>٧.٢٠</b> یەن بکڕیت و بە <b>٧.١٥</b> یەن بیفرۆشیت، ئەو دوو ژمارەیە بنووسە.
+        <div className="text-xs text-[var(--txt-2)] mb-4 bg-[var(--line-soft)] rounded-xl p-3 leading-relaxed">
+          <b className="text-[var(--txt)]">١ دۆلار = چەند؟</b> — نموونە: گەر ١ دۆلار بە <b>٧.٢٠</b> یەن بکڕیت و بە <b>٧.١٥</b> یەن بیفرۆشیت، ئەو دوو ژمارەیە بنووسە.
         </div>
         <div className="space-y-4">
           {rows.map((r) => (
-            <div key={r.id} className="pb-4 border-b border-stone-100 last:border-0 last:pb-0">
+            <div key={r.id} className="pb-4 border-b border-[var(--line-soft)] last:border-0 last:pb-0">
               <div className="flex items-center gap-2.5 mb-2.5">
                 <CurBadge c={r.c} size="sm" />
-                <span className="text-sm font-semibold text-slate-800">{r.name}</span>
-                <span className="text-xs text-slate-400">({r.code})</span>
+                <span className="text-sm font-semibold text-[var(--txt)]">{r.name}</span>
+                <span className="text-xs text-[var(--txt-3)]">({r.code})</span>
               </div>
               <div className="grid grid-cols-2 gap-2.5">
                 <div>
-                  <div className="text-[11px] font-semibold text-emerald-700 mb-1">١ دۆلار بە چەند دەکڕم</div>
+                  <div className="text-[11px] font-semibold text-[var(--jade)] mb-1">١ دۆلار بە چەند دەکڕم</div>
                   <Inp type="number" step="any" dir="ltr" value={r.buyRate}
                     onChange={(e) => upd(r.id, "buyRate", e.target.value)}
                     className="text-center font-bold text-base" placeholder="7.20" />
                 </div>
                 <div>
-                  <div className="text-[11px] font-semibold text-rose-700 mb-1">١ دۆلار بە چەند دەفرۆشم</div>
+                  <div className="text-[11px] font-semibold text-[var(--verm)] mb-1">١ دۆلار بە چەند دەفرۆشم</div>
                   <Inp type="number" step="any" dir="ltr" value={r.sellRate}
                     onChange={(e) => upd(r.id, "sellRate", e.target.value)}
                     className="text-center font-bold text-base" placeholder="7.15" />
                 </div>
               </div>
               {r.buyRate && r.sellRate && (
-                <div className="text-[11px] text-slate-400 mt-1.5" style={num}>
+                <div className="text-[11px] text-[var(--txt-3)] mt-1.5" style={num}>
                   جیاوازی: {fmt(Math.abs(+r.buyRate - +r.sellRate), 3)} — خێری تۆ لە هەر دۆلارێک
                 </div>
               )}
@@ -1301,7 +1549,7 @@ function Rates({ data, saveRates }) {
         </div>
         <div className="mt-4 flex items-center gap-3">
           <Btn onClick={() => saveRates(rows)}>پاشەکەوتکردنی نرخەکان</Btn>
-          {last && <span className="text-xs text-slate-400">دوا نوێکردنەوە: {new Date(last).toLocaleString("en-GB")}</span>}
+          {last && <span className="text-xs text-[var(--txt-3)]">دوا نوێکردنەوە: {new Date(last).toLocaleString("en-GB")}</span>}
         </div>
       </Card>
 
@@ -1325,10 +1573,10 @@ function ProfitPage({ data, cur, profitIn, investorsProfitIn, invShare }) {
   return (
     <div className="space-y-4">
       <H>خێر بە وردی</H>
-      <div className="flex gap-1 bg-white border border-stone-200 rounded-xl p-1 w-fit">
+      <div className="flex gap-1 bg-[var(--card)] border border-[var(--line)] rounded-xl p-1 w-fit">
         {[["day", "ئەمڕۆ"], ["week", "ئەم هەفتەیە"], ["month", "ئەم مانگە"]].map(([k, t2]) => (
           <button key={k} onClick={() => setMode(k)}
-            className={`px-4 py-2 rounded-lg text-sm ${mode === k ? "bg-emerald-700 text-white font-semibold" : "text-slate-600 hover:bg-stone-100"}`}>{t2}</button>
+            className={`px-4 py-2 rounded-lg text-sm ${mode === k ? "bg-[var(--jade)] text-white font-semibold" : "text-[var(--txt-2)] hover:bg-[var(--line-soft)]"}`}>{t2}</button>
         ))}
       </div>
 
@@ -1339,28 +1587,28 @@ function ProfitPage({ data, cur, profitIn, investorsProfitIn, invShare }) {
           return (
             <Card key={cid} className="p-5">
               <div className="flex justify-between items-baseline mb-4">
-                <div className="font-bold text-slate-800">{c.name}</div>
+                <div className="font-bold text-[var(--txt)]">{c.name}</div>
                 <div className="text-2xl"><Money v={tot} dec={c.dec} pos /></div>
               </div>
               <div className="grid grid-cols-2 gap-3 mb-4">
-                <div className="bg-emerald-50/70 rounded-xl p-3">
-                  <div className="text-xs text-emerald-800/70">خێری خۆم</div>
+                <div className="bg-[color-mix(in_srgb,var(--jade)_10%,transparent)]/70 rounded-xl p-3">
+                  <div className="text-xs text-[var(--jade)]/70">خێری خۆم</div>
                   <div className="text-lg"><Money v={tot - invTot} dec={c.dec} pos /></div>
                 </div>
-                <div className="bg-stone-100/70 rounded-xl p-3">
-                  <div className="text-xs text-slate-500">خێری وەبەرهێنەران</div>
+                <div className="bg-[var(--line-soft)]/70 rounded-xl p-3">
+                  <div className="text-xs text-[var(--txt-2)]">خێری وەبەرهێنەران</div>
                   <div className="text-lg"><Money v={invTot} dec={c.dec} /></div>
                 </div>
               </div>
               {invTot > 0 && (
-                <div className="border-t border-stone-100 pt-3">
-                  <div className="text-xs font-semibold text-slate-500 mb-2">دابەشبوون بەسەر وەبەرهێنەران</div>
+                <div className="border-t border-[var(--line-soft)] pt-3">
+                  <div className="text-xs font-semibold text-[var(--txt-2)] mb-2">دابەشبوون بەسەر وەبەرهێنەران</div>
                   {investors.map((u) => {
                     const s = invShare(u.id, cid, tot);
                     if (!s) return null;
                     return (
-                      <div key={u.id} className="flex justify-between py-1.5 text-sm border-b border-stone-50 last:border-0">
-                        <span className="text-slate-600">{u.name} <span className="text-xs text-slate-400">({u.rate}٪)</span></span>
+                      <div key={u.id} className="flex justify-between py-1.5 text-sm border-b border-[var(--line-soft)] last:border-0">
+                        <span className="text-[var(--txt-2)]">{u.name} <span className="text-xs text-[var(--txt-3)]">({u.rate}٪)</span></span>
                         <Money v={s} dec={c.dec} />
                       </div>
                     );
@@ -1393,12 +1641,12 @@ function Safes({ data, calc, cur, usr, mySafe, invUnpaid, owners, ratesReady, ad
         <Card className="p-5">
           <div className="flex items-center justify-between mb-1">
             <SecLbl>قاسەی گشتی (هەمووی)</SecLbl>
-            <span className="text-[11px] text-slate-400">کلیک بۆ وردەکاری</span>
+            <span className="text-[11px] text-[var(--txt-3)]">کلیک بۆ وردەکاری</span>
           </div>
           {data.currencies.map((c) => (
             <div key={c.id}>
               <button onClick={() => setOpenCur(openCur === c.id ? null : c.id)}
-                className={`w-full flex justify-between items-center py-2.5 border-b border-stone-100 transition ${openCur === c.id ? "text-emerald-700" : "hover:text-emerald-700"}`}>
+                className={`w-full flex justify-between items-center py-2.5 border-b border-[var(--line-soft)] transition ${openCur === c.id ? "text-[var(--jade)]" : "hover:text-[var(--jade)]"}`}>
                 <span className="text-sm flex items-center gap-2">
                   <ChevronLeft className={`w-3.5 h-3.5 transition-transform ${openCur === c.id ? "-rotate-90" : "rotate-180"}`} />
                   <CurBadge c={c} size="sm" />
@@ -1407,7 +1655,7 @@ function Safes({ data, calc, cur, usr, mySafe, invUnpaid, owners, ratesReady, ad
                 <Money v={calc.phys[c.id] || 0} dec={0} />
               </button>
               {openCur === c.id && (
-                <div className="py-3 px-1 bg-stone-50/70 rounded-xl my-2">
+                <div className="py-3 px-1 bg-[var(--line-soft)] rounded-xl my-2">
                   <CurrencyBreakdown curId={c.id} data={data} calc={calc} cur={cur} owners={owners} ratesReady={ratesReady} />
                 </div>
               )}
@@ -1416,16 +1664,16 @@ function Safes({ data, calc, cur, usr, mySafe, invUnpaid, owners, ratesReady, ad
         </Card>
         <Card className="p-5">
           <div className="flex items-center gap-1.5 mb-3">
-            <Wallet className="w-4 h-4 text-emerald-700" />
+            <Wallet className="w-4 h-4 text-[var(--jade)]" />
             <SecLbl>قاسەی تایبەتی خۆم</SecLbl>
           </div>
           {data.currencies.map((c) => (
-            <div key={c.id} className="flex justify-between py-2 border-b border-stone-100 last:border-0">
-              <span className="text-sm text-slate-600">{c.name}</span>
+            <div key={c.id} className="flex justify-between py-2 border-b border-[var(--line-soft)] last:border-0">
+              <span className="text-sm text-[var(--txt-2)]">{c.name}</span>
               <Money v={mySafe[c.id] || 0} dec={c.dec} />
             </div>
           ))}
-          <div className="text-[11px] text-slate-400 mt-2">سەرمایەی خۆت + خێری خۆت − خەرجی و عمولەکان</div>
+          <div className="text-[11px] text-[var(--txt-3)] mt-2">سەرمایەی خۆت + خێری خۆت − خەرجی و عمولەکان</div>
         </Card>
       </div>
 
@@ -1441,7 +1689,7 @@ function Safes({ data, calc, cur, usr, mySafe, invUnpaid, owners, ratesReady, ad
       </Card>
 
       <Card className="p-5">
-        <div className="flex items-center gap-1.5 mb-3"><Receipt className="w-4 h-4 text-rose-700" /><SecLbl>تۆمارکردنی خەرجی</SecLbl></div>
+        <div className="flex items-center gap-1.5 mb-3"><Receipt className="w-4 h-4 text-[var(--verm)]" /><SecLbl>تۆمارکردنی خەرجی</SecLbl></div>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           <div><Lbl>جۆری خەرجی</Lbl><Sel value={xf.category} onChange={(e) => setXf({ ...xf, category: e.target.value, investorId: "" })}>{XCATS.map((c) => <option key={c} value={c}>{c}</option>)}</Sel></div>
           {isPayout && (
@@ -1453,9 +1701,9 @@ function Safes({ data, calc, cur, usr, mySafe, invUnpaid, owners, ratesReady, ad
           <div className="flex items-end"><Btn kind="danger" className="w-full" onClick={() => { if (+xf.amount > 0) { addExpense(xf); setXf({ ...xf, amount: "", note: "" }); } }}>تۆمارکردن</Btn></div>
         </div>
         {isPayout && xf.investorId && (
-          <div className="mt-3 bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm flex items-center justify-between flex-wrap gap-2">
-            <span className="text-amber-900">خێری نەدراوی {usr(xf.investorId).name}: <b style={num}>{fmt(unpaid, cur(xf.curId).dec)}</b> {cur(xf.curId).code}</span>
-            <button onClick={() => setXf({ ...xf, amount: String(Math.max(0, Math.round(unpaid * 100) / 100)) })} className="text-xs font-semibold text-emerald-700">دانانی ئەم بڕە ←</button>
+          <div className="mt-3 bg-[color-mix(in_srgb,var(--amber)_11%,transparent)] border border-[color-mix(in_srgb,var(--amber)_26%,transparent)] rounded-xl p-3 text-sm flex items-center justify-between flex-wrap gap-2">
+            <span className="text-[var(--amber)]">خێری نەدراوی {usr(xf.investorId).name}: <b style={num}>{fmt(unpaid, cur(xf.curId).dec)}</b> {cur(xf.curId).code}</span>
+            <button onClick={() => setXf({ ...xf, amount: String(Math.max(0, Math.round(unpaid * 100) / 100)) })} className="text-xs font-semibold text-[var(--jade)]">دانانی ئەم بڕە ←</button>
           </div>
         )}
       </Card>
@@ -1468,12 +1716,12 @@ function Safes({ data, calc, cur, usr, mySafe, invUnpaid, owners, ratesReady, ad
           <div><Lbl>هێما</Lbl><Inp value={nc.symbol} onChange={(e) => setNc({ ...nc, symbol: e.target.value })} /></div>
           <div><Lbl>خانەی دەیمی</Lbl><Inp type="number" value={nc.dec} onChange={(e) => setNc({ ...nc, dec: +e.target.value })} /></div>
           <div className="col-span-2 md:col-span-5">
-            <label className="flex items-start gap-2.5 cursor-pointer bg-stone-50 border border-stone-200 rounded-xl p-3">
+            <label className="flex items-start gap-2.5 cursor-pointer bg-[var(--line-soft)] border border-[var(--line)] rounded-xl p-3">
               <input type="checkbox" checked={!!nc.external} onChange={(e) => setNc({ ...nc, external: e.target.checked })}
-                className="mt-0.5 w-4 h-4 accent-emerald-700" />
-              <span className="text-sm text-slate-700">
+                className="mt-0.5 w-4 h-4 accent-[var(--jade)]" />
+              <span className="text-sm text-[var(--txt)]">
                 <b>دراوی دەرەوە</b>
-                <div className="text-xs text-slate-500 mt-0.5">لای تەرەفەکان هەڵدەگیرێت، لە قاسەی گشتیدا نامێنێتەوە (وەک یەن)</div>
+                <div className="text-xs text-[var(--txt-2)] mt-0.5">لای تەرەفەکان هەڵدەگیرێت، لە قاسەی گشتیدا نامێنێتەوە (وەک یەن)</div>
               </span>
             </label>
           </div>
@@ -1553,17 +1801,17 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
     <div className="space-y-4">
       <H>{e ? `ئیدیتی مامەڵە #${e.code}` : "مامەڵەی نوێ"}</H>
       {batch && (
-        <Card className="p-4 border-emerald-400 bg-emerald-50/60">
+        <Card className="p-4 border-[color-mix(in_srgb,var(--jade)_40%,transparent)] bg-[color-mix(in_srgb,var(--jade)_9%,transparent)]">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <div className="text-sm font-bold text-emerald-900">لە فیشەکانی {batch.customer_name}</div>
-              <div className="text-xs text-emerald-800 mt-1" style={num}>
+              <div className="text-sm font-bold text-[var(--jade)]">لە فیشەکانی {batch.customer_name}</div>
+              <div className="text-xs text-[var(--jade)] mt-1" style={num}>
                 {batch.n} فیش · بێ فی {fmt(batch.total_net, 0)} {batch.currency}
                 {batch.total_fee > 0 && ` · بە فی ${fmt(batch.total_gross, 0)}`}
               </div>
-              <div className="text-[11px] text-emerald-700 mt-1">بڕەکە خۆی دانراوە — تەنها نرخ و شوێنی دانان پڕ بکەرەوە</div>
+              <div className="text-[11px] text-[var(--jade)] mt-1">بڕەکە خۆی دانراوە — تەنها نرخ و شوێنی دانان پڕ بکەرەوە</div>
             </div>
-            <button onClick={onClearBatch} className="p-1.5 text-emerald-700/60 hover:text-emerald-900"><X className="w-4 h-4" /></button>
+            <button onClick={onClearBatch} className="p-1.5 text-[var(--jade)]/60 hover:text-[var(--jade)]"><X className="w-4 h-4" /></button>
           </div>
         </Card>
       )}
@@ -1576,7 +1824,7 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
             return (
               <button key={t} disabled={locked}
                 onClick={() => !locked && setF({ ...f, type: t, manualRate: false, quote: "", status: "completed" })}
-                className={`flex-1 py-2.5 rounded-xl font-bold text-sm transition ${active ? (t === "buy" ? "bg-emerald-700 text-white shadow-sm" : "bg-rose-700 text-white shadow-sm") : "bg-stone-100 text-slate-500 hover:bg-stone-200"} ${locked ? "cursor-default" : ""}`}>
+                className={`flex-1 py-2.5 rounded-xl font-bold text-sm transition ${active ? (t === "buy" ? "bg-[var(--jade)] text-white shadow-sm" : "bg-rose-700 text-white shadow-sm") : "bg-[var(--line-soft)] text-[var(--txt-2)] hover:bg-[var(--line)]"} ${locked ? "cursor-default" : ""}`}>
                 {t === "buy" ? "کڕین" : "فرۆشتن"}{locked && " (لە فیشەکانەوە)"}
               </button>
             );
@@ -1584,13 +1832,13 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
         </div>
 
         {!batch && (
-          <label className="flex items-start gap-2.5 cursor-pointer bg-stone-50 border border-stone-200 rounded-xl p-3">
+          <label className="flex items-start gap-2.5 cursor-pointer bg-[var(--line-soft)] border border-[var(--line)] rounded-xl p-3">
             <input type="checkbox" checked={f.direct}
               onChange={(ev) => setF({ ...f, direct: ev.target.checked, partnerId: "" })}
-              className="mt-0.5 w-4 h-4 accent-emerald-700" />
-            <span className="text-sm text-slate-700">
+              className="mt-0.5 w-4 h-4 accent-[var(--jade)]" />
+            <span className="text-sm text-[var(--txt)]">
               <b>مامەڵەی ڕاستەوخۆ</b>
-              <div className="text-xs text-slate-500 mt-0.5">پارەکە لای هیچ کەس هەڵناگیرێت — ڕاستەوخۆ دەکڕدرێت و دەفرۆشرێت، بێ عمولە</div>
+              <div className="text-xs text-[var(--txt-2)] mt-0.5">پارەکە لای هیچ کەس هەڵناگیرێت — ڕاستەوخۆ دەکڕدرێت و دەفرۆشرێت، بێ عمولە</div>
             </span>
           </label>
         )}
@@ -1606,42 +1854,42 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
             <div className="text-xs font-bold text-violet-900">ڕەیتی کڕین و فرۆشتن</div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <div className="text-[11px] font-semibold text-emerald-700 mb-1">بە چەند دەیکڕم</div>
+                <div className="text-[11px] font-semibold text-[var(--jade)] mb-1">بە چەند دەیکڕم</div>
                 <Inp type="number" step="any" dir="ltr" value={f.buyQuote}
                   onChange={(ev) => setF({ ...f, buyQuote: ev.target.value })}
                   className="text-center font-bold text-base" placeholder={autoQuote ? String(autoQuote) : "7.20"} />
               </div>
               <div>
-                <div className="text-[11px] font-semibold text-rose-700 mb-1">بە چەند دەیفرۆشم</div>
+                <div className="text-[11px] font-semibold text-[var(--verm)] mb-1">بە چەند دەیفرۆشم</div>
                 <Inp type="number" step="any" dir="ltr" value={f.sellQuote}
                   onChange={(ev) => setF({ ...f, sellQuote: ev.target.value })}
                   className="text-center font-bold text-base" placeholder="7.15" />
               </div>
             </div>
             {bq > 0 && sq > 0 && amtR > 0 && (
-              <div className="bg-white rounded-xl p-3 space-y-1.5">
+              <div className="bg-[var(--card)] rounded-xl p-3 space-y-1.5">
                 <div className="flex justify-between text-sm">
-                  <span className="text-slate-600">دەدەم (کڕین)</span>
-                  <span className="font-bold text-rose-700" style={num}>{fmt(dBuyTotal, 0)} {cur(f.againstId).code}</span>
+                  <span className="text-[var(--txt-2)]">دەدەم (کڕین)</span>
+                  <span className="font-bold text-[var(--verm)]" style={num}>{fmt(dBuyTotal, 0)} {cur(f.againstId).code}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-slate-600">وەردەگرم (فرۆشتن)</span>
-                  <span className="font-bold text-emerald-700" style={num}>{fmt(dSellTotal, 0)} {cur(f.againstId).code}</span>
+                  <span className="text-[var(--txt-2)]">وەردەگرم (فرۆشتن)</span>
+                  <span className="font-bold text-[var(--jade)]" style={num}>{fmt(dSellTotal, 0)} {cur(f.againstId).code}</span>
                 </div>
-                <div className="flex justify-between pt-2 mt-1 border-t border-stone-200">
-                  <span className="text-sm font-bold text-slate-900">خێر</span>
-                  <span className={`text-xl font-bold ${dProfit >= 0 ? "text-emerald-700" : "text-rose-700"}`} style={num}>
+                <div className="flex justify-between pt-2 mt-1 border-t border-[var(--line)]">
+                  <span className="text-sm font-bold text-[var(--txt)]">خێر</span>
+                  <span className={`text-xl font-bold ${dProfit >= 0 ? "text-[var(--jade)]" : "text-[var(--verm)]"}`} style={num}>
                     {dProfit > 0 ? "+" : ""}{fmt(dProfit, 0)} {cur(f.againstId).code}
                   </span>
                 </div>
-                {dProfit < 0 && <div className="text-[11px] text-rose-700 font-semibold">ئاگاداری: بە زەرەر دەفرۆشیت</div>}
+                {dProfit < 0 && <div className="text-[11px] text-[var(--verm)] font-semibold">ئاگاداری: بە زەرەر دەفرۆشیت</div>}
               </div>
             )}
             {autoQuote && (
-              <div className="text-[11px] text-slate-500 flex items-center gap-2">
+              <div className="text-[11px] text-[var(--txt-2)] flex items-center gap-2">
                 <span style={num}>نرخی ڕۆژ: {fmt(autoQuote, 3)}</span>
                 <button onClick={() => setF({ ...f, buyQuote: autoQuote, sellQuote: autoQuote })}
-                  className="text-emerald-700 font-semibold underline">بەکارهێنانی نرخی ڕۆژ</button>
+                  className="text-[var(--jade)] font-semibold underline">بەکارهێنانی نرخی ڕۆژ</button>
               </div>
             )}
 
@@ -1676,44 +1924,44 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
             </div>
           </div>
         ) : (
-        <div className="bg-stone-50 border border-stone-200 rounded-xl p-4">
+        <div className="bg-[var(--line-soft)] border border-[var(--line)] rounded-xl p-4">
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div>
-              <div className="text-xs text-slate-500">کۆی گشتی</div>
-              <div className="text-2xl"><Money v={total} dec={cur(f.againstId).dec} /> <span className="text-sm text-slate-500">{cur(f.againstId).code}</span></div>
+              <div className="text-xs text-[var(--txt-2)]">کۆی گشتی</div>
+              <div className="text-2xl"><Money v={total} dec={cur(f.againstId).dec} /> <span className="text-sm text-[var(--txt-2)]">{cur(f.againstId).code}</span></div>
             </div>
             <div className="text-left">
-              <div className="text-xs text-slate-500 mb-1">
+              <div className="text-xs text-[var(--txt-2)] mb-1">
                 یەک {cur(f.againstId).code} چەند {cur(f.curId).code}ە؟
               </div>
               <Inp type="number" step="any" dir="ltr" value={f.quote}
                 onChange={(ev) => setF({ ...f, quote: ev.target.value, manualRate: true })}
-                className={`w-36 text-center font-bold text-lg ${offDay ? "border-amber-500 bg-amber-50" : ""}`} />
+                className="w-36 text-center font-bold text-lg" style={offDay ? { borderColor: "var(--brass)", background: "color-mix(in srgb, var(--brass) 9%, var(--card))" } : {}} />
             </div>
           </div>
 
-          <div className="flex items-center justify-between flex-wrap gap-2 mt-3 pt-3 border-t border-stone-200 text-xs">
-            <span className="text-slate-500">
-              نرخی ڕۆژ: <b style={num} className="text-slate-700">{autoQuote ? fmt(autoQuote, 3) : "دانەنراوە"}</b>
+          <div className="flex items-center justify-between flex-wrap gap-2 mt-3 pt-3 border-t border-[var(--line)] text-xs">
+            <span className="text-[var(--txt-2)]">
+              نرخی ڕۆژ: <b style={num} className="text-[var(--txt)]">{autoQuote ? fmt(autoQuote, 3) : "دانەنراوە"}</b>
               {quote > 0 && amtR > 0 && (
-                <span className="text-slate-400 mr-2" style={num}>
+                <span className="text-[var(--txt-3)] mr-2" style={num}>
                   · {fmt(amtR, 0)} ÷ {fmt(quote, 3)} = {fmt(total, 0)}
                 </span>
               )}
             </span>
             {offDay && (
               <div className="flex items-center gap-2">
-                <span className="text-amber-700 font-semibold">نرخێکی تایبەت بەکاردێت</span>
+                <span className="text-[var(--amber)] font-semibold">نرخێکی تایبەت بەکاردێت</span>
                 <button onClick={() => setF({ ...f, manualRate: false, quote: autoQuote })}
-                  className="text-emerald-700 font-semibold underline">گەڕانەوە بۆ نرخی ڕۆژ</button>
+                  className="text-[var(--jade)] font-semibold underline">گەڕانەوە بۆ نرخی ڕۆژ</button>
               </div>
             )}
           </div>
 
           {(av !== null || estProfit !== null) && (
-            <div className="flex gap-5 flex-wrap text-sm mt-3 pt-3 border-t border-stone-200">
-              {av !== null && av > 0 && <span className="text-slate-500">مامناوەندی کڕین: <span style={num}>{fmt(1 / av, 3)}</span></span>}
-              {estProfit !== null && <span className="text-slate-500">خێری خەمڵێنراو: <Money v={estProfit} dec={cur(f.againstId).dec} pos /></span>}
+            <div className="flex gap-5 flex-wrap text-sm mt-3 pt-3 border-t border-[var(--line)]">
+              {av !== null && av > 0 && <span className="text-[var(--txt-2)]">مامناوەندی کڕین: <span style={num}>{fmt(1 / av, 3)}</span></span>}
+              {estProfit !== null && <span className="text-[var(--txt-2)]">خێری خەمڵێنراو: <Money v={estProfit} dec={cur(f.againstId).dec} pos /></span>}
             </div>
           )}
         </div>
@@ -1744,10 +1992,10 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
         {batch && (
           <div>
             <Lbl>لایەنی بەرامبەر</Lbl>
-            <div className="flex items-center gap-2 border border-stone-300 bg-stone-100 rounded-xl px-3 py-2.5">
-              <Users className="w-4 h-4 text-slate-400" />
-              <span className="text-sm font-semibold text-slate-700">{batch.customer_name || usr(batch.customer_id).name || "—"}</span>
-              <span className="text-[11px] text-slate-400 mr-auto">لە فیشەکانەوە — ناگۆڕدرێت</span>
+            <div className="flex items-center gap-2 border border-[var(--line)] bg-[var(--line-soft)] rounded-xl px-3 py-2.5">
+              <Users className="w-4 h-4 text-[var(--txt-3)]" />
+              <span className="text-sm font-semibold text-[var(--txt)]">{batch.customer_name || usr(batch.customer_id).name || "—"}</span>
+              <span className="text-[11px] text-[var(--txt-3)] mr-auto">لە فیشەکانەوە — ناگۆڕدرێت</span>
             </div>
           </div>
         )}
@@ -1769,24 +2017,24 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
         )}
 
         {cur(f.curId).external && !f.partnerId && !f.direct && (
-          <div className="flex items-start gap-2 text-amber-800 bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm">
+          <div className="flex items-start gap-2 text-[var(--amber)] bg-[color-mix(in_srgb,var(--amber)_11%,transparent)] border border-[color-mix(in_srgb,var(--amber)_26%,transparent)] rounded-xl p-3 text-sm">
             <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
             {cur(f.curId).name} لە قاسەی گشتیدا هەڵناگیرێت — دەبێت تەرەفێک هەڵبژێریت
           </div>
         )}
         {f.type === "sell" && av === null && amtR > 0 && (
-          <div className="flex items-start gap-2 text-slate-600 bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm">
-            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-amber-600" />
+          <div className="flex items-start gap-2 text-[var(--txt-2)] bg-[var(--line-soft)] border border-[var(--line)] rounded-xl p-3 text-sm">
+            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-[var(--amber)]" />
             هیچ کڕینێکی پێشووی ئەم دراوە نییە بەرامبەر {cur(f.againstId).code} — بۆیە خێری ئەم فرۆشتنە ناژمێردرێت.
           </div>
         )}
         {feeRate > 0 && f.type === "buy" && +f.amount > 0 && (
-          <div className="text-sm bg-stone-50 border border-stone-200 rounded-xl p-3 text-slate-600">
+          <div className="text-sm bg-[var(--line-soft)] border border-[var(--line)] rounded-xl p-3 text-[var(--txt-2)]">
             عمولەی {usr(f.partnerId).name} ({feeRate}٪): <b style={num}>{fmt(Math.round(amtR * feeRate / 100), 0)}</b> {cur(f.curId).code} — دەستبەجێ کەم دەکرێتەوە، باڵانسی دوایی: <b style={num}>{fmt(amtR - Math.round(amtR * feeRate / 100), 0)}</b>
           </div>
         )}
         {willBeNeg && (
-          <div className="flex items-start gap-2 text-amber-800 bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm">
+          <div className="flex items-start gap-2 text-[var(--amber)] bg-[color-mix(in_srgb,var(--amber)_11%,transparent)] border border-[color-mix(in_srgb,var(--amber)_26%,transparent)] rounded-xl p-3 text-sm">
             <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" /> دوای ئەم فرۆشتنە باڵانسەکە دەبێتە سالب — قەرزار دەبیت و لە تێکردنی داهاتوودا ئۆتۆماتیکی دەبڕدرێتەوە.
           </div>
         )}
@@ -1840,12 +2088,12 @@ function TxFilterBar({ data, f, setF, count, total }) {
       <div className="flex gap-2 items-center">
         <Inp value={f.q} onChange={(e) => setF({ ...f, q: e.target.value })} placeholder="گەڕان بە کۆد، ناو، دراو..." className="flex-1" />
         <button onClick={() => setOpen(!open)}
-          className={`shrink-0 px-3 py-2.5 rounded-xl border text-sm font-semibold flex items-center gap-1.5 transition ${active ? "bg-emerald-700 text-white border-emerald-700" : "bg-white border-stone-300 text-slate-600"}`}>
+          className={`shrink-0 px-3 py-2.5 rounded-xl border text-sm font-semibold flex items-center gap-1.5 transition ${active ? "bg-[var(--jade)] text-white border-emerald-700" : "bg-[var(--card)] border-[var(--line)] text-[var(--txt-2)]"}`}>
           <SlidersHorizontal className="w-4 h-4" /> فلتەر
         </button>
       </div>
       {open && (
-        <div className="mt-3 pt-3 border-t border-stone-100 space-y-3">
+        <div className="mt-3 pt-3 border-t border-[var(--line-soft)] space-y-3">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
             <div><Lbl>جۆر</Lbl><Sel value={f.type} onChange={(e) => setF({ ...f, type: e.target.value })}>
               <option value="all">هەمووی</option><option value="buy">کڕین</option><option value="sell">فرۆشتن</option></Sel></div>
@@ -1861,13 +2109,13 @@ function TxFilterBar({ data, f, setF, count, total }) {
           </div>
           <div className="flex gap-1.5 flex-wrap">
             {[["ئەمڕۆ", 0], ["٧ ڕۆژ", 7], ["٣٠ ڕۆژ", 30], ["٩٠ ڕۆژ", 90]].map(([t, d]) => (
-              <button key={t} onClick={() => quick(d)} className="px-3 py-1.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-xs font-semibold text-slate-600">{t}</button>
+              <button key={t} onClick={() => quick(d)} className="px-3 py-1.5 rounded-lg bg-[var(--line-soft)] hover:bg-[var(--line)] text-xs font-semibold text-[var(--txt-2)]">{t}</button>
             ))}
           </div>
         </div>
       )}
       {(count != null) && (
-        <div className="mt-2.5 pt-2.5 border-t border-stone-100 flex gap-4 flex-wrap text-xs text-slate-500">
+        <div className="mt-2.5 pt-2.5 border-t border-[var(--line-soft)] flex gap-4 flex-wrap text-xs text-[var(--txt-2)]">
           <span><b style={num}>{count}</b> مامەڵە</span>
           {total && Object.entries(total).map(([c, v]) => <span key={c}>{c}: <b style={num}>{fmt(v, 0)}</b></span>)}
         </div>
@@ -1901,48 +2149,48 @@ function TxRow({ t, cur, usr, onEdit, onDel, flip, lite, settle, unsettle }) {
     ? (t.type === "buy" ? "چاوەڕوانی وەرگرتنی پارە" : "چاوەڕوانی پارەدان")
     : (t.type === "buy" ? "پارە نەدراوە" : "پارە وەرنەگیراوە");
   return (
-    <Card className={`p-3.5 ${pend ? "border-amber-300 bg-amber-50/40" : ""}`}>
+    <Card className={`p-3.5 ${pend ? "border-[color-mix(in_srgb,var(--amber)_34%,transparent)] bg-[color-mix(in_srgb,var(--amber)_9%,transparent)]" : ""}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5 flex-wrap">
             {t.direct
               ? <Pill tone="amber">ڕاستەوخۆ</Pill>
               : <Pill tone={shown === "buy" ? "green" : "red"}>{shown === "buy" ? "کڕین" : "فرۆشتن"}</Pill>}
-            <span className="font-bold text-slate-900" style={num}>{fmt(t.amount, 0)}</span>
-            <span className="text-sm text-slate-500">{cur(t.curId).code}</span>
-            <span className="text-slate-300 mx-0.5">←</span>
-            <span className="font-bold text-slate-900" style={num}>{fmt(t.total, 0)}</span>
-            <span className="text-sm text-slate-500">{cur(t.againstId).code}</span>
+            <span className="font-bold text-[var(--txt)]" style={num}>{fmt(t.amount, 0)}</span>
+            <span className="text-sm text-[var(--txt-2)]">{cur(t.curId).code}</span>
+            <span className="text-[var(--txt-3)] mx-0.5">←</span>
+            <span className="font-bold text-[var(--txt)]" style={num}>{fmt(t.total, 0)}</span>
+            <span className="text-sm text-[var(--txt-2)]">{cur(t.againstId).code}</span>
           </div>
-          <div className="flex items-center gap-x-3 gap-y-1 flex-wrap mt-1.5 text-xs text-slate-500">
-            {t.code && <span className="font-bold text-slate-400" style={num}>#{t.code}</span>}
-            {!lite && name && <span className="text-slate-700 font-semibold">{name}</span>}
+          <div className="flex items-center gap-x-3 gap-y-1 flex-wrap mt-1.5 text-xs text-[var(--txt-2)]">
+            {t.code && <span className="font-bold text-[var(--txt-3)]" style={num}>#{t.code}</span>}
+            {!lite && name && <span className="text-[var(--txt)] font-semibold">{name}</span>}
 <span style={num}>ڕەیت {t.rate ? fmt(1 / t.rate, 3) : "—"}</span>
-            {!lite && t.partnerId && <span className="text-amber-700">لای {usr(t.partnerId).name}</span>}
-            {!lite && t.direct && t.buyRate && <span style={num} className="text-slate-500">کڕی {fmt(1 / t.buyRate, 3)}</span>}
-            {!lite && t.profit != null && <span>خێر <b className="text-emerald-700" style={num}>{fmt(t.profit, 0)}</b></span>}
-            {!lite && t.edited && <span className="text-slate-400">(ئیدیت)</span>}
-            <span className="text-slate-400" style={num}>{new Date(t.date).toLocaleDateString("en-GB")}</span>
+            {!lite && t.partnerId && <span className="text-[var(--amber)]">لای {usr(t.partnerId).name}</span>}
+            {!lite && t.direct && t.buyRate && <span style={num} className="text-[var(--txt-2)]">کڕی {fmt(1 / t.buyRate, 3)}</span>}
+            {!lite && t.profit != null && <span>خێر <b className="text-[var(--jade)]" style={num}>{fmt(t.profit, 0)}</b></span>}
+            {!lite && t.edited && <span className="text-[var(--txt-3)]">(ئیدیت)</span>}
+            <span className="text-[var(--txt-3)]" style={num}>{new Date(t.date).toLocaleDateString("en-GB")}</span>
           </div>
           {pend && <div className="mt-2"><Pill tone="amber">{pendLbl}</Pill></div>}
         </div>
         {(onEdit || onDel) && (
           <div className="flex flex-col gap-1 shrink-0">
-            {onEdit && <button onClick={() => onEdit(t)} className="p-2 rounded-lg text-slate-400 hover:text-emerald-700 hover:bg-emerald-50"><Pencil className="w-4 h-4" /></button>}
-            {onDel && <button onClick={() => onDel(t)} className="p-2 rounded-lg text-slate-400 hover:text-rose-700 hover:bg-rose-50"><Trash2 className="w-4 h-4" /></button>}
+            {onEdit && <button onClick={() => onEdit(t)} className="p-2 rounded-lg text-[var(--txt-3)] hover:text-[var(--jade)] hover:bg-[color-mix(in_srgb,var(--jade)_10%,transparent)]"><Pencil className="w-4 h-4" /></button>}
+            {onDel && <button onClick={() => onDel(t)} className="p-2 rounded-lg text-[var(--txt-3)] hover:text-[var(--verm)] hover:bg-[color-mix(in_srgb,var(--verm)_10%,transparent)]"><Trash2 className="w-4 h-4" /></button>}
           </div>
         )}
       </div>
       {pend && settle && (
-        <div className="mt-2.5 pt-2.5 border-t border-amber-200/70">
-          <button onClick={() => settle(t)} className="flex items-center gap-1.5 text-sm font-semibold text-emerald-700 hover:text-emerald-800">
+        <div className="mt-2.5 pt-2.5 border-t border-[color-mix(in_srgb,var(--amber)_26%,transparent)]/70">
+          <button onClick={() => settle(t)} className="flex items-center gap-1.5 text-sm font-semibold text-[var(--jade)] hover:text-[var(--jade)]">
             <CheckCircle2 className="w-4 h-4" /> {t.type === "buy" ? "پارەکەم دا" : "پارەکەم وەرگرت"}
           </button>
         </div>
       )}
       {!pend && t.paidAt && unsettle && (
-        <div className="mt-2.5 pt-2.5 border-t border-stone-100">
-          <button onClick={() => unsettle(t)} className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-amber-700">
+        <div className="mt-2.5 pt-2.5 border-t border-[var(--line-soft)]">
+          <button onClick={() => unsettle(t)} className="flex items-center gap-1.5 text-xs text-[var(--txt-3)] hover:text-[var(--amber)]">
             <RotateCcw className="w-3.5 h-3.5" /> هەڵوەشاندنەوەی پارەدان
           </button>
         </div>
@@ -1971,13 +2219,13 @@ const normRef = (r) => String(r || "").replace(/[\s\-_.]/g, "").toUpperCase();
 const DIR_KU = { in: "پارە هاتووە", out: "پارە نێردراوە" };
 const PLATFORMS = {
   Alipay:   { ku: "ئەلی پەی", cls: "bg-blue-50 text-blue-800 border-blue-200" },
-  WeChat:   { ku: "وی چات",  cls: "bg-emerald-50 text-emerald-800 border-emerald-200" },
-  Bank:     { ku: "بانک",     cls: "bg-slate-50 text-slate-700 border-slate-200" },
+  WeChat:   { ku: "وی چات",  cls: "bg-[color-mix(in_srgb,var(--jade)_10%,transparent)] text-[var(--jade)] border-[color-mix(in_srgb,var(--jade)_26%,transparent)]" },
+  Bank:     { ku: "بانک",     cls: "bg-slate-50 text-[var(--txt)] border-slate-200" },
   FIB:      { ku: "FIB",      cls: "bg-violet-50 text-violet-800 border-violet-200" },
-  FastPay:  { ku: "FastPay",  cls: "bg-amber-50 text-amber-800 border-amber-200" },
-  ZainCash: { ku: "Zain Cash", cls: "bg-rose-50 text-rose-800 border-rose-200" },
+  FastPay:  { ku: "FastPay",  cls: "bg-[color-mix(in_srgb,var(--amber)_11%,transparent)] text-[var(--amber)] border-[color-mix(in_srgb,var(--amber)_26%,transparent)]" },
+  ZainCash: { ku: "Zain Cash", cls: "bg-[color-mix(in_srgb,var(--verm)_10%,transparent)] text-[var(--verm)] border-[color-mix(in_srgb,var(--verm)_26%,transparent)]" },
 };
-const platMeta = (p) => PLATFORMS[p] || { ku: p || "نەزانراو", cls: "bg-stone-50 text-slate-600 border-stone-200" };
+const platMeta = (p) => PLATFORMS[p] || { ku: p || "نەزانراو", cls: "bg-[var(--line-soft)] text-[var(--txt-2)] border-[var(--line)]" };
 const detectPlatform = (bank) => {
   const b = String(bank || "").toLowerCase();
   if (/alipay|支付宝/.test(b)) return "Alipay";
@@ -2010,7 +2258,7 @@ function ReceiptImg({ path, className }) {
       .then(({ data }) => { if (alive && data) setUrl(data.signedUrl); }).catch(() => {});
     return () => { alive = false; };
   }, [path]);
-  if (!url) return <div className={`bg-stone-200 animate-pulse ${className}`} />;
+  if (!url) return <div className={`bg-[var(--line)] animate-pulse ${className}`} />;
   return <a href={url} target="_blank" rel="noreferrer"><img src={url} alt="فیش" className={className} /></a>;
 }
 
@@ -2050,26 +2298,26 @@ function ReceiptTotals({ rows, data, title, compact }) {
             const cc = (data?.currencies || []).find((x) => x.code === c);
             const mid = cc && cc.id !== "usd" ? (cc.buyRate && cc.sellRate ? (cc.buyRate + cc.sellRate) / 2 : (cc.buyRate || cc.sellRate)) : null;
             return (
-              <div key={c} className="bg-stone-50 border border-stone-200 rounded-2xl p-4 mb-2.5 last:mb-0">
+              <div key={c} className="bg-[var(--line-soft)] border border-[var(--line)] rounded-2xl p-4 mb-2.5 last:mb-0">
                 <div className="flex items-center gap-2 mb-3">
                   {cc && <CurBadge c={cc} size="sm" />}
-                  <span className="text-xs font-bold text-slate-500">{cc?.name || c}</span>
-                  {mid && <span className="text-[10px] text-slate-400 mr-auto" style={num}>نرخی ڕۆژ {fmt(mid, 3)}</span>}
+                  <span className="text-xs font-bold text-[var(--txt-2)]">{cc?.name || c}</span>
+                  {mid && <span className="text-[10px] text-[var(--txt-3)] mr-auto" style={num}>نرخی ڕۆژ {fmt(mid, 3)}</span>}
                 </div>
                 <div className="flex justify-between py-1.5 text-sm">
-                  <span className="text-slate-600">کۆی گشتی (بە فییەوە)</span>
-                  <span className="font-bold text-slate-800" style={num}>{fmt(gross[c], 0)}</span>
+                  <span className="text-[var(--txt-2)]">کۆی گشتی (بە فییەوە)</span>
+                  <span className="font-bold text-[var(--txt)]" style={num}>{fmt(gross[c], 0)}</span>
                 </div>
                 <div className="flex justify-between py-1.5 text-sm">
-                  <span className="text-slate-600">فی</span>
-                  <span className={`font-bold ${fees[c] ? "text-rose-700" : "text-slate-300"}`} style={num}>
+                  <span className="text-[var(--txt-2)]">فی</span>
+                  <span className={`font-bold ${fees[c] ? "text-[var(--verm)]" : "text-[var(--txt-3)]"}`} style={num}>
                     {fees[c] ? `− ${fmt(fees[c], 0)}` : "0"}
                   </span>
                 </div>
-                <div className="flex justify-between pt-3 mt-1.5 border-t-2 border-stone-200 items-baseline">
-                  <span className="text-sm font-bold text-slate-900">گەیشتوو (بێ فی)</span>
+                <div className="flex justify-between pt-3 mt-1.5 border-t-2 border-[var(--line)] items-baseline">
+                  <span className="text-sm font-bold text-[var(--txt)]">گەیشتوو (بێ فی)</span>
                   <div className="text-left">
-                    <div className="text-2xl font-bold text-emerald-700"><CountUp v={net[c]} /></div>
+                    <div className="text-2xl font-bold text-[var(--jade)]"><CountUp v={net[c]} /></div>
                     {u(net[c], c) != null && <div className="text-[11px]"><UsdHint v={u(net[c], c)} /></div>}
                   </div>
                 </div>
@@ -2077,8 +2325,8 @@ function ReceiptTotals({ rows, data, title, compact }) {
             );
           })}
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs mt-2">
-          <span className="text-slate-500" style={num}>{counted.length} فیش هەژمار کراوە</span>
-          {rejected.length > 0 && <span className="text-rose-700 font-semibold" style={num}>{rejected.length} فیش ڕەت کراوەتەوە (هەژمار نەکراون)</span>}
+          <span className="text-[var(--txt-2)]" style={num}>{counted.length} فیش هەژمار کراوە</span>
+          {rejected.length > 0 && <span className="text-[var(--verm)] font-semibold" style={num}>{rejected.length} فیش ڕەت کراوەتەوە (هەژمار نەکراون)</span>}
         </div>
       </Card>
 
@@ -2088,13 +2336,13 @@ function ReceiptTotals({ rows, data, title, compact }) {
           {Object.entries(byPlat).sort((a, b) => b[1].n - a[1].n).map(([pl, v]) => {
             const m = platMeta(pl);
             return (
-              <div key={pl} className="flex items-center justify-between py-2.5 border-b border-stone-100 last:border-0">
+              <div key={pl} className="flex items-center justify-between py-2.5 border-b border-[var(--line-soft)] last:border-0">
                 <span className={`px-2.5 py-1 rounded-lg text-xs font-bold border ${m.cls}`}>{m.ku}</span>
                 <div className="text-left">
                   {Object.entries(v.cur).map(([c, a]) => (
                     <div key={c}>
-                      <div className="font-bold text-slate-900" style={num}>{fmt(a, 0)} <span className="text-xs font-normal text-slate-500">{c}</span></div>
-                      <div className="text-[11px] text-slate-400" style={num}>{v.n} فیش</div>
+                      <div className="font-bold text-[var(--txt)]" style={num}>{fmt(a, 0)} <span className="text-xs font-normal text-[var(--txt-2)]">{c}</span></div>
+                      <div className="text-[11px] text-[var(--txt-3)]" style={num}>{v.n} فیش</div>
                     </div>
                   ))}
                 </div>
@@ -2108,15 +2356,15 @@ function ReceiptTotals({ rows, data, title, compact }) {
         <Card className="p-5">
           <SecLbl>وردەکاری بەپێی ناو</SecLbl>
           {whoList.map(([name, v]) => (
-            <div key={name} className="flex items-center justify-between py-2.5 border-b border-stone-100 last:border-0">
+            <div key={name} className="flex items-center justify-between py-2.5 border-b border-[var(--line-soft)] last:border-0">
               <div>
-                <div className="font-semibold text-slate-800">{name}</div>
-                <div className="text-xs text-slate-400" style={num}>{v.n} فیش</div>
+                <div className="font-semibold text-[var(--txt)]">{name}</div>
+                <div className="text-xs text-[var(--txt-3)]" style={num}>{v.n} فیش</div>
               </div>
               <div className="text-left">
                 {Object.entries(v.cur).map(([c, a]) => (
                   <div key={c}>
-                    <div className="font-bold text-slate-900" style={num}>{fmt(a, 0)} <span className="text-xs font-normal text-slate-500">{c}</span></div>
+                    <div className="font-bold text-[var(--txt)]" style={num}>{fmt(a, 0)} <span className="text-xs font-normal text-[var(--txt-2)]">{c}</span></div>
                     <div className="text-[11px]"><UsdHint v={u(a, c)} /></div>
                   </div>
                 ))}
@@ -2140,14 +2388,14 @@ function RejectedReceipts({ rows, title = "فیشە ڕەتکراوەکان" }) {
   bad.forEach((r) => { const k = r.reject_code || r.rejectCode || "other"; byCode[k] = (byCode[k] || 0) + 1; });
 
   return (
-    <Card className="p-5 border-rose-300 bg-rose-50/40">
+    <Card className="p-5 border-[color-mix(in_srgb,var(--verm)_34%,transparent)] bg-[color-mix(in_srgb,var(--verm)_8%,transparent)]">
       <button onClick={() => setOpen(!open)} className="w-full text-right">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <div className="flex items-center gap-2 font-bold text-rose-900">
+            <div className="flex items-center gap-2 font-bold text-[var(--verm)]">
               <AlertTriangle className="w-4 h-4" /> {title}
             </div>
-            <div className="text-xs text-rose-800/80 mt-1.5" style={num}>
+            <div className="text-xs text-[var(--verm)]/80 mt-1.5" style={num}>
               {bad.length} فیش هەژمار نەکراون
             </div>
             <div className="flex gap-1.5 mt-2 flex-wrap">
@@ -2161,27 +2409,27 @@ function RejectedReceipts({ rows, title = "فیشە ڕەتکراوەکان" }) {
       </button>
 
       {open && (
-        <div className="mt-4 pt-4 border-t border-rose-200 space-y-2.5">
+        <div className="mt-4 pt-4 border-t border-[color-mix(in_srgb,var(--verm)_26%,transparent)] space-y-2.5">
           {bad.map((r) => (
-            <div key={r.id} className="bg-white rounded-xl border border-rose-200 p-3">
+            <div key={r.id} className="bg-[var(--card)] rounded-xl border border-[color-mix(in_srgb,var(--verm)_26%,transparent)] p-3">
               <div className="flex gap-3">
                 {r.image_path
-                  ? <ReceiptImg path={r.image_path} className="w-16 h-16 object-cover rounded-lg border border-stone-200 shrink-0 opacity-70" />
+                  ? <ReceiptImg path={r.image_path} className="w-16 h-16 object-cover rounded-lg border border-[var(--line)] shrink-0 opacity-70" />
                   : r.url
-                    ? <img src={r.url} alt="" className="w-16 h-16 object-cover rounded-lg border border-stone-200 shrink-0 opacity-70" />
-                    : <div className="w-16 h-16 bg-stone-100 rounded-lg shrink-0" />}
+                    ? <img src={r.url} alt="" className="w-16 h-16 object-cover rounded-lg border border-[var(--line)] shrink-0 opacity-70" />
+                    : <div className="w-16 h-16 bg-[var(--line-soft)] rounded-lg shrink-0" />}
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline gap-2 flex-wrap">
-                    <span className="text-base font-bold text-slate-400 line-through" style={num}>
+                    <span className="text-base font-bold text-[var(--txt-3)] line-through" style={num}>
                       {r.amount ? fmt(r.net_amount ?? r.net ?? r.amount, 0) : "—"}
                     </span>
-                    <span className="text-xs text-slate-400">{r.currency || ""}</span>
+                    <span className="text-xs text-[var(--txt-3)]">{r.currency || ""}</span>
                     <Pill tone="red">هەژمار نەکراوە</Pill>
                   </div>
-                  <div className="mt-1.5 text-xs text-rose-900 bg-rose-50 rounded-lg px-2.5 py-1.5 leading-relaxed">
+                  <div className="mt-1.5 text-xs text-[var(--verm)] bg-[color-mix(in_srgb,var(--verm)_10%,transparent)] rounded-lg px-2.5 py-1.5 leading-relaxed">
                     <b>هۆکار:</b> {r.reject_reason || r.rejectReason || r.note || "نەزانراو"}
                   </div>
-                  <div className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-0.5 text-[11px] text-slate-500">
+                  <div className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-0.5 text-[11px] text-[var(--txt-2)]">
                     {(r.ref_no || r.refNo) && <div style={num}>ژمارەی مامەڵە: <b>{r.ref_no || r.refNo}</b></div>}
                     {(r.tx_time || r.txTime) && <div>کاتی مامەڵە: <b>{r.tx_time || r.txTime}</b></div>}
                     {(r.receiver) && <div>وەرگر: <b>{r.receiver}</b></div>}
@@ -2190,7 +2438,7 @@ function RejectedReceipts({ rows, title = "فیشە ڕەتکراوەکان" }) {
                     {r.created_at && <div style={num}>کاتی ناردن: <b>{new Date(r.created_at).toLocaleString("en-GB")}</b></div>}
                   </div>
                   {(r.dup_of_date || r.dupOfDate) && (
-                    <div className="mt-1.5 text-[11px] text-slate-500 bg-stone-50 rounded-lg px-2.5 py-1.5">
+                    <div className="mt-1.5 text-[11px] text-[var(--txt-2)] bg-[var(--line-soft)] rounded-lg px-2.5 py-1.5">
                       فیشە ڕەسەنەکە: <b style={num}>{new Date(r.dup_of_date || r.dupOfDate).toLocaleString("en-GB")}</b>
                       {(r.dup_of_who || r.dupOfWho) && <> · لەلایەن <b>{r.dup_of_who || r.dupOfWho}</b></>}
                     </div>
@@ -2214,17 +2462,17 @@ function ReceiptList({ rows, showFrom }) {
   if (!rows.length) return <Card><Empty t="هەموو فیشەکان ڕەت کراونەتەوە" /></Card>;
   return (
     <div className="space-y-3">
-      <div className="flex gap-1 bg-white border border-stone-200 rounded-xl p-1">
+      <div className="flex gap-1 rounded-2xl p-1" style={{ background: "var(--card)", border: "1px solid var(--line)", boxShadow: "var(--shadow-1)" }}>
         {[["list", "وردەکاری"], ["gallery", "وێنەکان"]].map(([k, lbl]) => (
           <button key={k} onClick={() => setView(k)}
-            className={`flex-1 py-2.5 rounded-lg text-sm ${view === k ? "bg-emerald-700 text-white font-semibold" : "text-slate-600"}`}>{lbl}</button>
+            className={`flex-1 py-2.5 rounded-lg text-sm ${view === k ? "bg-[var(--jade)] text-white font-semibold" : "text-[var(--txt-2)]"}`}>{lbl}</button>
         ))}
       </div>
       {view === "gallery" ? (
         <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
           {rows.filter((r) => r.image_path).map((r) => (
             <div key={r.id} className="relative fade-up">
-              <ReceiptImg path={r.image_path} className="w-full aspect-square object-cover rounded-xl border border-stone-200" />
+              <ReceiptImg path={r.image_path} className="w-full aspect-square object-cover rounded-xl border border-[var(--line)]" />
               <div className="absolute bottom-1 right-1 left-1 bg-slate-900/80 text-white text-[10px] rounded-lg px-1.5 py-0.5 text-center" style={num}>
                 {fmt(r.net_amount ?? r.amount, 0)}
               </div>
@@ -2233,17 +2481,17 @@ function ReceiptList({ rows, showFrom }) {
           {rows.filter((r) => r.image_path).length === 0 && <div className="col-span-full"><Empty t="هیچ وێنەیەک نییە" /></div>}
         </div>
       ) : rows.map((r) => (
-        <Card key={r.id} className={`p-3 ${r.status === "dup" ? "bg-rose-50/50 border-rose-200" : ""}`}>
+        <Card key={r.id} className={`p-3 ${r.status === "dup" ? "bg-[color-mix(in_srgb,var(--verm)_9%,transparent)] border-[color-mix(in_srgb,var(--verm)_26%,transparent)]" : ""}`}>
           <div className="flex gap-3">
             {r.image_path
-              ? <ReceiptImg path={r.image_path} className="w-16 h-16 object-cover rounded-xl border border-stone-200 shrink-0" />
-              : <div className="w-16 h-16 bg-stone-100 rounded-xl shrink-0" />}
+              ? <ReceiptImg path={r.image_path} className="w-16 h-16 object-cover rounded-xl border border-[var(--line)] shrink-0" />
+              : <div className="w-16 h-16 bg-[var(--line-soft)] rounded-xl shrink-0" />}
             <div className="min-w-0 flex-1 text-sm">
               <div className="flex items-baseline gap-2 flex-wrap">
-                <span className="text-lg font-bold text-slate-900" style={num}>{fmt(r.net_amount ?? r.amount, 0)}</span>
-                <span className="text-xs text-slate-500">{r.currency}</span>
-                {r.fee > 0 && <span className="text-[11px] text-slate-400" style={num}>بە فی {fmt(r.amount, 0)}</span>}
-                {r.fee_discount > 0 && <span className="text-[10px] text-emerald-700 font-semibold" style={num}>داشکاندنی فی {fmt(r.fee_discount, 0)}</span>}
+                <span className="text-lg font-bold text-[var(--txt)]" style={num}>{fmt(r.net_amount ?? r.amount, 0)}</span>
+                <span className="text-xs text-[var(--txt-2)]">{r.currency}</span>
+                {r.fee > 0 && <span className="text-[11px] text-[var(--txt-3)]" style={num}>بە فی {fmt(r.amount, 0)}</span>}
+                {r.fee_discount > 0 && <span className="text-[10px] text-[var(--jade)] font-semibold" style={num}>داشکاندنی فی {fmt(r.fee_discount, 0)}</span>}
                 {r.status === "dup" && <Pill tone="red">دووبارە</Pill>}
                 {r.status === "suspect" && <Pill tone="amber">گومان</Pill>}
                 {r.direction === "out" && <Pill tone="amber">نێردراو</Pill>}
@@ -2252,14 +2500,14 @@ function ReceiptList({ rows, showFrom }) {
                   return <span className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border ${m.cls}`}>{m.ku}</span>;
                 })()}
               </div>
-              <div className="text-xs text-slate-600 mt-0.5">
+              <div className="text-xs text-[var(--txt-2)] mt-0.5">
                 {showFrom && r.customer_name && <>لە <b>{r.customer_name}</b> </>}
                 {r.receiver && <>بۆ <b>{r.receiver}</b></>}
               </div>
-              <div className="text-[11px] text-slate-400 mt-0.5" style={num}>
+              <div className="text-[11px] text-[var(--txt-3)] mt-0.5" style={num}>
                 ژمارە {r.ref_no || "—"} · {r.tx_time || new Date(r.created_at).toLocaleString("en-GB")}
               </div>
-              {r.note && <div className="text-[11px] text-amber-700 mt-0.5">{r.note}</div>}
+              {r.note && <div className="text-[11px] text-[var(--amber)] mt-0.5">{r.note}</div>}
             </div>
           </div>
         </Card>
@@ -2447,34 +2695,34 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
           <div className="flex gap-2">
             {[["in", "پارە هاتووە (کڕین)"], ["out", "پارە نێردراوە (فرۆشتن)"]].map(([k, t]) => (
               <button key={k} onClick={() => setDir(k)}
-                className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition press ${dir === k ? (k === "in" ? "bg-emerald-700 text-white" : "bg-rose-700 text-white") : "bg-stone-100 text-slate-500"}`}>{t}</button>
+                className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition press ${dir === k ? (k === "in" ? "bg-[var(--jade)] text-white" : "bg-rose-700 text-white") : "bg-[var(--line-soft)] text-[var(--txt-2)]"}`}>{t}</button>
             ))}
           </div>
         </Card>
       )}
 
       <Card className="p-5">
-        <label className={`block border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition ${working ? "border-stone-200 bg-stone-50" : "border-stone-300 hover:border-emerald-500 hover:bg-emerald-50/30"}`}>
+        <label className={`block border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition ${working ? "border-[var(--line)] bg-[var(--line-soft)]" : "border-[var(--line)] hover:border-[var(--jade)] hover:bg-[color-mix(in_srgb,var(--jade)_10%,transparent)]/30"}`}>
           <input type="file" accept="image/*" multiple className="hidden" disabled={working}
             onChange={(e) => { onFiles(e.target.files); e.target.value = ""; }} />
-          <Upload className="w-8 h-8 mx-auto text-slate-400 mb-2" />
-          <div className="text-sm font-semibold text-slate-700">{working ? `خوێندنەوە... ${prog || ""}` : "کلیک بکە بۆ هەڵبژاردنی فیشەکان"}</div>
-          <div className="text-xs text-slate-400 mt-1">دەتوانیت چەندین وێنە بەیەکەوە هەڵبژێریت</div>
+          <Upload className="w-8 h-8 mx-auto text-[var(--txt-3)] mb-2" />
+          <div className="text-sm font-semibold text-[var(--txt)]">{working ? `خوێندنەوە... ${prog || ""}` : "کلیک بکە بۆ هەڵبژاردنی فیشەکان"}</div>
+          <div className="text-xs text-[var(--txt-3)] mt-1">دەتوانیت چەندین وێنە بەیەکەوە هەڵبژێریت</div>
         </label>
       </Card>
 
       {rows.length > 0 && (
         <>
           {dupN > 0 && (
-            <Card className="p-4 border-rose-300 bg-rose-50/60">
-              <div className="flex items-center gap-2 text-sm text-rose-900 font-semibold">
+            <Card className="p-4 border-[color-mix(in_srgb,var(--verm)_34%,transparent)] bg-[color-mix(in_srgb,var(--verm)_9%,transparent)]">
+              <div className="flex items-center gap-2 text-sm text-[var(--verm)] font-semibold">
                 <AlertTriangle className="w-4 h-4" /> {dupN} فیشی دووبارە — ناژمێردرێن
               </div>
             </Card>
           )}
           {errN > 0 && (
-            <Card className="p-4 border-amber-300 bg-amber-50/60">
-              <div className="text-sm text-amber-900">
+            <Card className="p-4 border-[color-mix(in_srgb,var(--amber)_34%,transparent)] bg-[color-mix(in_srgb,var(--amber)_10%,transparent)]">
+              <div className="text-sm text-[var(--amber)]">
                 <div className="font-semibold mb-1">{errN} فیش نەخوێندرایەوە:</div>
                 {[...new Set(rows.filter((r) => r.status === "error").map((r) => r.note))].map((n, i) => <div key={i} className="text-xs">• {n}</div>)}
               </div>
@@ -2483,24 +2731,24 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
 
           <Card className="p-4 space-y-2">
             {rows.map((r, i) => (
-              <div key={r.id} className={`flex items-center gap-3 p-2.5 rounded-xl ${r.status === "dup" ? "bg-rose-50" : r.status === "suspect" ? "bg-amber-50" : "bg-stone-50"}`}>
-                <span className="text-xs text-slate-400 w-5" style={num}>{i + 1}</span>
-                {r.url ? <img src={r.url} alt="" className="w-11 h-11 object-cover rounded-lg border border-stone-200" /> : <div className="w-11 h-11 bg-stone-200 rounded-lg" />}
+              <div key={r.id} className={`flex items-center gap-3 p-2.5 rounded-xl ${r.status === "dup" ? "bg-[color-mix(in_srgb,var(--verm)_10%,transparent)]" : r.status === "suspect" ? "bg-[color-mix(in_srgb,var(--amber)_11%,transparent)]" : "bg-[var(--line-soft)]"}`}>
+                <span className="text-xs text-[var(--txt-3)] w-5" style={num}>{i + 1}</span>
+                {r.url ? <img src={r.url} alt="" className="w-11 h-11 object-cover rounded-lg border border-[var(--line)]" /> : <div className="w-11 h-11 bg-[var(--line)] rounded-lg" />}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-baseline gap-1.5">
-                    <span className="font-bold text-slate-900" style={num}>{r.amount ? fmt(r.amount, 0) : "—"}</span>
-                    <span className="text-xs text-slate-500">{r.currency || ""}</span>
-                    {r.fee > 0 && <span className="text-[11px] text-rose-600" style={num}>فی {fmt(r.fee, 0)} → {fmt(r.net, 0)}</span>}
+                    <span className="font-bold text-[var(--txt)]" style={num}>{r.amount ? fmt(r.amount, 0) : "—"}</span>
+                    <span className="text-xs text-[var(--txt-2)]">{r.currency || ""}</span>
+                    {r.fee > 0 && <span className="text-[11px] text-[var(--verm)]" style={num}>فی {fmt(r.fee, 0)} → {fmt(r.net, 0)}</span>}
                   </div>
-                  <div className="text-[11px] text-slate-500 truncate">
+                  <div className="text-[11px] text-[var(--txt-2)] truncate">
                     {r.receiver && <>بۆ <b>{r.receiver}</b> · </>}
                     {r.refNo && <span style={num}>{r.refNo}</span>}
                   </div>
-                  {r.note && <div className="text-[10px] text-slate-500 mt-0.5">{r.note}</div>}
+                  {r.note && <div className="text-[10px] text-[var(--txt-2)] mt-0.5">{r.note}</div>}
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
                   <Pill tone={ST[r.status].tone}>{ST[r.status].t}</Pill>
-                  <button onClick={() => setRows(rows.filter((x) => x.id !== r.id))} className="p-1 text-slate-300 hover:text-rose-700"><Trash2 className="w-3.5 h-3.5" /></button>
+                  <button onClick={() => setRows(rows.filter((x) => x.id !== r.id))} className="p-1 text-[var(--txt-3)] hover:text-[var(--verm)]"><Trash2 className="w-3.5 h-3.5" /></button>
                 </div>
               </div>
             ))}
@@ -2550,10 +2798,11 @@ function ReceiptsHub({ data, usr, batches, reloadBatches, flash, onMakeTx, profi
     <div className="space-y-4">
       <H sub="فیشەکانی کڕیاران و هاوبەشان — پشکنین، کۆکردنەوە، و بەستنەوە بە مامەڵەوە">فیشەکان</H>
 
-      <div className="flex gap-1 bg-white border border-stone-200 rounded-xl p-1 overflow-x-auto">
+      <div className="flex gap-1 rounded-2xl p-1 overflow-x-auto" style={{ background: "var(--card)", border: "1px solid var(--line)", boxShadow: "var(--shadow-1)" }}>
         {TABS.map(([k, t]) => (
           <button key={k} onClick={() => setTab(k)}
-            className={`flex-1 whitespace-nowrap px-3 py-2.5 rounded-lg text-sm ${tab === k ? "bg-emerald-700 text-white font-semibold" : "text-slate-600 hover:bg-stone-100"}`}>{t}</button>
+            style={tab === k ? { background: "linear-gradient(180deg, var(--jade-lt), var(--jade))", color: "#fff", boxShadow: "0 2px 8px -2px rgba(14,122,107,.4)" } : { color: "var(--txt-2)" }}
+            className={`flex-1 whitespace-nowrap px-3 py-2.5 rounded-xl text-sm transition-all press ${tab === k ? "font-bold" : "font-medium hover:bg-[var(--line-soft)]"}`}>{t}</button>
         ))}
       </div>
 
@@ -2563,8 +2812,8 @@ function ReceiptsHub({ data, usr, batches, reloadBatches, flash, onMakeTx, profi
             <Card key={b.id} className="p-4 fade-up" style={{ animationDelay: `${i * 40}ms` }} onClick={() => setSel(b.id)}>
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="font-semibold text-slate-800">{b.customer_name || (b.partner_id ? usr(b.partner_id).name : "—")}</div>
-                  <div className="text-xs text-slate-500 mt-0.5" style={num}>{b.n} فیش · {new Date(b.created_at).toLocaleString("en-GB")}</div>
+                  <div className="font-semibold text-[var(--txt)]">{b.customer_name || (b.partner_id ? usr(b.partner_id).name : "—")}</div>
+                  <div className="text-xs text-[var(--txt-2)] mt-0.5" style={num}>{b.n} فیش · {new Date(b.created_at).toLocaleString("en-GB")}</div>
                   <div className="flex gap-1.5 mt-1.5 flex-wrap">
                     {b.source === "whatsapp" && (
                       <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-600 text-white flex items-center gap-1">
@@ -2578,10 +2827,10 @@ function ReceiptsHub({ data, usr, batches, reloadBatches, flash, onMakeTx, profi
                   </div>
                 </div>
                 <div className="text-left shrink-0">
-                  <div className="text-xl font-bold text-emerald-700" style={num}>{fmt(b.total_net, 0)}</div>
-                  <div className="text-[11px] text-slate-400">{b.currency} بێ فی</div>
-                  {u(b.total_net, b.currency) != null && <div className="text-[11px] text-slate-500" style={num}>≈ {fmt(u(b.total_net, b.currency), 0)} $</div>}
-                  {b.total_fee > 0 && <div className="text-[10px] text-slate-400" style={num}>بە فی {fmt(b.total_gross, 0)}</div>}
+                  <div className="text-xl font-bold text-[var(--jade)]" style={num}>{fmt(b.total_net, 0)}</div>
+                  <div className="text-[11px] text-[var(--txt-3)]">{b.currency} بێ فی</div>
+                  {u(b.total_net, b.currency) != null && <div className="text-[11px] text-[var(--txt-2)]" style={num}>≈ {fmt(u(b.total_net, b.currency), 0)} $</div>}
+                  {b.total_fee > 0 && <div className="text-[10px] text-[var(--txt-3)]" style={num}>بە فی {fmt(b.total_gross, 0)}</div>}
                 </div>
               </div>
             </Card>
@@ -2590,12 +2839,12 @@ function ReceiptsHub({ data, usr, batches, reloadBatches, flash, onMakeTx, profi
 
       {tab === "loc" && (
         <>
-          <div className="flex gap-1 bg-white border border-stone-200 rounded-xl p-1 overflow-x-auto">
+          <div className="flex gap-1 rounded-2xl p-1 overflow-x-auto" style={{ background: "var(--card)", border: "1px solid var(--line)", boxShadow: "var(--shadow-1)" }}>
             <button onClick={() => setLoc("me")}
-              className={`whitespace-nowrap px-4 py-2 rounded-lg text-sm ${loc === "me" ? "bg-slate-900 text-white font-semibold" : "text-slate-600"}`}>لای خۆم</button>
+              className={`whitespace-nowrap px-4 py-2 rounded-lg text-sm ${loc === "me" ? "bg-slate-900 text-white font-semibold" : "text-[var(--txt-2)]"}`}>لای خۆم</button>
             {partners.map((p) => (
               <button key={p.id} onClick={() => setLoc(p.id)}
-                className={`whitespace-nowrap px-4 py-2 rounded-lg text-sm ${loc === p.id ? "bg-emerald-700 text-white font-semibold" : "text-slate-600"}`}>{p.name}</button>
+                className={`whitespace-nowrap px-4 py-2 rounded-lg text-sm ${loc === p.id ? "bg-[var(--jade)] text-white font-semibold" : "text-[var(--txt-2)]"}`}>{p.name}</button>
             ))}
           </div>
           <LocationReceipts partnerId={loc === "me" ? null : loc} data={data} flash={flash}
@@ -2764,32 +3013,32 @@ function ShareTable({ rows, data, who, title, onClose, flash }) {
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-end md:items-center justify-center md:p-6" onClick={onClose}>
-      <div className="bg-white w-full max-w-lg rounded-t-3xl md:rounded-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-        <div className="sticky top-0 bg-white border-b border-stone-200 px-5 py-3.5 flex items-center justify-between">
-          <div className="font-bold text-slate-900">ناردنی خشتە</div>
-          <button onClick={onClose} className="p-1.5 text-slate-400"><X className="w-5 h-5" /></button>
+      <div className="w-full max-w-lg rounded-t-[28px] md:rounded-[24px] max-h-[90vh] overflow-y-auto sheet-in" style={{ background: "var(--card)", boxShadow: "var(--shadow-3)" }} onClick={(e) => e.stopPropagation()}>
+        <div className="sticky top-0 z-10 px-5 py-4 flex items-center justify-between backdrop-blur-xl" style={{ background: "color-mix(in srgb, var(--card) 92%, transparent)", borderBottom: "1px solid var(--line-soft)" }}>
+          <div className="font-bold text-[var(--txt)]">ناردنی خشتە</div>
+          <button onClick={onClose} className="p-1.5 text-[var(--txt-3)]"><X className="w-5 h-5" /></button>
         </div>
 
         <div className="p-5 space-y-4">
-          <div className="flex gap-1 bg-stone-100 rounded-xl p-1">
+          <div className="flex gap-1 bg-[var(--line-soft)] rounded-xl p-1">
             {[["full", "خشتەی تەواو"], ["short", "تەنها کۆکان"], ["rej", "تەنها ڕەتکراوەکان"]].map(([k, t]) => (
               <button key={k} onClick={() => setMode(k)}
-                className={`flex-1 py-2 rounded-lg text-sm ${mode === k ? "bg-white text-emerald-700 font-bold shadow-sm" : "text-slate-500"}`}>{t}</button>
+                className={`flex-1 py-2 rounded-lg text-sm ${mode === k ? "bg-[var(--card)] text-[var(--jade)] font-bold shadow-sm" : "text-[var(--txt-2)]"}`}>{t}</button>
             ))}
           </div>
 
           {/* پێشبینین */}
-          <div className="border border-stone-200 rounded-2xl overflow-hidden">
+          <div className="border border-[var(--line)] rounded-2xl overflow-hidden">
             <div className="bg-slate-900 text-white px-4 py-3">
               <div className="font-bold">{title || "وردەکاری فیشەکان"}</div>
-              <div className="text-xs text-slate-400 mt-0.5">{who ? `${who} · ` : ""}<span style={num}>{today}</span></div>
+              <div className="text-xs text-[var(--txt-3)] mt-0.5">{who ? `${who} · ` : ""}<span style={num}>{today}</span></div>
             </div>
             <div className="p-4 space-y-3">
               {mode === "full" && counted.length > 0 && (
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
                     <thead>
-                      <tr className="text-slate-400 border-b border-stone-200">
+                      <tr className="text-[var(--txt-3)] border-b border-[var(--line)]">
                         <th className="text-right py-1.5 w-6">#</th>
                         <th className="text-right">بڕ</th>
                         <th className="text-right">فی</th>
@@ -2799,12 +3048,12 @@ function ShareTable({ rows, data, who, title, onClose, flash }) {
                     </thead>
                     <tbody>
                       {counted.map((r, i) => (
-                        <tr key={r.id || i} className="border-b border-stone-50">
-                          <td className="py-1.5 text-slate-400" style={num}>{i + 1}</td>
+                        <tr key={r.id || i} className="border-b border-[var(--line-soft)]">
+                          <td className="py-1.5 text-[var(--txt-3)]" style={num}>{i + 1}</td>
                           <td style={num}>{fmt(r.amount, 0)}</td>
-                          <td style={num} className={r.fee ? "text-rose-600" : "text-slate-300"}>{r.fee ? fmt(r.fee, 0) : "—"}</td>
+                          <td style={num} className={r.fee ? "text-[var(--verm)]" : "text-[var(--txt-3)]"}>{r.fee ? fmt(r.fee, 0) : "—"}</td>
                           <td style={num} className="font-bold">{fmt(r.net ?? r.net_amount ?? r.amount, 0)}</td>
-                          <td className="text-slate-600 truncate max-w-[80px]">{r.receiver || "—"}</td>
+                          <td className="text-[var(--txt-2)] truncate max-w-[80px]">{r.receiver || "—"}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -2814,10 +3063,10 @@ function ShareTable({ rows, data, who, title, onClose, flash }) {
 
               {platList.length > 1 && (
                 <div>
-                  <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">بەپێی پلاتفۆرم</div>
+                  <div className="text-[10px] font-bold text-[var(--txt-3)] uppercase mb-1">بەپێی پلاتفۆرم</div>
                   {platList.map(([pl, v]) => (
                     <div key={pl} className="flex justify-between text-xs py-1">
-                      <span className="text-slate-600">{platMeta(pl).ku} <span className="text-slate-300">({v.n})</span></span>
+                      <span className="text-[var(--txt-2)]">{platMeta(pl).ku} <span className="text-[var(--txt-3)]">({v.n})</span></span>
                       <span className="font-bold" style={num}>{Object.entries(v.cur).map(([c, a]) => `${fmt(a, 0)} ${c}`).join(" / ")}</span>
                     </div>
                   ))}
@@ -2825,58 +3074,58 @@ function ShareTable({ rows, data, who, title, onClose, flash }) {
               )}
 
               <div>
-                <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">بەپێی وەرگر</div>
+                <div className="text-[10px] font-bold text-[var(--txt-3)] uppercase mb-1">بەپێی وەرگر</div>
                 {whoList.map(([n, v]) => (
                   <div key={n} className="flex justify-between text-xs py-1">
-                    <span className="text-slate-600">{n} <span className="text-slate-300">({v.n})</span></span>
+                    <span className="text-[var(--txt-2)]">{n} <span className="text-[var(--txt-3)]">({v.n})</span></span>
                     <span className="font-bold" style={num}>{Object.entries(v.cur).map(([c, a]) => `${fmt(a, 0)} ${c}`).join(" / ")}</span>
                   </div>
                 ))}
               </div>
 
               {curs.map((c) => (
-                <div key={c} className="bg-stone-50 rounded-xl p-3">
-                  <div className="text-[10px] font-bold text-slate-400 mb-1">{c}</div>
-                  <div className="flex justify-between text-xs py-0.5"><span className="text-slate-600">بە فییەوە</span><span style={num}>{fmt(gross[c], 0)}</span></div>
-                  {fees[c] > 0 && <div className="flex justify-between text-xs py-0.5"><span className="text-slate-600">فی</span><span style={num} className="text-rose-700">−{fmt(fees[c], 0)}</span></div>}
-                  <div className="flex justify-between pt-1.5 mt-1 border-t border-stone-200 items-baseline">
+                <div key={c} className="bg-[var(--line-soft)] rounded-xl p-3">
+                  <div className="text-[10px] font-bold text-[var(--txt-3)] mb-1">{c}</div>
+                  <div className="flex justify-between text-xs py-0.5"><span className="text-[var(--txt-2)]">بە فییەوە</span><span style={num}>{fmt(gross[c], 0)}</span></div>
+                  {fees[c] > 0 && <div className="flex justify-between text-xs py-0.5"><span className="text-[var(--txt-2)]">فی</span><span style={num} className="text-[var(--verm)]">−{fmt(fees[c], 0)}</span></div>}
+                  <div className="flex justify-between pt-1.5 mt-1 border-t border-[var(--line)] items-baseline">
                     <span className="text-xs font-bold">گەیشتوو</span>
                     <div className="text-left">
-                      <div className="text-lg font-bold text-emerald-700" style={num}>{fmt(net[c], 0)}</div>
-                      {u(net[c], c) != null && <div className="text-[10px] text-slate-400" style={num}>≈ {fmt(u(net[c], c), 0)} $</div>}
+                      <div className="text-lg font-bold text-[var(--jade)]" style={num}>{fmt(net[c], 0)}</div>
+                      {u(net[c], c) != null && <div className="text-[10px] text-[var(--txt-3)]" style={num}>≈ {fmt(u(net[c], c), 0)} $</div>}
                     </div>
                   </div>
                 </div>
               ))}
 
-              <div className="text-[11px] text-slate-400" style={num}>{counted.length} فیش هەژمار کراوە</div>
+              <div className="text-[11px] text-[var(--txt-3)]" style={num}>{counted.length} فیش هەژمار کراوە</div>
 
               {rejected.length > 0 && (
-                <div className="border border-rose-200 bg-rose-50/60 rounded-xl p-3 mt-2">
-                  <div className="flex items-center gap-1.5 text-xs font-bold text-rose-900 mb-2">
+                <div className="border border-[color-mix(in_srgb,var(--verm)_26%,transparent)] bg-[color-mix(in_srgb,var(--verm)_9%,transparent)] rounded-xl p-3 mt-2">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-[var(--verm)] mb-2">
                     <AlertTriangle className="w-3.5 h-3.5" />
                     {rejected.length} فیش ڕەت کراوەتەوە — هەژمار نەکراون
                   </div>
                   <div className="space-y-2">
                     {rejected.map((r, i) => (
-                      <div key={r.id || i} className="bg-white rounded-lg p-2.5">
+                      <div key={r.id || i} className="bg-[var(--card)] rounded-lg p-2.5">
                         <div className="flex items-baseline gap-2">
-                          <span className="text-[10px] text-slate-400" style={num}>{i + 1}.</span>
-                          <span className="text-sm font-bold text-slate-400 line-through" style={num}>
+                          <span className="text-[10px] text-[var(--txt-3)]" style={num}>{i + 1}.</span>
+                          <span className="text-sm font-bold text-[var(--txt-3)] line-through" style={num}>
                             {r.amount ? fmt(r.net_amount ?? r.net ?? r.amount, 0) : "—"}
                           </span>
-                          <span className="text-[10px] text-slate-400">{r.currency || ""}</span>
+                          <span className="text-[10px] text-[var(--txt-3)]">{r.currency || ""}</span>
                         </div>
-                        <div className="text-[11px] text-rose-800 mt-1 leading-snug">
+                        <div className="text-[11px] text-[var(--verm)] mt-1 leading-snug">
                           ❌ {r.reject_reason || r.rejectReason || r.note || REJECT_KU[r.reject_code || r.rejectCode] || "نەزانراو"}
                         </div>
-                        <div className="text-[10px] text-slate-400 mt-0.5 flex flex-wrap gap-x-2" style={num}>
+                        <div className="text-[10px] text-[var(--txt-3)] mt-0.5 flex flex-wrap gap-x-2" style={num}>
                           {(r.ref_no || r.refNo) && <span>ژمارە {r.ref_no || r.refNo}</span>}
                           {(r.tx_time || r.txTime) && <span>· {r.tx_time || r.txTime}</span>}
                           {r.receiver && <span>· {r.receiver}</span>}
                         </div>
                         {(r.dup_of_date || r.dupOfDate) && (
-                          <div className="text-[10px] text-slate-500 mt-1 bg-stone-50 rounded px-1.5 py-1" style={num}>
+                          <div className="text-[10px] text-[var(--txt-2)] mt-1 bg-[var(--line-soft)] rounded px-1.5 py-1" style={num}>
                             ↩️ ڕەسەنەکەی: {new Date(r.dup_of_date || r.dupOfDate).toLocaleString("en-GB")}
                             {(r.dup_of_who || r.dupOfWho) && ` — ${r.dup_of_who || r.dupOfWho}`}
                           </div>
@@ -2893,7 +3142,7 @@ function ShareTable({ rows, data, who, title, onClose, flash }) {
           <div>
             <Lbl>ژمارەی واتساپ (ئارەزوومەندانە)</Lbl>
             <Inp type="tel" dir="ltr" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="07701234567" />
-            <div className="text-[11px] text-slate-400 mt-1">بەتاڵی بهێڵەرەوە بۆ هەڵبژاردنی کەس لە واتساپ</div>
+            <div className="text-[11px] text-[var(--txt-3)] mt-1">بەتاڵی بهێڵەرەوە بۆ هەڵبژاردنی کەس لە واتساپ</div>
           </div>
 
           <div className="flex gap-2">
@@ -2915,7 +3164,7 @@ function WhatsAppInfo({ batches, waN }) {
   const todayN = wa.filter((b) => (b.created_at || "").slice(0, 10) === today).length;
   return (
     <div className="space-y-4">
-      <Card className="p-5 bg-emerald-600 border-emerald-600 text-white">
+      <Card className="p-5 bg-emerald-600 border-[var(--jade)] text-white">
         <div className="flex items-center gap-2.5 mb-3">
           <MessageCircle className="w-6 h-6" />
           <div className="font-bold">وەرگرتنی فیش لە واتساپەوە</div>
@@ -2938,29 +3187,29 @@ function WhatsAppInfo({ batches, waN }) {
 
       <Card className="p-5">
         <SecLbl>چۆن کار دەکات</SecLbl>
-        <div className="space-y-3 text-sm text-slate-600 leading-relaxed">
+        <div className="space-y-3 text-sm text-[var(--txt-2)] leading-relaxed">
           <div className="flex gap-3">
-            <span className="w-6 h-6 rounded-full bg-emerald-700 text-white flex items-center justify-center text-xs font-bold shrink-0">١</span>
+            <span className="w-6 h-6 rounded-full bg-[var(--jade)] text-white flex items-center justify-center text-xs font-bold shrink-0">١</span>
             <span>کڕیار فیشەکان لە واتساپەوە <b>فۆرۆرد</b> دەکات بۆ ژمارەی کۆمپانیاکە</span>
           </div>
           <div className="flex gap-3">
-            <span className="w-6 h-6 rounded-full bg-emerald-700 text-white flex items-center justify-center text-xs font-bold shrink-0">٢</span>
+            <span className="w-6 h-6 rounded-full bg-[var(--jade)] text-white flex items-center justify-center text-xs font-bold shrink-0">٢</span>
             <span>سیستەمەکە خۆکار وێنەکان دەخوێنێتەوە و دووبارەکان دەدۆزێتەوە</span>
           </div>
           <div className="flex gap-3">
-            <span className="w-6 h-6 rounded-full bg-emerald-700 text-white flex items-center justify-center text-xs font-bold shrink-0">٣</span>
+            <span className="w-6 h-6 rounded-full bg-[var(--jade)] text-white flex items-center justify-center text-xs font-bold shrink-0">٣</span>
             <span>کۆمەڵەیەکی نوێ لە <b>ئینباکس</b> دەردەکەوێت — تۆ تەنها مامەڵەکەی لێ درووست دەکەیت</span>
           </div>
         </div>
-        <div className="mt-4 pt-4 border-t border-stone-100 text-xs text-slate-500 leading-relaxed">
-          <b className="text-slate-700">تێبینی:</b> فیشەکان کە بە ماوەی ١٥ خولەک بنێردرێن، هەموویان لە یەک کۆمەڵەدا کۆدەبنەوە.
+        <div className="mt-4 pt-4 border-t border-[var(--line-soft)] text-xs text-[var(--txt-2)] leading-relaxed">
+          <b className="text-[var(--txt)]">تێبینی:</b> فیشەکان کە بە ماوەی ١٥ خولەک بنێردرێن، هەموویان لە یەک کۆمەڵەدا کۆدەبنەوە.
           کڕیارەکە بە ژمارەی مۆبایلەکەی دەناسرێتەوە — بۆیە دڵنیابە ژمارەکەی لە ئەکاونتەکەیدا دروستە.
         </div>
       </Card>
 
-      <Card className="p-4 bg-stone-50/60">
-        <div className="text-xs text-slate-500 leading-relaxed">
-          <b className="text-slate-700">نرخ:</b> وەرگرتنی نامە لە کڕیارەکانەوە <b>بەخۆڕاییە</b> — تەنها ئەگەر تۆ وەڵامیان بدەیتەوە پارەی لەسەرە.
+      <Card className="p-4 bg-[var(--line-soft)]">
+        <div className="text-xs text-[var(--txt-2)] leading-relaxed">
+          <b className="text-[var(--txt)]">نرخ:</b> وەرگرتنی نامە لە کڕیارەکانەوە <b>بەخۆڕاییە</b> — تەنها ئەگەر تۆ وەڵامیان بدەیتەوە پارەی لەسەرە.
           سیستەمەکە بە شێوەی بنەڕەت وەڵام نادات.
         </div>
       </Card>
@@ -3017,17 +3266,17 @@ function LocationReceipts({ partnerId, data, title, flash }) {
 
   return (
     <div className="space-y-3">
-      {title && <div className="font-bold text-slate-900">{title}</div>}
-      <div className="flex gap-1 bg-white border border-stone-200 rounded-xl p-1 overflow-x-auto">
+      {title && <div className="font-bold text-[var(--txt)]">{title}</div>}
+      <div className="flex gap-1 rounded-2xl p-1 overflow-x-auto" style={{ background: "var(--card)", border: "1px solid var(--line)", boxShadow: "var(--shadow-1)" }}>
         {[["day", "ئەمڕۆ"], ["week", "هەفتە"], ["month", "مانگ"], ["year", "ساڵ"], ["all", "هەمووی"]].map(([k, lbl]) => (
           <button key={k} onClick={() => setMode(k)}
-            className={`flex-1 whitespace-nowrap py-2.5 px-3 rounded-lg text-sm ${mode === k ? "bg-emerald-700 text-white font-semibold" : "text-slate-600"}`}>{lbl}</button>
+            className={`flex-1 whitespace-nowrap py-2.5 px-3 rounded-lg text-sm ${mode === k ? "bg-[var(--jade)] text-white font-semibold" : "text-[var(--txt-2)]"}`}>{lbl}</button>
         ))}
       </div>
-      <div className="flex gap-1 bg-white border border-stone-200 rounded-xl p-1">
+      <div className="flex gap-1 rounded-2xl p-1" style={{ background: "var(--card)", border: "1px solid var(--line)", boxShadow: "var(--shadow-1)" }}>
         {[["all", "هەمووی"], ["in", "هاتوو"], ["out", "نێردراو"]].map(([k, lbl]) => (
           <button key={k} onClick={() => setDir(k)}
-            className={`flex-1 py-2 rounded-lg text-sm ${dir === k ? "bg-slate-900 text-white font-semibold" : "text-slate-600"}`}>{lbl}</button>
+            className={`flex-1 py-2 rounded-lg text-sm ${dir === k ? "bg-slate-900 text-white font-semibold" : "text-[var(--txt-2)]"}`}>{lbl}</button>
         ))}
       </div>
       <ReceiptTotals rows={list} data={data} />
@@ -3102,8 +3351,8 @@ function BatchDetail({ id, back, usr, data, onMakeTx, flash, reloadBatches }) {
       <Back onClick={back} t="گەڕانەوە" />
       <div className="flex items-start justify-between flex-wrap gap-2">
         <div>
-          <h2 className="text-xl font-bold text-slate-900">{b.customer_name || (b.partner_id ? usr(b.partner_id).name : "—")}</h2>
-          <div className="text-xs text-slate-500 mt-0.5" style={num}>{new Date(b.created_at).toLocaleString("en-GB")}</div>
+          <h2 className="text-xl font-bold text-[var(--txt)]">{b.customer_name || (b.partner_id ? usr(b.partner_id).name : "—")}</h2>
+          <div className="text-xs text-[var(--txt-2)] mt-0.5" style={num}>{new Date(b.created_at).toLocaleString("en-GB")}</div>
         </div>
         <div className="flex gap-1.5 flex-wrap">
           <Pill tone={isOut ? "amber" : "green"}>{DIR_KU[b.direction || "in"]}</Pill>
@@ -3128,14 +3377,14 @@ function BatchDetail({ id, back, usr, data, onMakeTx, flash, reloadBatches }) {
         <Card className="p-5">
           <div className="flex items-center justify-between mb-3">
             <SecLbl>دابەشکردن بەسەر هاوبەشەکان</SecLbl>
-            <button onClick={() => setSplit(!split)} className="text-xs font-semibold text-emerald-700">
+            <button onClick={() => setSplit(!split)} className="text-xs font-semibold text-[var(--jade)]">
               {split ? "داخستن" : "دەستکاری"}
             </button>
           </div>
 
           {!split ? (
             groupKeys.length <= 1 && !groupKeys[0] ? (
-              <div className="text-sm text-slate-500">هەموو فیشەکان یەکجار وەردەگیرێن — گەر دەتەوێت بەسەر چەند هاوبەشێک دابەشیان بکەیت، «دەستکاری» لێبدە</div>
+              <div className="text-sm text-[var(--txt-2)]">هەموو فیشەکان یەکجار وەردەگیرێن — گەر دەتەوێت بەسەر چەند هاوبەشێک دابەشیان بکەیت، «دەستکاری» لێبدە</div>
             ) : (
               <div className="space-y-2">
                 {groupKeys.map((k) => {
@@ -3143,14 +3392,14 @@ function BatchDetail({ id, back, usr, data, onMakeTx, flash, reloadBatches }) {
                   const tot = {};
                   g.rows.forEach((r) => { const c = r.currency || "?"; tot[c] = (tot[c] || 0) + (+(r.net_amount ?? r.amount) || 0); });
                   return (
-                    <div key={k || "none"} className="flex items-center justify-between py-2.5 border-b border-stone-100 last:border-0">
+                    <div key={k || "none"} className="flex items-center justify-between py-2.5 border-b border-[var(--line-soft)] last:border-0">
                       <div>
-                        <div className="font-semibold text-slate-800">{k ? usr(k).name : "قاسەی گشتی (لای خۆم)"}</div>
-                        <div className="text-xs text-slate-400" style={num}>{g.n} فیش</div>
+                        <div className="font-semibold text-[var(--txt)]">{k ? usr(k).name : "قاسەی گشتی (لای خۆم)"}</div>
+                        <div className="text-xs text-[var(--txt-3)]" style={num}>{g.n} فیش</div>
                       </div>
                       <div className="text-left">
                         {Object.entries(tot).map(([c, v]) => (
-                          <div key={c} className="font-bold text-slate-900" style={num}>{fmt(v, 0)} <span className="text-xs font-normal text-slate-500">{c}</span></div>
+                          <div key={c} className="font-bold text-[var(--txt)]" style={num}>{fmt(v, 0)} <span className="text-xs font-normal text-[var(--txt-2)]">{c}</span></div>
                         ))}
                       </div>
                     </div>
@@ -3161,22 +3410,22 @@ function BatchDetail({ id, back, usr, data, onMakeTx, flash, reloadBatches }) {
           ) : (
             <div className="space-y-2.5">
               <div className="flex gap-1.5 flex-wrap mb-2">
-                <span className="text-xs text-slate-500 self-center">هەمووی بۆ:</span>
-                <button onClick={() => setAll("")} className="px-2.5 py-1 rounded-lg bg-stone-100 hover:bg-stone-200 text-xs font-semibold">قاسەی گشتی</button>
+                <span className="text-xs text-[var(--txt-2)] self-center">هەمووی بۆ:</span>
+                <button onClick={() => setAll("")} className="px-2.5 py-1 rounded-lg bg-[var(--line-soft)] hover:bg-[var(--line)] text-xs font-semibold">قاسەی گشتی</button>
                 {partners.map((p) => (
-                  <button key={p.id} onClick={() => setAll(p.id)} className="px-2.5 py-1 rounded-lg bg-stone-100 hover:bg-emerald-700 hover:text-white text-xs font-semibold transition">{p.name}</button>
+                  <button key={p.id} onClick={() => setAll(p.id)} className="px-2.5 py-1 rounded-lg bg-[var(--line-soft)] hover:bg-[var(--jade)] hover:text-white text-xs font-semibold transition">{p.name}</button>
                 ))}
               </div>
               {good.map((r, i) => (
-                <div key={r.id} className="flex items-center gap-2.5 p-2.5 bg-stone-50 rounded-xl">
-                  <span className="text-xs text-slate-400 w-5" style={num}>{i + 1}</span>
-                  {r.image_path && <ReceiptImg path={r.image_path} className="w-10 h-10 object-cover rounded-lg border border-stone-200 shrink-0" />}
+                <div key={r.id} className="flex items-center gap-2.5 p-2.5 bg-[var(--line-soft)] rounded-xl">
+                  <span className="text-xs text-[var(--txt-3)] w-5" style={num}>{i + 1}</span>
+                  {r.image_path && <ReceiptImg path={r.image_path} className="w-10 h-10 object-cover rounded-lg border border-[var(--line)] shrink-0" />}
                   <div className="min-w-0 flex-1">
-                    <div className="text-sm font-bold text-slate-900" style={num}>{fmt(r.net_amount ?? r.amount, 0)} <span className="text-xs font-normal text-slate-500">{r.currency}</span></div>
-                    <div className="text-[11px] text-slate-400 truncate">{r.receiver || "—"}</div>
+                    <div className="text-sm font-bold text-[var(--txt)]" style={num}>{fmt(r.net_amount ?? r.amount, 0)} <span className="text-xs font-normal text-[var(--txt-2)]">{r.currency}</span></div>
+                    <div className="text-[11px] text-[var(--txt-3)] truncate">{r.receiver || "—"}</div>
                   </div>
                   <select value={pick[r.id] ?? ""} onChange={(e) => setPick({ ...pick, [r.id]: e.target.value })}
-                    className="border border-stone-300 rounded-lg px-2 py-1.5 text-xs bg-white shrink-0 max-w-[130px]">
+                    className="border border-[var(--line)] rounded-lg px-2 py-1.5 text-xs bg-[var(--card)] shrink-0 max-w-[130px]">
                     <option value="">قاسەی گشتی</option>
                     {partners.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                   </select>
@@ -3189,10 +3438,10 @@ function BatchDetail({ id, back, usr, data, onMakeTx, flash, reloadBatches }) {
       )}
 
       {b.status === "new" && (
-        <Card className={`p-5 ${isOut ? "border-rose-300 bg-rose-50/40" : "border-emerald-300 bg-emerald-50/40"}`}>
+        <Card className={`p-5 ${isOut ? "border-[color-mix(in_srgb,var(--verm)_34%,transparent)] bg-[color-mix(in_srgb,var(--verm)_8%,transparent)]" : "border-[color-mix(in_srgb,var(--jade)_34%,transparent)] bg-[color-mix(in_srgb,var(--jade)_8%,transparent)]"}`}>
           {groupKeys.length > 1 ? (
             <>
-              <div className="text-sm text-slate-700 mb-3">
+              <div className="text-sm text-[var(--txt)] mb-3">
                 فیشەکان بەسەر <b>{groupKeys.length}</b> شوێندا دابەش کراون — بۆ هەریەکەیان مامەڵەیەکی جیا درووست بکە:
               </div>
               <div className="space-y-2">
@@ -3212,7 +3461,7 @@ function BatchDetail({ id, back, usr, data, onMakeTx, flash, reloadBatches }) {
             </>
           ) : (
             <>
-              <div className={`text-sm mb-3 ${isOut ? "text-rose-900" : "text-emerald-900"}`}>
+              <div className={`text-sm mb-3 ${isOut ? "text-[var(--verm)]" : "text-[var(--jade)]"}`}>
                 {isOut
                   ? <>ئەم بڕە نێردراوە: <b style={num}>{fmt(b.total_net, 0)} {b.currency}</b> — فرۆشتنێکی لێ درووست بکە</>
                   : <>ئەم کەسە ئەم بڕەی ناردووە: <b style={num}>{fmt(b.total_net, 0)} {b.currency}</b> — کڕینێکی لێ درووست بکە</>}
@@ -3227,7 +3476,7 @@ function BatchDetail({ id, back, usr, data, onMakeTx, flash, reloadBatches }) {
       )}
       {b.tx_id && (
         <Card className="p-4">
-          <div className="text-sm text-slate-600">
+          <div className="text-sm text-[var(--txt-2)]">
             بەستراوە بە مامەڵەی <b style={num}>#{(data.txs.find((t) => t.id === b.tx_id) || {}).code || "—"}</b>
           </div>
         </Card>
@@ -3325,66 +3574,66 @@ function Statement({ u, txs, c, cur, onClose, flash }) {
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-end md:items-center justify-center md:p-6" onClick={onClose}>
-      <div className="bg-white w-full max-w-lg rounded-t-3xl md:rounded-2xl max-h-[88vh] overflow-y-auto" onClick={(ev) => ev.stopPropagation()}>
-        <div className="sticky top-0 bg-white border-b border-stone-200 px-5 py-3.5 flex items-center justify-between">
-          <div className="font-bold text-slate-900">کەشف حساب</div>
-          <button onClick={onClose} className="p-1.5 text-slate-400"><X className="w-5 h-5" /></button>
+      <div className="w-full max-w-lg rounded-t-[28px] md:rounded-[24px] max-h-[88vh] overflow-y-auto sheet-in" style={{ background: "var(--card)", boxShadow: "var(--shadow-3)" }} onClick={(ev) => ev.stopPropagation()}>
+        <div className="sticky top-0 z-10 px-5 py-4 flex items-center justify-between backdrop-blur-xl" style={{ background: "color-mix(in srgb, var(--card) 92%, transparent)", borderBottom: "1px solid var(--line-soft)" }}>
+          <div className="font-bold text-[var(--txt)]">کەشف حساب</div>
+          <button onClick={onClose} className="p-1.5 text-[var(--txt-3)]"><X className="w-5 h-5" /></button>
         </div>
         <div className="p-5">
-          <div className="flex gap-1 bg-stone-100 rounded-xl p-1 mb-4">
+          <div className="flex gap-1 bg-[var(--line-soft)] rounded-xl p-1 mb-4">
             {[["all", "هەمووی"], ["buy", "کڕینی ئەو"], ["sell", "فرۆشتنی ئەو"]].map(([k, t]) => (
               <button key={k} onClick={() => setMode(k)}
-                className={`flex-1 py-2 rounded-lg text-sm ${mode === k ? "bg-white text-emerald-700 font-bold shadow-sm" : "text-slate-500"}`}>{t}</button>
+                className={`flex-1 py-2 rounded-lg text-sm ${mode === k ? "bg-[var(--card)] text-[var(--jade)] font-bold shadow-sm" : "text-[var(--txt-2)]"}`}>{t}</button>
             ))}
           </div>
-          <div className="border border-stone-200 rounded-2xl overflow-hidden">
+          <div className="border border-[var(--line)] rounded-2xl overflow-hidden">
             <div className="bg-slate-900 text-white px-4 py-3">
               <div className="font-bold">{u.name}</div>
-              <div className="text-xs text-slate-400 mt-0.5" style={num}>{today} · {MODE_KU[mode]}</div>
+              <div className="text-xs text-[var(--txt-3)] mt-0.5" style={num}>{today} · {MODE_KU[mode]}</div>
             </div>
             <div className="p-4">
               {(sums.sold || sums.bought) && (
                 <div className="grid grid-cols-2 gap-2 mb-3">
-                  <div className="bg-emerald-50 rounded-xl p-2.5">
-                    <div className="text-[10px] text-emerald-800/70">فرۆشتوویەتی بە من</div>
+                  <div className="bg-[color-mix(in_srgb,var(--jade)_10%,transparent)] rounded-xl p-2.5">
+                    <div className="text-[10px] text-[var(--jade)]/70">فرۆشتوویەتی بە من</div>
                     {sums.sold ? Object.entries(sums.sold).map(([cid, v]) => (
-                      <div key={cid} className="text-sm font-bold text-emerald-800" style={num}>{fmt(v, 0)} {cur(cid).code}</div>
-                    )) : <div className="text-sm text-slate-300">—</div>}
+                      <div key={cid} className="text-sm font-bold text-[var(--jade)]" style={num}>{fmt(v, 0)} {cur(cid).code}</div>
+                    )) : <div className="text-sm text-[var(--txt-3)]">—</div>}
                   </div>
-                  <div className="bg-rose-50 rounded-xl p-2.5">
-                    <div className="text-[10px] text-rose-800/70">کڕیویەتی لە من</div>
+                  <div className="bg-[color-mix(in_srgb,var(--verm)_10%,transparent)] rounded-xl p-2.5">
+                    <div className="text-[10px] text-[var(--verm)]/70">کڕیویەتی لە من</div>
                     {sums.bought ? Object.entries(sums.bought).map(([cid, v]) => (
-                      <div key={cid} className="text-sm font-bold text-rose-800" style={num}>{fmt(v, 0)} {cur(cid).code}</div>
-                    )) : <div className="text-sm text-slate-300">—</div>}
+                      <div key={cid} className="text-sm font-bold text-[var(--verm)]" style={num}>{fmt(v, 0)} {cur(cid).code}</div>
+                    )) : <div className="text-sm text-[var(--txt-3)]">—</div>}
                   </div>
                 </div>
               )}
-              <div className="text-[11px] font-bold text-slate-400 uppercase mb-2">دوا مامەڵەکان</div>
-              {last.length === 0 ? <div className="text-sm text-slate-400">هیچ</div> :
+              <div className="text-[11px] font-bold text-[var(--txt-3)] uppercase mb-2">دوا مامەڵەکان</div>
+              {last.length === 0 ? <div className="text-sm text-[var(--txt-3)]">هیچ</div> :
                 last.map((t) => (
-                  <div key={t.id} className="flex justify-between items-center py-1.5 border-b border-stone-100 last:border-0 text-sm">
-                    <span className="text-slate-600">
-                      <span style={num} className="text-xs text-slate-400">{new Date(t.date).toLocaleDateString("en-GB")}</span>
+                  <div key={t.id} className="flex justify-between items-center py-1.5 border-b border-[var(--line-soft)] last:border-0 text-sm">
+                    <span className="text-[var(--txt-2)]">
+                      <span style={num} className="text-xs text-[var(--txt-3)]">{new Date(t.date).toLocaleDateString("en-GB")}</span>
                       <span className="mr-2">{t.type === "buy" ? "فرۆشتنت" : "کڕینت"}</span>
                       {t.status === "pending" && <Pill tone="amber">چاوەڕوان</Pill>}
                     </span>
                     <span className="font-bold" style={num}>{fmt(t.amount, 0)} {cur(t.curId).code}</span>
                   </div>
                 ))}
-              <div className="mt-3 pt-3 border-t border-stone-200 space-y-1.5">
+              <div className="mt-3 pt-3 border-t border-[var(--line)] space-y-1.5">
                 {owe.map(([cid, v]) => (
                   <div key={cid} className="flex justify-between text-sm">
-                    <span className="text-slate-600">پارەی تۆ لای من</span>
-                    <span className="font-bold text-rose-700" style={num}>{fmt(v, 0)} {cur(cid).code}</span>
+                    <span className="text-[var(--txt-2)]">پارەی تۆ لای من</span>
+                    <span className="font-bold text-[var(--verm)]" style={num}>{fmt(v, 0)} {cur(cid).code}</span>
                   </div>
                 ))}
                 {due.map(([cid, v]) => (
                   <div key={cid} className="flex justify-between text-sm">
-                    <span className="text-slate-600">قەرزی تۆ</span>
-                    <span className="font-bold text-emerald-700" style={num}>{fmt(v, 0)} {cur(cid).code}</span>
+                    <span className="text-[var(--txt-2)]">قەرزی تۆ</span>
+                    <span className="font-bold text-[var(--jade)]" style={num}>{fmt(v, 0)} {cur(cid).code}</span>
                   </div>
                 ))}
-                {!owe.length && !due.length && <div className="text-sm text-emerald-700 font-semibold text-center py-1">حیساب پاکە ✅</div>}
+                {!owe.length && !due.length && <div className="text-sm text-[var(--jade)] font-semibold text-center py-1">حیساب پاکە ✅</div>}
               </div>
             </div>
           </div>
@@ -3405,10 +3654,10 @@ function PeopleHub(p) {
     ["money", "پارە و گواستنەوە", ArrowLeftRight], ["office", "نووسینگە", Building2], ["manage", "بەڕێوەبردن", UserCog]];
   return (
     <div className="space-y-4">
-      <div className="flex gap-1 flex-wrap bg-white border border-stone-200 rounded-2xl p-1.5">
+      <div className="flex gap-1 flex-wrap bg-[var(--card)] border border-[var(--line)] rounded-2xl p-1.5">
         {TABS.map(([id, t, Ic]) => (
           <button key={id} onClick={() => { setTab(id); p.setDetailId(null); }}
-            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm whitespace-nowrap transition ${tab === id ? "bg-emerald-700 text-white font-semibold shadow-sm" : "text-slate-600 hover:bg-stone-100"}`}>
+            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm whitespace-nowrap transition ${tab === id ? "bg-[var(--jade)] text-white font-semibold shadow-sm" : "text-[var(--txt-2)] hover:bg-[var(--line-soft)]"}`}>
             <Ic className="w-4 h-4" /> {t}
           </button>
         ))}
@@ -3450,10 +3699,10 @@ function AccountMoney({ data, cur, usr, accountMove, accountTransfer, flash }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-1 bg-white border border-stone-200 rounded-xl p-1">
+      <div className="flex gap-1 rounded-2xl p-1" style={{ background: "var(--card)", border: "1px solid var(--line)", boxShadow: "var(--shadow-1)" }}>
         {[["move", "پارە دانان / دەرهێنان"], ["transfer", "گواستنەوەی حساب"]].map(([k, t]) => (
           <button key={k} onClick={() => setMode(k)}
-            className={`flex-1 py-2.5 rounded-lg text-sm ${mode === k ? "bg-emerald-700 text-white font-semibold" : "text-slate-600 hover:bg-stone-100"}`}>{t}</button>
+            className={`flex-1 py-2.5 rounded-lg text-sm ${mode === k ? "bg-[var(--jade)] text-white font-semibold" : "text-[var(--txt-2)] hover:bg-[var(--line-soft)]"}`}>{t}</button>
         ))}
       </div>
 
@@ -3483,7 +3732,7 @@ function AccountMoney({ data, cur, usr, accountMove, accountTransfer, flash }) {
             </div>
           </div>
           {mv.userId && (
-            <div className="text-xs text-slate-500 mt-3 bg-stone-50 rounded-xl p-3">
+            <div className="text-xs text-[var(--txt-2)] mt-3 bg-[var(--line-soft)] rounded-xl p-3">
               {usr(mv.userId).role === "investor" && "سەرمایەی وەبەرهێنەرەکە زیاد/کەم دەکرێت"}
               {usr(mv.userId).role === "partner" && "باڵانسی هاوبەشەکە زیاد/کەم دەکرێت"}
               {usr(mv.userId).role === "customer" && "پارە لە قاسەی گشتی دەچێت یان دێت"}
@@ -3517,7 +3766,7 @@ function AccountMoney({ data, cur, usr, accountMove, accountTransfer, flash }) {
             </div>
           </div>
           {tr.fromId && tr.toId && +tr.amount > 0 && (
-            <div className="text-sm text-slate-700 mt-3 bg-emerald-50 border border-emerald-200 rounded-xl p-3">
+            <div className="text-sm text-[var(--txt)] mt-3 bg-[color-mix(in_srgb,var(--jade)_10%,transparent)] border border-[color-mix(in_srgb,var(--jade)_26%,transparent)] rounded-xl p-3">
               <b style={num}>{fmt(+tr.amount, 0)} {cur(tr.curId).code}</b> لە <b>{usr(tr.fromId).name}</b> دەبڕدرێت و دەچێتە حسابی <b>{usr(tr.toId).name}</b>
             </div>
           )}
@@ -3528,7 +3777,7 @@ function AccountMoney({ data, cur, usr, accountMove, accountTransfer, flash }) {
       {hist === null ? <Card><Empty t="بارکردن..." /></Card> :
         hist.length === 0 ? (
           <Card className="p-4">
-            <div className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-xl p-3">
+            <div className="text-sm text-[var(--amber)] bg-[color-mix(in_srgb,var(--amber)_11%,transparent)] border border-[color-mix(in_srgb,var(--amber)_26%,transparent)] rounded-xl p-3">
               هێشتا هیچ نییە — ئایا خشتەکانی <b>account_moves</b> و <b>account_transfers</b> درووست کراون؟
             </div>
           </Card>
@@ -3536,12 +3785,12 @@ function AccountMoney({ data, cur, usr, accountMove, accountTransfer, flash }) {
           <Card key={h.id} className="p-3.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
             {h.kind === "transfer"
               ? <><Pill tone="amber">گواستنەوە</Pill>
-                  <span className="text-slate-700">{h.from_name} <span className="text-slate-300">←</span> {h.to_name}</span></>
+                  <span className="text-[var(--txt)]">{h.from_name} <span className="text-[var(--txt-3)]">←</span> {h.to_name}</span></>
               : <><Pill tone={h.dir === "in" ? "green" : "red"}>{h.dir === "in" ? "وەرگرتن" : "دان"}</Pill>
-                  <span className="text-slate-700">{h.user_name}</span></>}
+                  <span className="text-[var(--txt)]">{h.user_name}</span></>}
             <span className="font-bold" style={num}>{fmt(h.amount, 0)} {cur(h.cur_id).code}</span>
-            {h.note && <span className="text-xs text-slate-500">{h.note}</span>}
-            <span className="text-[11px] text-slate-400 mr-auto" style={num}>{new Date(h.created_at).toLocaleString("en-GB")}</span>
+            {h.note && <span className="text-xs text-[var(--txt-2)]">{h.note}</span>}
+            <span className="text-[11px] text-[var(--txt-3)] mr-auto" style={num}>{new Date(h.created_at).toLocaleString("en-GB")}</span>
           </Card>
         ))}
     </div>
@@ -3565,10 +3814,11 @@ function AccountSafe({ userId, data, calc, cur, usr, accountMove, accountTransfe
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-1 bg-white border border-stone-200 rounded-xl p-1 overflow-x-auto">
+      <div className="flex gap-1 rounded-2xl p-1 overflow-x-auto" style={{ background: "var(--card)", border: "1px solid var(--line)", boxShadow: "var(--shadow-1)" }}>
         {(readOnly ? [["balance", "قاسە"], ["hist", "مێژوو"]] : [["balance", "قاسە"], ["move", "زیادکردن / کەمکردن"], ["transfer", "گواستنەوە"], ["hist", "مێژوو"]]).map(([k, t]) => (
           <button key={k} onClick={() => setTab(k)}
-            className={`flex-1 whitespace-nowrap px-3 py-2.5 rounded-lg text-sm ${tab === k ? "bg-emerald-700 text-white font-semibold" : "text-slate-600 hover:bg-stone-100"}`}>{t}</button>
+            style={tab === k ? { background: "linear-gradient(180deg, var(--jade-lt), var(--jade))", color: "#fff", boxShadow: "0 2px 8px -2px rgba(14,122,107,.4)" } : { color: "var(--txt-2)" }}
+            className={`flex-1 whitespace-nowrap px-3 py-2.5 rounded-xl text-sm transition-all press ${tab === k ? "font-bold" : "font-medium hover:bg-[var(--line-soft)]"}`}>{t}</button>
         ))}
       </div>
 
@@ -3578,12 +3828,12 @@ function AccountSafe({ userId, data, calc, cur, usr, accountMove, accountTransfe
             <SecLbl>قاسە — پارەی لای من</SecLbl>
             {rows.length === 0 ? <Empty t="بەتاڵە" /> :
               rows.map(({ c, v }) => (
-                <div key={c.id} className="flex items-center justify-between py-2.5 border-b border-stone-100 last:border-0">
-                  <span className="text-sm text-slate-600 flex items-center gap-2"><CurBadge c={c} size="sm" /> {c.name}</span>
+                <div key={c.id} className="flex items-center justify-between py-2.5 border-b border-[var(--line-soft)] last:border-0">
+                  <span className="text-sm text-[var(--txt-2)] flex items-center gap-2"><CurBadge c={c} size="sm" /> {c.name}</span>
                   <Money v={v} dec={0} />
                 </div>
               ))}
-            <div className="text-[11px] text-slate-400 mt-3">
+            <div className="text-[11px] text-[var(--txt-3)] mt-3">
               {readOnly ? "بۆ زیادکردن یان دەرهێنانی پارە، پەیوەندی بە نووسینگە بکە" : "پارەی ڕاستەقینەی ئەم کەسە کە لای من دانراوە"}
             </div>
           </Card>
@@ -3594,18 +3844,18 @@ function AccountSafe({ userId, data, calc, cur, usr, accountMove, accountTransfe
               data.currencies.filter((c) => debt[c.id]).map((c) => {
                 const v = debt[c.id];
                 return (
-                  <div key={c.id} className="flex items-center justify-between py-2.5 border-b border-stone-100 last:border-0">
-                    <span className="text-sm text-slate-600 flex items-center gap-2"><CurBadge c={c} size="sm" /> {c.name}</span>
+                  <div key={c.id} className="flex items-center justify-between py-2.5 border-b border-[var(--line-soft)] last:border-0">
+                    <span className="text-sm text-[var(--txt-2)] flex items-center gap-2"><CurBadge c={c} size="sm" /> {c.name}</span>
                     <div className="text-left">
                       <Money v={Math.abs(v)} dec={0} />
-                      <div className={`text-[10px] font-semibold ${v > 0 ? "text-rose-700" : "text-emerald-700"}`}>
+                      <div className={`text-[10px] font-semibold ${v > 0 ? "text-[var(--verm)]" : "text-[var(--jade)]"}`}>
                         {v > 0 ? "قەرزاری ئەوم" : "ئەو قەرزارە"}
                       </div>
                     </div>
                   </div>
                 );
               })}
-            <div className="text-[11px] text-slate-400 mt-3">لە مامەڵە چاوەڕوانەکانەوە</div>
+            <div className="text-[11px] text-[var(--txt-3)] mt-3">لە مامەڵە چاوەڕوانەکانەوە</div>
           </Card>
         </div>
       )}
@@ -3626,10 +3876,10 @@ function AccountSafe({ userId, data, calc, cur, usr, accountMove, accountTransfe
             <div><Lbl>تێبینی</Lbl><Inp value={mv.note} onChange={(e) => setMv({ ...mv, note: e.target.value })} /></div>
           </div>
           {+mv.amount > 0 && (
-            <div className="mt-3 text-sm bg-stone-50 border border-stone-200 rounded-xl p-3">
+            <div className="mt-3 text-sm bg-[var(--line-soft)] border border-[var(--line)] rounded-xl p-3">
               باڵانسی ئێستا <b style={num}>{fmt(bal[mv.curId] || 0, 0)}</b>
-              <span className="mx-2 text-slate-300">←</span>
-              دوای ئەمە <b style={num} className={mv.dir === "in" ? "text-emerald-700" : "text-rose-700"}>
+              <span className="mx-2 text-[var(--txt-3)]">←</span>
+              دوای ئەمە <b style={num} className={mv.dir === "in" ? "text-[var(--jade)]" : "text-[var(--verm)]"}>
                 {fmt((bal[mv.curId] || 0) + (mv.dir === "in" ? 1 : -1) * Math.round(+mv.amount), 0)}
               </b> {cur(mv.curId).code}
             </div>
@@ -3647,9 +3897,9 @@ function AccountSafe({ userId, data, calc, cur, usr, accountMove, accountTransfe
           <div className="max-h-40 overflow-y-auto mb-3 space-y-1">
             {all.filter((x) => !q || (x.name || "").includes(q) || (x.phone || "").includes(q)).map((x) => (
               <button key={x.id} onClick={() => setTr({ ...tr, toId: x.id })}
-                className={`w-full text-right px-3 py-2 rounded-lg transition ${tr.toId === x.id ? "bg-emerald-700 text-white" : "hover:bg-stone-100"}`}>
+                className={`w-full text-right px-3 py-2 rounded-lg transition ${tr.toId === x.id ? "bg-[var(--jade)] text-white" : "hover:bg-[var(--line-soft)]"}`}>
                 <div className="text-sm font-semibold">{x.name}</div>
-                <div className={`text-[10px] ${tr.toId === x.id ? "text-emerald-100" : "text-slate-400"}`}>{ROLE_KU[x.role]}</div>
+                <div className={`text-[10px] ${tr.toId === x.id ? "text-emerald-100" : "text-[var(--txt-3)]"}`}>{ROLE_KU[x.role]}</div>
               </button>
             ))}
           </div>
@@ -3658,7 +3908,7 @@ function AccountSafe({ userId, data, calc, cur, usr, accountMove, accountTransfe
             <div><Lbl>بڕ</Lbl><Inp type="number" value={tr.amount} onChange={(e) => setTr({ ...tr, amount: e.target.value })} placeholder="0" /></div>
           </div>
           {tr.toId && +tr.amount > 0 && (
-            <div className="mt-3 text-sm bg-emerald-50 border border-emerald-200 rounded-xl p-3">
+            <div className="mt-3 text-sm bg-[color-mix(in_srgb,var(--jade)_10%,transparent)] border border-[color-mix(in_srgb,var(--jade)_26%,transparent)] rounded-xl p-3">
               <b style={num}>{fmt(+tr.amount, 0)} {cur(tr.curId).code}</b> لە <b>{u.name}</b> دەبڕدرێت و دەچێتە حسابی <b>{usr(tr.toId).name}</b>
             </div>
           )}
@@ -3675,8 +3925,8 @@ function AccountSafe({ userId, data, calc, cur, usr, accountMove, accountTransfe
             <Card key={e.id} className="p-3.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
               <Pill tone={e.amount >= 0 ? "green" : "red"}>{TY[e.type] || e.type}</Pill>
               <span className="font-bold" style={num}>{e.amount >= 0 ? "+" : ""}{fmt(e.amount, 0)} {cur(e.curId).code}</span>
-              {e.note && <span className="text-xs text-slate-500">{e.note}</span>}
-              <span className="text-[11px] text-slate-400 mr-auto" style={num}>{new Date(e.date).toLocaleString("en-GB")}</span>
+              {e.note && <span className="text-xs text-[var(--txt-2)]">{e.note}</span>}
+              <span className="text-[11px] text-[var(--txt-3)] mr-auto" style={num}>{new Date(e.date).toLocaleString("en-GB")}</span>
             </Card>
           ))
       )}
@@ -3703,13 +3953,13 @@ function Customers({ data, calc, cur, usr, detailId, setDetailId, onSave, settle
             <Card key={u.id} className="p-4" onClick={() => setDetailId(u.id)}>
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="font-semibold text-slate-800">{u.name}</div>
-                  <div className="text-xs text-slate-500 mt-0.5">{cnt} مامەڵە{u.phone && <span style={num}> · {u.phone}</span>}</div>
+                  <div className="font-semibold text-[var(--txt)]">{u.name}</div>
+                  <div className="text-xs text-[var(--txt-2)] mt-0.5">{cnt} مامەڵە{u.phone && <span style={num}> · {u.phone}</span>}</div>
                 </div>
                 <div className="text-left shrink-0 space-y-0.5">
-                  {owe.map(([cid, v]) => <div key={cid} className="text-xs text-rose-700 font-semibold">قەرزاری ئەوم: <span style={num}>{fmt(v, 0)}</span> {cur(cid).code}</div>)}
-                  {due.map(([cid, v]) => <div key={cid} className="text-xs text-emerald-700 font-semibold">لای ئەو: <span style={num}>{fmt(v, 0)}</span> {cur(cid).code}</div>)}
-                  {!owe.length && !due.length && <div className="text-xs text-slate-400">حیساب پاکە</div>}
+                  {owe.map(([cid, v]) => <div key={cid} className="text-xs text-[var(--verm)] font-semibold">قەرزاری ئەوم: <span style={num}>{fmt(v, 0)}</span> {cur(cid).code}</div>)}
+                  {due.map(([cid, v]) => <div key={cid} className="text-xs text-[var(--jade)] font-semibold">لای ئەو: <span style={num}>{fmt(v, 0)}</span> {cur(cid).code}</div>)}
+                  {!owe.length && !due.length && <div className="text-xs text-[var(--txt-3)]">حیساب پاکە</div>}
                 </div>
               </div>
             </Card>
@@ -3732,8 +3982,8 @@ function CustomerDetail({ id, back, data, calc, cur, usr, onSave, settle, flash,
       <Back onClick={back} t="گەڕانەوە بۆ لیستی کڕیاران" />
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
-          <h2 className="text-xl font-bold text-slate-900">{u.name}</h2>
-          {(u.phone || u.address) && <div className="text-xs text-slate-500 mt-0.5">{u.phone && <span style={num}>{u.phone}</span>}{u.phone && u.address && " · "}{u.address}</div>}
+          <h2 className="text-xl font-bold text-[var(--txt)]">{u.name}</h2>
+          {(u.phone || u.address) && <div className="text-xs text-[var(--txt-2)] mt-0.5">{u.phone && <span style={num}>{u.phone}</span>}{u.phone && u.address && " · "}{u.address}</div>}
         </div>
         <Btn kind="ghost" className="flex items-center gap-1.5" onClick={() => setStmt(true)}>
           <Share2 className="w-4 h-4" /> کەشف حساب
@@ -3742,32 +3992,32 @@ function CustomerDetail({ id, back, data, calc, cur, usr, onSave, settle, flash,
       {stmt && <Statement u={u} txs={base} c={c} cur={cur} flash={flash} onClose={() => setStmt(false)} />}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <Card className="p-4 border-rose-200 bg-rose-50/40">
-          <div className="text-xs font-semibold text-rose-800 mb-2">پارەی ئەو لای من (قەرزاری ئەوم)</div>
-          {Object.entries(c.owe).filter(([, v]) => v).length === 0 ? <div className="text-sm text-slate-400">هیچ</div> :
+        <Card className="p-4 border-[color-mix(in_srgb,var(--verm)_26%,transparent)] bg-[color-mix(in_srgb,var(--verm)_8%,transparent)]">
+          <div className="text-xs font-semibold text-[var(--verm)] mb-2">پارەی ئەو لای من (قەرزاری ئەوم)</div>
+          {Object.entries(c.owe).filter(([, v]) => v).length === 0 ? <div className="text-sm text-[var(--txt-3)]">هیچ</div> :
             Object.entries(c.owe).filter(([, v]) => v).map(([cid, v]) => (
               <div key={cid} className="flex justify-between py-1">
-                <span className="text-sm text-slate-600">{cur(cid).name}</span>
-                <span className="text-lg font-bold text-rose-700" style={num}>{fmt(v, 0)}</span>
+                <span className="text-sm text-[var(--txt-2)]">{cur(cid).name}</span>
+                <span className="text-lg font-bold text-[var(--verm)]" style={num}>{fmt(v, 0)}</span>
               </div>
             ))}
         </Card>
-        <Card className="p-4 border-emerald-200 bg-emerald-50/40">
-          <div className="text-xs font-semibold text-emerald-800 mb-2">پارەی من لای ئەو (قەرزارمە)</div>
-          {Object.entries(c.due).filter(([, v]) => v).length === 0 ? <div className="text-sm text-slate-400">هیچ</div> :
+        <Card className="p-4 border-[color-mix(in_srgb,var(--jade)_26%,transparent)] bg-[color-mix(in_srgb,var(--jade)_8%,transparent)]">
+          <div className="text-xs font-semibold text-[var(--jade)] mb-2">پارەی من لای ئەو (قەرزارمە)</div>
+          {Object.entries(c.due).filter(([, v]) => v).length === 0 ? <div className="text-sm text-[var(--txt-3)]">هیچ</div> :
             Object.entries(c.due).filter(([, v]) => v).map(([cid, v]) => (
               <div key={cid} className="flex justify-between py-1">
-                <span className="text-sm text-slate-600">{cur(cid).name}</span>
-                <span className="text-lg font-bold text-emerald-700" style={num}>{fmt(v, 0)}</span>
+                <span className="text-sm text-[var(--txt-2)]">{cur(cid).name}</span>
+                <span className="text-lg font-bold text-[var(--jade)]" style={num}>{fmt(v, 0)}</span>
               </div>
             ))}
         </Card>
       </div>
 
-      <div className="flex gap-1 bg-white border border-stone-200 rounded-xl p-1 overflow-x-auto">
+      <div className="flex gap-1 rounded-2xl p-1 overflow-x-auto" style={{ background: "var(--card)", border: "1px solid var(--line)", boxShadow: "var(--shadow-1)" }}>
         {[["history", "مێژوو"], ["safe", "قاسە"], ["receipts", "فیشەکان"], ["new", "مامەڵەی نوێ"]].map(([k, t]) => (
           <button key={k} onClick={() => setTab(k)}
-            className={`flex-1 px-4 py-2.5 rounded-lg text-sm ${tab === k ? "bg-emerald-700 text-white font-semibold" : "text-slate-600 hover:bg-stone-100"}`}>{t}</button>
+            className={`flex-1 px-4 py-2.5 rounded-lg text-sm ${tab === k ? "bg-[var(--jade)] text-white font-semibold" : "text-[var(--txt-2)] hover:bg-[var(--line-soft)]"}`}>{t}</button>
         ))}
       </div>
 
@@ -3810,7 +4060,7 @@ function Partners({ data, calc, cur, usr, transfer, detailId, setDetailId }) {
           <div className="flex items-end"><Btn kind="gold" className="w-full" onClick={() => { transfer(tf); setTf({ ...tf, amount: "" }); }}>گواستنەوە</Btn></div>
         </div>
         {tf.dir === "to" && fr > 0 && +tf.amount > 0 && (
-          <div className="mt-3 text-sm text-slate-600 bg-stone-50 border border-stone-200 rounded-xl p-3">
+          <div className="mt-3 text-sm text-[var(--txt-2)] bg-[var(--line-soft)] border border-[var(--line)] rounded-xl p-3">
             عمولەی {fr}٪ = <b style={num}>{fmt(Math.round(Math.round(+tf.amount) * fr / 100), 0)}</b> — باڵانسی دوایی: <b style={num}>{fmt(Math.round(+tf.amount) - Math.round(Math.round(+tf.amount) * fr / 100), 0)}</b>
           </div>
         )}
@@ -3821,13 +4071,13 @@ function Partners({ data, calc, cur, usr, transfer, detailId, setDetailId }) {
         return (
           <Card key={p.id} className="p-4 flex items-center justify-between" onClick={() => setSel(p.id)}>
             <div>
-              <div className="font-semibold text-slate-800">{p.name} <span className="text-xs text-slate-400 font-normal">· عمولە {p.rate}٪</span></div>
-              <div className="text-xs text-slate-500 mt-0.5">
+              <div className="font-semibold text-[var(--txt)]">{p.name} <span className="text-xs text-[var(--txt-3)] font-normal">· عمولە {p.rate}٪</span></div>
+              <div className="text-xs text-[var(--txt-2)] mt-0.5">
                 {Object.entries(bal).filter(([, v]) => v).map(([cid, v]) => `${fmt(v, cur(cid).dec)} ${cur(cid).code}`).join(" · ") || "بەتاڵ"}
-                {hasDebt && <span className="text-rose-700 font-bold"> · قەرز</span>}
+                {hasDebt && <span className="text-[var(--verm)] font-bold"> · قەرز</span>}
               </div>
             </div>
-            <ChevronLeft className="w-5 h-5 text-slate-300" />
+            <ChevronLeft className="w-5 h-5 text-[var(--txt-3)]" />
           </Card>
         );
       })}
@@ -3843,14 +4093,14 @@ function PartnerDetail({ p, data, calc, cur }) {
   const TY = { buy: "کڕین — دانان", sell: "فرۆشتن لە ئەکاونتەکەی", transfer: "گواستنەوە", partner_fee: "عمولە" };
   return (
     <div className="space-y-4">
-      <h2 className="text-xl font-bold text-slate-900">{p.name}</h2>
+      <h2 className="text-xl font-bold text-[var(--txt)]">{p.name}</h2>
       <div className="grid md:grid-cols-2 gap-4">
         <Card className="p-5">
           <SecLbl>باڵانس (سالب = قەرز لەسەر تۆ)</SecLbl>
           {Object.keys(bal).length === 0 ? <Empty t="بەتاڵە" /> :
             Object.entries(bal).map(([cid, v]) => (
-              <div key={cid} className="flex justify-between py-2 border-b border-stone-100 last:border-0">
-                <span className="text-sm text-slate-600">{cur(cid).name}</span><Money v={v} dec={cur(cid).dec} />
+              <div key={cid} className="flex justify-between py-2 border-b border-[var(--line-soft)] last:border-0">
+                <span className="text-sm text-[var(--txt-2)]">{cur(cid).name}</span><Money v={v} dec={cur(cid).dec} />
               </div>
             ))}
         </Card>
@@ -3858,11 +4108,11 @@ function PartnerDetail({ p, data, calc, cur }) {
           <SecLbl>عمولەی وەرگیراو ({p.rate}٪)</SecLbl>
           {Object.keys(fees).length === 0 ? <Empty t="هێشتا هیچ" /> :
             Object.entries(fees).map(([cid, v]) => (
-              <div key={cid} className="flex justify-between py-2 border-b border-stone-100 last:border-0">
-                <span className="text-sm text-slate-600">{cur(cid).name}</span><Money v={v} dec={cur(cid).dec} pos />
+              <div key={cid} className="flex justify-between py-2 border-b border-[var(--line-soft)] last:border-0">
+                <span className="text-sm text-[var(--txt-2)]">{cur(cid).name}</span><Money v={v} dec={cur(cid).dec} pos />
               </div>
             ))}
-          <div className="text-[11px] text-slate-400 mt-2">دەستبەجێ لە کاتی تێکردندا کەم کراوەتەوە</div>
+          <div className="text-[11px] text-[var(--txt-3)] mt-2">دەستبەجێ لە کاتی تێکردندا کەم کراوەتەوە</div>
         </Card>
       </div>
       <SecLbl>مێژووی ئاڵووگۆر ({hist.length})</SecLbl>
@@ -3871,8 +4121,8 @@ function PartnerDetail({ p, data, calc, cur }) {
           <Card key={e.id} className="p-3.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
             <Pill tone={e.amount >= 0 ? "green" : "red"}>{e.amount >= 0 ? "هاتنە ژوورەوە" : "چوونە دەرەوە"}</Pill>
             <span><Money v={e.amount} dec={cur(e.curId).dec} /> {cur(e.curId).code}</span>
-            <span className="text-slate-500">{TY[e.type] || e.type}</span>
-            <span className="text-[11px] text-slate-400 mr-auto" style={num}>{new Date(e.date).toLocaleString("en-GB")}</span>
+            <span className="text-[var(--txt-2)]">{TY[e.type] || e.type}</span>
+            <span className="text-[11px] text-[var(--txt-3)] mr-auto" style={num}>{new Date(e.date).toLocaleString("en-GB")}</span>
           </Card>
         ))}
     </div>
@@ -3895,12 +4145,12 @@ function Investors({ data, calc, cur, invUnpaid, invShare, profitAll }) {
           return (
             <Card key={u.id} className="p-4 flex items-center justify-between" onClick={() => setSel(u.id)}>
               <div>
-                <div className="font-semibold text-slate-800">{u.name} <span className="text-xs text-slate-400 font-normal">· خێر {u.rate}٪</span></div>
-                <div className="text-xs text-slate-500 mt-0.5">
+                <div className="font-semibold text-[var(--txt)]">{u.name} <span className="text-xs text-[var(--txt-3)] font-normal">· خێر {u.rate}٪</span></div>
+                <div className="text-xs text-[var(--txt-2)] mt-0.5">
                   {Object.entries(cap).filter(([, v]) => v).map(([cid, v]) => `${fmt(v, cur(cid).dec)} ${cur(cid).code}`).join(" · ") || "سەرمایە دانەنراوە"}
                 </div>
               </div>
-              <ChevronLeft className="w-5 h-5 text-slate-300" />
+              <ChevronLeft className="w-5 h-5 text-[var(--txt-3)]" />
             </Card>
           );
         })}
@@ -3919,22 +4169,22 @@ function InvestorDetail({ u, data, calc, cur, invUnpaid, mine }) {
 
   return (
     <div className="space-y-4">
-      {!mine && <h2 className="text-xl font-bold text-slate-900">{u.name}</h2>}
+      {!mine && <h2 className="text-xl font-bold text-[var(--txt)]">{u.name}</h2>}
 
       {/* کۆی گشتی */}
       <Card dark className="p-5">
         <div className="flex items-center justify-between mb-3">
-          <div className="text-xs text-slate-400">{mine ? "کۆی ماڵی من" : `کۆی ماڵی ${u.name}`}</div>
+          <div className="text-xs text-[var(--txt-3)]">{mine ? "کۆی ماڵی من" : `کۆی ماڵی ${u.name}`}</div>
           <span className="text-[11px] bg-slate-800 px-2 py-0.5 rounded-full">ڕێژەی خێر {u.rate}٪</span>
         </div>
-        {rows.length === 0 ? <div className="text-sm text-slate-400">هێشتا هیچ سەرمایەیەک دانەنراوە</div> :
+        {rows.length === 0 ? <div className="text-sm text-[var(--txt-3)]">هێشتا هیچ سەرمایەیەک دانەنراوە</div> :
           rows.map((r) => (
             <div key={r.c.id} className="flex justify-between items-baseline py-2 border-b border-slate-700/60 last:border-0">
-              <span className="text-sm text-slate-300">{r.c.name}</span>
+              <span className="text-sm text-[var(--txt-3)]">{r.c.name}</span>
               <span className="text-2xl font-bold" style={num}>{fmt(r.tot, 0)}</span>
             </div>
           ))}
-        <div className="text-[11px] text-slate-400 mt-3">سەرمایە + خێری نەدراو</div>
+        <div className="text-[11px] text-[var(--txt-3)] mt-3">سەرمایە + خێری نەدراو</div>
       </Card>
 
       <div className="grid md:grid-cols-2 gap-4">
@@ -3942,8 +4192,8 @@ function InvestorDetail({ u, data, calc, cur, invUnpaid, mine }) {
           <SecLbl>{mine ? "سەرمایەکەم" : "سەرمایە"}</SecLbl>
           {rows.filter((r) => r.capV).length === 0 ? <Empty t="سەرمایە دانەنراوە" /> :
             rows.filter((r) => r.capV).map((r) => (
-              <div key={r.c.id} className="flex justify-between py-2 border-b border-stone-100 last:border-0">
-                <span className="text-sm text-slate-600">{r.c.name}</span><Money v={r.capV} dec={0} />
+              <div key={r.c.id} className="flex justify-between py-2 border-b border-[var(--line-soft)] last:border-0">
+                <span className="text-sm text-[var(--txt-2)]">{r.c.name}</span><Money v={r.capV} dec={0} />
               </div>
             ))}
         </Card>
@@ -3951,11 +4201,11 @@ function InvestorDetail({ u, data, calc, cur, invUnpaid, mine }) {
           <SecLbl>خێری نەدراو</SecLbl>
           {rows.filter((r) => r.up).length === 0 ? <Empty t="هێشتا هیچ" /> :
             rows.filter((r) => r.up).map((r) => (
-              <div key={r.c.id} className="flex justify-between py-2 border-b border-stone-100 last:border-0">
-                <span className="text-sm text-slate-600">{r.c.name}</span><Money v={r.up} dec={0} pos />
+              <div key={r.c.id} className="flex justify-between py-2 border-b border-[var(--line-soft)] last:border-0">
+                <span className="text-sm text-[var(--txt-2)]">{r.c.name}</span><Money v={r.up} dec={0} pos />
               </div>
             ))}
-          <div className="text-[11px] text-slate-400 mt-2">
+          <div className="text-[11px] text-[var(--txt-3)] mt-2">
             {mine ? "ئەمە ئەو خێرەیە کە هێشتا وەرتنەگرتووە" : "لە بەشی «قاسە و خەرجی» دەتوانیت پارەکەی بدەیت"}
           </div>
         </Card>
@@ -3969,7 +4219,7 @@ function InvestorDetail({ u, data, calc, cur, invUnpaid, mine }) {
               {e.type === "investor_payout" ? (mine ? "وەرگرتنی خێر" : "پارەدانی خێر") : e.amount >= 0 ? "پارە دانان" : "پارە دەرهێنان"}
             </Pill>
             <span><Money v={Math.abs(e.amount)} dec={0} /> {cur(e.curId).code}</span>
-            <span className="text-[11px] text-slate-400 mr-auto" style={num}>{new Date(e.date).toLocaleString("en-GB")}</span>
+            <span className="text-[11px] text-[var(--txt-3)] mr-auto" style={num}>{new Date(e.date).toLocaleString("en-GB")}</span>
           </Card>
         ))}
     </div>
@@ -3993,8 +4243,8 @@ function Office({ data, cur, usr, officePay, calc, accountMove, accountTransfer,
   const sums = (fn) => { const m = {}; paid.filter(fn).forEach((t) => (m[t.againstId] = (m[t.againstId] || 0) + t.total)); return m; };
   const S = ({ title, m }) => (
     <Card className="p-4 flex-1 min-w-[150px]">
-      <div className="text-xs text-slate-500 mb-1">{title}</div>
-      {Object.keys(m).length === 0 ? <div className="text-sm text-slate-400">0</div> :
+      <div className="text-xs text-[var(--txt-2)] mb-1">{title}</div>
+      {Object.keys(m).length === 0 ? <div className="text-sm text-[var(--txt-3)]">0</div> :
         Object.entries(m).map(([cid, v]) => <div key={cid} className="text-sm"><Money v={v} dec={0} /> {cur(cid).code}</div>)}
     </Card>
   );
@@ -4023,10 +4273,11 @@ function Office({ data, cur, usr, officePay, calc, accountMove, accountTransfer,
         <S title="ئەم مانگە" m={sums((t) => new Date(t.paidAt) >= m0)} />
       </div>
 
-      <div className="flex gap-1 bg-white border border-stone-200 rounded-xl p-1 overflow-x-auto">
+      <div className="flex gap-1 rounded-2xl p-1 overflow-x-auto" style={{ background: "var(--card)", border: "1px solid var(--line)", boxShadow: "var(--shadow-1)" }}>
         {TABS.map(([k, t]) => (
           <button key={k} onClick={() => setTab(k)}
-            className={`flex-1 whitespace-nowrap px-3 py-2.5 rounded-lg text-sm ${tab === k ? "bg-emerald-700 text-white font-semibold" : "text-slate-600 hover:bg-stone-100"}`}>{t}</button>
+            style={tab === k ? { background: "linear-gradient(180deg, var(--jade-lt), var(--jade))", color: "#fff", boxShadow: "0 2px 8px -2px rgba(14,122,107,.4)" } : { color: "var(--txt-2)" }}
+            className={`flex-1 whitespace-nowrap px-3 py-2.5 rounded-xl text-sm transition-all press ${tab === k ? "font-bold" : "font-medium hover:bg-[var(--line-soft)]"}`}>{t}</button>
         ))}
       </div>
 
@@ -4034,10 +4285,10 @@ function Office({ data, cur, usr, officePay, calc, accountMove, accountTransfer,
         pending.length === 0 ? <Card><Empty t="هیچ مامەڵەیەکی چاوەڕوان نییە ✓" /></Card> :
           pending.map((t) => (
             <Card key={t.id} className="p-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
-              {t.code && <span className="text-[11px] font-bold text-slate-400 bg-stone-100 px-2 py-0.5 rounded" style={num}>#{t.code}</span>}
-              <span className="font-semibold text-slate-800">{t.cpId ? usr(t.cpId).name : t.cpName}</span>
+              {t.code && <span className="text-[11px] font-bold text-[var(--txt-3)] bg-[var(--line-soft)] px-2 py-0.5 rounded" style={num}>#{t.code}</span>}
+              <span className="font-semibold text-[var(--txt)]">{t.cpId ? usr(t.cpId).name : t.cpName}</span>
               <span>بدرێتێ: <Money v={t.total} dec={0} /> {cur(t.againstId).code}</span>
-              <span className="text-[11px] text-slate-400" style={num}>{new Date(t.date).toLocaleString("en-GB")}</span>
+              <span className="text-[11px] text-[var(--txt-3)]" style={num}>{new Date(t.date).toLocaleString("en-GB")}</span>
               <Btn className="mr-auto flex items-center gap-1.5" onClick={() => officePay(t)}>
                 <CheckCircle2 className="w-4 h-4" /> پارەم دا
               </Btn>
@@ -4058,12 +4309,12 @@ function Office({ data, cur, usr, officePay, calc, accountMove, accountTransfer,
                 <button key={lbl} onClick={() => {
                   const x = new Date(); x.setDate(x.getDate() - dd);
                   setFrom(x.toISOString().slice(0, 10)); setTo(new Date().toISOString().slice(0, 10));
-                }} className="px-3 py-1.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-xs font-semibold text-slate-600">{lbl}</button>
+                }} className="px-3 py-1.5 rounded-lg bg-[var(--line-soft)] hover:bg-[var(--line)] text-xs font-semibold text-[var(--txt-2)]">{lbl}</button>
               ))}
               <button onClick={() => { setQ(""); setFrom(""); setTo(""); }}
-                className="px-3 py-1.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-xs font-semibold text-slate-600">سڕینەوە</button>
+                className="px-3 py-1.5 rounded-lg bg-[var(--line-soft)] hover:bg-[var(--line)] text-xs font-semibold text-[var(--txt-2)]">سڕینەوە</button>
             </div>
-            <div className="flex gap-4 flex-wrap text-xs text-slate-500 pt-2 border-t border-stone-100">
+            <div className="flex gap-4 flex-wrap text-xs text-[var(--txt-2)] pt-2 border-t border-[var(--line-soft)]">
               <span><b style={num}>{hist.length}</b> پارەدان</span>
               {Object.entries(histTot).map(([cid, v]) => <span key={cid}>{cur(cid).code}: <b style={num}>{fmt(v, 0)}</b></span>)}
             </div>
@@ -4072,11 +4323,11 @@ function Office({ data, cur, usr, officePay, calc, accountMove, accountTransfer,
           {hist.length === 0 ? <Card><Empty t="هیچ نەدۆزرایەوە" /></Card> :
             hist.map((t) => (
               <Card key={t.id} className="p-3.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-                {t.code && <span className="text-[11px] font-bold text-slate-400" style={num}>#{t.code}</span>}
+                {t.code && <span className="text-[11px] font-bold text-[var(--txt-3)]" style={num}>#{t.code}</span>}
                 <Pill tone="green">دراوە</Pill>
-                <span className="font-semibold text-slate-800">{t.cpId ? usr(t.cpId).name : t.cpName}</span>
+                <span className="font-semibold text-[var(--txt)]">{t.cpId ? usr(t.cpId).name : t.cpName}</span>
                 <span className="font-bold" style={num}>{fmt(t.total, 0)} {cur(t.againstId).code}</span>
-                <span className="text-[11px] text-slate-400 mr-auto" style={num}>{new Date(t.paidAt).toLocaleString("en-GB")}</span>
+                <span className="text-[11px] text-[var(--txt-3)] mr-auto" style={num}>{new Date(t.paidAt).toLocaleString("en-GB")}</span>
               </Card>
             ))}
         </>
@@ -4109,7 +4360,7 @@ function UsersAdmin({ data, cur, createUser, deleteUser, setUserRate, flash }) {
               <Lbl>لە کام دراوەکاندا شەریکە؟</Lbl>
               <div className="flex gap-1.5 flex-wrap">
                 <button onClick={() => setF({ ...f, scope: [] })}
-                  className={`px-3 py-2 rounded-xl text-xs font-semibold border transition ${!f.scope?.length ? "bg-emerald-700 text-white border-emerald-700" : "bg-white border-stone-300 text-slate-600"}`}>
+                  className={`px-3 py-2 rounded-xl text-xs font-semibold border transition ${!f.scope?.length ? "bg-[var(--jade)] text-white border-emerald-700" : "bg-[var(--card)] border-[var(--line)] text-[var(--txt-2)]"}`}>
                   هەموو دراوەکان
                 </button>
                 {data.currencies.map((c) => {
@@ -4119,13 +4370,13 @@ function UsersAdmin({ data, cur, createUser, deleteUser, setUserRate, flash }) {
                       const sc = new Set(f.scope || []);
                       on ? sc.delete(c.id) : sc.add(c.id);
                       setF({ ...f, scope: [...sc] });
-                    }} className={`px-3 py-2 rounded-xl text-xs font-semibold border transition flex items-center gap-1.5 ${on ? "bg-emerald-700 text-white border-emerald-700" : "bg-white border-stone-300 text-slate-600"}`}>
+                    }} className={`px-3 py-2 rounded-xl text-xs font-semibold border transition flex items-center gap-1.5 ${on ? "bg-[var(--jade)] text-white border-emerald-700" : "bg-[var(--card)] border-[var(--line)] text-[var(--txt-2)]"}`}>
                       <CurBadge c={c} size="sm" /> {c.name}
                     </button>
                   );
                 })}
               </div>
-              <div className="text-[11px] text-slate-400 mt-1.5">
+              <div className="text-[11px] text-[var(--txt-3)] mt-1.5">
                 {(f.scope || []).length === 0
                   ? "لە خێری هەموو دراوەکاندا بەشی هەیە"
                   : `تەنها لە خێری ${(f.scope || []).map((x) => cur(x).name).join("، ")} بەشی هەیە`}
@@ -4147,26 +4398,26 @@ function UsersAdmin({ data, cur, createUser, deleteUser, setUserRate, flash }) {
       {list.map((u) => (
         <Card key={u.id} className="p-4 flex items-center gap-3 flex-wrap">
           <div className="flex-1">
-            <div className="font-semibold text-slate-800">{u.name}</div>
-            <div className="text-xs text-slate-500 mt-0.5">
+            <div className="font-semibold text-[var(--txt)]">{u.name}</div>
+            <div className="text-xs text-[var(--txt-2)] mt-0.5">
               {ROLE_KU[u.role]}{u.phone && <span style={num}> · {u.phone}</span>}{u.address && ` · ${u.address}`}
             </div>
             {u.role === "investor" && (
-              <div className="text-[11px] text-emerald-700 mt-0.5">
+              <div className="text-[11px] text-[var(--jade)] mt-0.5">
                 {(u.scope || []).length === 0 ? "لە هەموو دراوەکاندا" : `تەنها: ${(u.scope || []).map((x) => cur(x).code).join("، ")}`}
               </div>
             )}
-            {u.note && <div className="text-[11px] text-slate-400 mt-0.5">{u.note}</div>}
+            {u.note && <div className="text-[11px] text-[var(--txt-3)] mt-0.5">{u.note}</div>}
           </div>
           {(u.role === "partner" || u.role === "investor") && (
             <div className="flex items-center gap-1.5 text-sm">
-              <span className="text-slate-500 text-xs">ڕێژە</span>
+              <span className="text-[var(--txt-2)] text-xs">ڕێژە</span>
               <input type="number" defaultValue={u.rate} onBlur={(e) => { if (+e.target.value !== u.rate) setUserRate(u, e.target.value); }}
-                className="w-16 border border-stone-300 rounded-lg px-2 py-1 text-sm" style={num} />
+                className="w-16 border border-[var(--line)] rounded-lg px-2 py-1 text-sm" style={num} />
               <span className="text-xs">٪</span>
             </div>
           )}
-          <button onClick={() => deleteUser(u)} className="text-slate-300 hover:text-rose-700"><Trash2 className="w-4 h-4" /></button>
+          <button onClick={() => deleteUser(u)} className="text-[var(--txt-3)] hover:text-[var(--verm)]"><Trash2 className="w-4 h-4" /></button>
         </Card>
       ))}
     </div>
@@ -4236,14 +4487,14 @@ function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare, s
   };
 
   const Row = ({ label, m, tone, bold }) => (
-    <div className={`flex items-center justify-between py-2.5 border-b border-stone-100 last:border-0 ${bold ? "font-bold" : ""}`}>
-      <span className={`text-sm ${bold ? "text-slate-900" : "text-slate-600"}`}>{label}</span>
+    <div className={`flex items-center justify-between py-2.5 border-b border-[var(--line-soft)] last:border-0 ${bold ? "font-bold" : ""}`}>
+      <span className={`text-sm ${bold ? "text-[var(--txt)]" : "text-[var(--txt-2)]"}`}>{label}</span>
       <div className="text-left space-y-0.5">
-        {Object.keys(m).length === 0 ? <span className="text-slate-300 text-sm">0</span> :
+        {Object.keys(m).length === 0 ? <span className="text-[var(--txt-3)] text-sm">0</span> :
           Object.entries(m).map(([cid, v]) => (
-            <div key={cid} className={`text-sm ${tone === "pos" ? "text-emerald-700" : tone === "neg" ? "text-rose-700" : "text-slate-800"}`}>
+            <div key={cid} className={`text-sm ${tone === "pos" ? "text-[var(--jade)]" : tone === "neg" ? "text-[var(--verm)]" : "text-[var(--txt)]"}`}>
               <span style={num} className="font-bold">{tone === "neg" ? "−" : ""}{fmt(Math.abs(v), 0)}</span>
-              <span className="text-xs text-slate-400 mr-1">{cur(cid).code}</span>
+              <span className="text-xs text-[var(--txt-3)] mr-1">{cur(cid).code}</span>
             </div>
           ))}
       </div>
@@ -4262,7 +4513,7 @@ function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare, s
       <Card className="p-4 space-y-3">
         <div className="flex gap-1.5 flex-wrap">
           {[["today", "ئەمڕۆ"], ["week", "ئەم هەفتەیە"], ["month", "ئەم مانگە"], ["prev", "مانگی ڕابردوو"], ["year", "ئەمساڵ"]].map(([k, t]) => (
-            <button key={k} onClick={() => preset(k)} className="px-3 py-1.5 rounded-lg bg-stone-100 hover:bg-emerald-700 hover:text-white text-xs font-semibold text-slate-600 transition">{t}</button>
+            <button key={k} onClick={() => preset(k)} className="px-3 py-1.5 rounded-lg bg-[var(--line-soft)] hover:bg-[var(--jade)] hover:text-white text-xs font-semibold text-[var(--txt-2)] transition">{t}</button>
           ))}
         </div>
         <div className="grid grid-cols-2 gap-2.5">
@@ -4273,19 +4524,20 @@ function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare, s
 
       {/* پوختەی سەرەکی */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Card className="p-4"><div className="text-xs text-slate-500">مامەڵە</div><div className="text-2xl font-bold" style={num}>{txs.length}</div></Card>
-        <Card className="p-4"><div className="text-xs text-slate-500">کڕین</div><div className="text-2xl font-bold text-emerald-700" style={num}>{txs.filter((t) => t.type === "buy").length}</div></Card>
-        <Card className="p-4"><div className="text-xs text-slate-500">فرۆشتن</div><div className="text-2xl font-bold text-rose-700" style={num}>{txs.filter((t) => t.type === "sell").length}</div></Card>
+        <Card className="p-4"><div className="text-xs text-[var(--txt-2)]">مامەڵە</div><div className="text-2xl font-bold" style={num}>{txs.length}</div></Card>
+        <Card className="p-4"><div className="text-xs text-[var(--txt-2)]">کڕین</div><div className="text-2xl font-bold text-[var(--jade)]" style={num}>{txs.filter((t) => t.type === "buy").length}</div></Card>
+        <Card className="p-4"><div className="text-xs text-[var(--txt-2)]">فرۆشتن</div><div className="text-2xl font-bold text-[var(--verm)]" style={num}>{txs.filter((t) => t.type === "sell").length}</div></Card>
         <Card accent className="p-4">
           <div className="text-xs text-emerald-100">نەتی خۆم {ratesReady ? "(دۆلار)" : ""}</div>
           <div className="text-2xl font-bold" style={num}>{ratesReady ? fmt(sumUsd(net), 0) : Object.values(net).length ? fmt(Object.values(net)[0], 0) : 0}</div>
         </Card>
       </div>
 
-      <div className="flex gap-1 bg-white border border-stone-200 rounded-xl p-1 overflow-x-auto">
+      <div className="flex gap-1 rounded-2xl p-1 overflow-x-auto" style={{ background: "var(--card)", border: "1px solid var(--line)", boxShadow: "var(--shadow-1)" }}>
         {TABS.map(([k, t]) => (
           <button key={k} onClick={() => setTab(k)}
-            className={`flex-1 whitespace-nowrap px-3 py-2.5 rounded-lg text-sm ${tab === k ? "bg-emerald-700 text-white font-semibold" : "text-slate-600 hover:bg-stone-100"}`}>{t}</button>
+            style={tab === k ? { background: "linear-gradient(180deg, var(--jade-lt), var(--jade))", color: "#fff", boxShadow: "0 2px 8px -2px rgba(14,122,107,.4)" } : { color: "var(--txt-2)" }}
+            className={`flex-1 whitespace-nowrap px-3 py-2.5 rounded-xl text-sm transition-all press ${tab === k ? "font-bold" : "font-medium hover:bg-[var(--line-soft)]"}`}>{t}</button>
         ))}
       </div>
 
@@ -4302,9 +4554,9 @@ function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare, s
               <Row label="نەتیجەی کۆتایی (بۆ خۆم)" m={net} tone="pos" bold />
             </div>
             {ratesReady && (
-              <div className="mt-3 bg-emerald-50 rounded-xl p-3 flex justify-between items-center">
-                <span className="text-sm text-emerald-900 font-semibold">کۆی نەت بە دۆلار</span>
-                <span className="text-xl font-bold text-emerald-700" style={num}>{fmt(sumUsd(net), 0)} $</span>
+              <div className="mt-3 bg-[color-mix(in_srgb,var(--jade)_10%,transparent)] rounded-xl p-3 flex justify-between items-center">
+                <span className="text-sm text-[var(--jade)] font-semibold">کۆی نەت بە دۆلار</span>
+                <span className="text-xl font-bold text-[var(--jade)]" style={num}>{fmt(sumUsd(net), 0)} $</span>
               </div>
             )}
           </>}
@@ -4317,20 +4569,20 @@ function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare, s
             <SecLbl>هاتوو و تێچووی قاسە</SecLbl>
             {Object.keys(flow).length === 0 ? <Empty t="هیچ" /> :
               Object.entries(flow).map(([cid, fl]) => (
-                <div key={cid} className="py-3 border-b border-stone-100 last:border-0">
-                  <div className="font-semibold text-slate-800 mb-2">{cur(cid).name}</div>
+                <div key={cid} className="py-3 border-b border-[var(--line-soft)] last:border-0">
+                  <div className="font-semibold text-[var(--txt)] mb-2">{cur(cid).name}</div>
                   <div className="grid grid-cols-3 gap-2 text-center">
-                    <div className="bg-emerald-50 rounded-lg py-2">
-                      <div className="text-[10px] text-emerald-800/70">هاتوو</div>
-                      <div className="text-sm font-bold text-emerald-700" style={num}>{fmt(fl.inn, 0)}</div>
+                    <div className="bg-[color-mix(in_srgb,var(--jade)_10%,transparent)] rounded-lg py-2">
+                      <div className="text-[10px] text-[var(--jade)]/70">هاتوو</div>
+                      <div className="text-sm font-bold text-[var(--jade)]" style={num}>{fmt(fl.inn, 0)}</div>
                     </div>
-                    <div className="bg-rose-50 rounded-lg py-2">
-                      <div className="text-[10px] text-rose-800/70">تێچوو</div>
-                      <div className="text-sm font-bold text-rose-700" style={num}>{fmt(fl.out, 0)}</div>
+                    <div className="bg-[color-mix(in_srgb,var(--verm)_10%,transparent)] rounded-lg py-2">
+                      <div className="text-[10px] text-[var(--verm)]/70">تێچوو</div>
+                      <div className="text-sm font-bold text-[var(--verm)]" style={num}>{fmt(fl.out, 0)}</div>
                     </div>
-                    <div className="bg-stone-100 rounded-lg py-2">
-                      <div className="text-[10px] text-slate-500">جیاوازی</div>
-                      <div className="text-sm font-bold text-slate-800" style={num}>{fmt(fl.inn - fl.out, 0)}</div>
+                    <div className="bg-[var(--line-soft)] rounded-lg py-2">
+                      <div className="text-[10px] text-[var(--txt-2)]">جیاوازی</div>
+                      <div className="text-sm font-bold text-[var(--txt)]" style={num}>{fmt(fl.inn - fl.out, 0)}</div>
                     </div>
                   </div>
                 </div>
@@ -4340,14 +4592,14 @@ function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare, s
             <SecLbl>قەبارەی مامەڵەکان</SecLbl>
             {Object.keys(vol).length === 0 ? <Empty t="هیچ" /> :
               Object.entries(vol).map(([cid, v]) => (
-                <div key={cid} className="flex items-center justify-between py-2.5 border-b border-stone-100 last:border-0">
+                <div key={cid} className="flex items-center justify-between py-2.5 border-b border-[var(--line-soft)] last:border-0">
                   <div>
-                    <div className="text-sm font-semibold text-slate-800">{cur(cid).name}</div>
-                    <div className="text-xs text-slate-400" style={num}>{v.n} مامەڵە</div>
+                    <div className="text-sm font-semibold text-[var(--txt)]">{cur(cid).name}</div>
+                    <div className="text-xs text-[var(--txt-3)]" style={num}>{v.n} مامەڵە</div>
                   </div>
                   <div className="text-left text-sm">
-                    <div className="text-emerald-700">کڕدراو <b style={num}>{fmt(v.buy, 0)}</b></div>
-                    <div className="text-rose-700">فرۆشراو <b style={num}>{fmt(v.sell, 0)}</b></div>
+                    <div className="text-[var(--jade)]">کڕدراو <b style={num}>{fmt(v.buy, 0)}</b></div>
+                    <div className="text-[var(--verm)]">فرۆشراو <b style={num}>{fmt(v.sell, 0)}</b></div>
                   </div>
                 </div>
               ))}
@@ -4368,17 +4620,17 @@ function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare, s
               }).filter(Boolean);
               if (!rows.length) return null;
               return (
-                <div key={u.id} className="py-3 border-b border-stone-100 last:border-0">
+                <div key={u.id} className="py-3 border-b border-[var(--line-soft)] last:border-0">
                   <div className="flex justify-between items-center mb-2">
-                    <div className="font-semibold text-slate-800">{u.name}</div>
+                    <div className="font-semibold text-[var(--txt)]">{u.name}</div>
                     <Pill>ڕێژە {u.rate}٪</Pill>
                   </div>
                   {rows.map((r) => (
                     <div key={r.cid} className="flex justify-between items-center py-1.5 text-sm">
-                      <span className="text-slate-500">
+                      <span className="text-[var(--txt-2)]">
                         {cur(r.cid).name} · سەرمایە <span style={num}>{fmt(r.cap, 0)}</span> ({(r.share * 100).toFixed(1)}٪)
                       </span>
-                      <span className="font-bold text-emerald-700" style={num}>{fmt(r.amt, 0)}</span>
+                      <span className="font-bold text-[var(--jade)]" style={num}>{fmt(r.amt, 0)}</span>
                     </div>
                   ))}
                 </div>
@@ -4444,33 +4696,33 @@ function Backup({ data, calc, cur, saveBackup, downloadBackup, flash, sumUsd, my
     <div className="space-y-4">
       <H sub="داتاکەت لە سێرڤەری Supabase پارێزراوە — لێرەش وێنەی زاپاسی لێ دەگیرێت">پاراستنی داتا</H>
 
-      <Card className={`p-4 ${okAll ? "border-emerald-300 bg-emerald-50/40" : "border-amber-300 bg-amber-50/40"}`}>
+      <Card className={`p-4 ${okAll ? "border-[color-mix(in_srgb,var(--jade)_34%,transparent)] bg-[color-mix(in_srgb,var(--jade)_8%,transparent)]" : "border-[color-mix(in_srgb,var(--amber)_34%,transparent)] bg-[color-mix(in_srgb,var(--amber)_9%,transparent)]"}`}>
         <div className="flex items-center gap-2 mb-3">
-          {okAll ? <CheckCircle2 className="w-5 h-5 text-emerald-700" /> : <AlertTriangle className="w-5 h-5 text-amber-600" />}
-          <span className={`font-bold ${okAll ? "text-emerald-800" : "text-amber-800"}`}>
+          {okAll ? <CheckCircle2 className="w-5 h-5 text-[var(--jade)]" /> : <AlertTriangle className="w-5 h-5 text-[var(--amber)]" />}
+          <span className={`font-bold ${okAll ? "text-[var(--jade)]" : "text-[var(--amber)]"}`}>
             {okAll ? "هەموو حیسابەکان ڕێکن" : "چەند خاڵێک پێویستی بە سەیرکردن هەیە"}
           </span>
         </div>
         {checks.map((c, i) => (
           <div key={i} className="flex items-center justify-between py-1.5 text-sm border-b border-white/60 last:border-0">
-            <span className="flex items-center gap-1.5 text-slate-700">
-              {c.ok ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />}
+            <span className="flex items-center gap-1.5 text-[var(--txt)]">
+              {c.ok ? <CheckCircle2 className="w-3.5 h-3.5 text-[var(--jade)]" /> : <AlertTriangle className="w-3.5 h-3.5 text-[var(--amber)]" />}
               {c.t}
             </span>
-            <span className={`text-xs ${c.ok ? "text-slate-400" : "text-amber-800 font-semibold"}`}>{c.d}</span>
+            <span className={`text-xs ${c.ok ? "text-[var(--txt-3)]" : "text-[var(--amber)] font-semibold"}`}>{c.d}</span>
           </div>
         ))}
       </Card>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {Object.entries(counts).map(([k, v]) => (
-          <Card key={k} className="p-4"><div className="text-xs text-slate-500">{k}</div><div className="text-2xl font-bold" style={num}>{fmt(v, 0)}</div></Card>
+          <Card key={k} className="p-4"><div className="text-xs text-[var(--txt-2)]">{k}</div><div className="text-2xl font-bold" style={num}>{fmt(v, 0)}</div></Card>
         ))}
       </div>
 
       <Card className="p-5">
         <SecLbl>باکئەپ</SecLbl>
-        <div className="text-sm text-slate-600 mb-3 leading-relaxed">
+        <div className="text-sm text-[var(--txt-2)] mb-3 leading-relaxed">
           هەر ٦ کاتژمێرێک جارێک خۆی وێنەیەکی تەواوی هەموو داتاکە هەڵدەگرێت. دەتوانیت خۆشت ئێستا یەکێک درووست بکەیت، یان فایلێک دابەزێنیت و لە کۆمپیوتەرەکەت هەڵیبگریت.
         </div>
         <div className="flex gap-2 flex-wrap">
@@ -4485,14 +4737,14 @@ function Backup({ data, calc, cur, saveBackup, downloadBackup, flash, sumUsd, my
         <SecLbl>باکئەپە هەڵگیراوەکان</SecLbl>
         {list === null ? <Empty t="بارکردن..." /> :
           list.length === 0 ? (
-            <div className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-xl p-3">
+            <div className="text-sm text-[var(--amber)] bg-[color-mix(in_srgb,var(--amber)_11%,transparent)] border border-[color-mix(in_srgb,var(--amber)_26%,transparent)] rounded-xl p-3">
               هێشتا هیچ باکئەپێک نییە — ئایا خشتەی <b>backups</b> لە Supabase درووست کراوە؟
             </div>
           ) : list.map((b) => (
-            <div key={b.id} className="flex items-center justify-between py-2.5 border-b border-stone-100 last:border-0">
+            <div key={b.id} className="flex items-center justify-between py-2.5 border-b border-[var(--line-soft)] last:border-0">
               <div>
-                <div className="text-sm text-slate-800" style={num}>{new Date(b.created_at).toLocaleString("en-GB")}</div>
-                <div className="text-[11px] text-slate-400">
+                <div className="text-sm text-[var(--txt)]" style={num}>{new Date(b.created_at).toLocaleString("en-GB")}</div>
+                <div className="text-[11px] text-[var(--txt-3)]">
                   {b.kind === "auto" ? "ئۆتۆماتیکی" : "دەستی"} · <span style={num}>{b.counts?.txs ?? "?"}</span> مامەڵە · <span style={num}>{b.counts?.ledger ?? "?"}</span> تۆمار
                 </div>
               </div>
@@ -4501,9 +4753,9 @@ function Backup({ data, calc, cur, saveBackup, downloadBackup, flash, sumUsd, my
           ))}
       </Card>
 
-      <Card className="p-4 bg-stone-50/60">
-        <div className="text-xs text-slate-500 leading-relaxed">
-          <b className="text-slate-700">ئامۆژگاری:</b> بۆ کۆمپانیایەک کە ملیۆنان دۆلار ئاڵووگۆڕ دەکات، پێشنیار دەکەم پلانی <b>Supabase Pro</b> وەربگریت ($25/مانگ) — باکئەپی خۆکاری ڕۆژانەی هەیە لەگەڵ توانای گەڕاندنەوەی هەر خولەکێک، و پڕۆژەکەشت هەرگیز ناوەستێت. هەروەها مانگی جارێک فایلێکی باکئەپ دابەزێنە و لە شوێنێکی جیا هەڵیبگرە.
+      <Card className="p-4 bg-[var(--line-soft)]">
+        <div className="text-xs text-[var(--txt-2)] leading-relaxed">
+          <b className="text-[var(--txt)]">ئامۆژگاری:</b> بۆ کۆمپانیایەک کە ملیۆنان دۆلار ئاڵووگۆڕ دەکات، پێشنیار دەکەم پلانی <b>Supabase Pro</b> وەربگریت ($25/مانگ) — باکئەپی خۆکاری ڕۆژانەی هەیە لەگەڵ توانای گەڕاندنەوەی هەر خولەکێک، و پڕۆژەکەشت هەرگیز ناوەستێت. هەروەها مانگی جارێک فایلێکی باکئەپ دابەزێنە و لە شوێنێکی جیا هەڵیبگرە.
         </div>
       </Card>
     </div>
@@ -4547,8 +4799,8 @@ function DayClose({ data, calc, cur, usr, closeDay, sumUsd }) {
       <H sub="لە کۆتایی ڕۆژدا پارەی ڕاستەقینە بژمێرە و بەراوردی بکە لەگەڵ حیسابی سیستەم">بەستنی ڕۆژ</H>
 
       {closedToday && (
-        <Card className="p-4 border-emerald-300 bg-emerald-50/50">
-          <div className="flex items-center gap-2 text-sm text-emerald-900 font-semibold">
+        <Card className="p-4 border-[color-mix(in_srgb,var(--jade)_34%,transparent)] bg-[color-mix(in_srgb,var(--jade)_9%,transparent)]">
+          <div className="flex items-center gap-2 text-sm text-[var(--jade)] font-semibold">
             <CheckCircle2 className="w-4 h-4" /> ئەمڕۆ بەسترابووەتەوە — دەتوانیت دووبارە بیکەیتەوە
           </div>
         </Card>
@@ -4558,26 +4810,26 @@ function DayClose({ data, calc, cur, usr, closeDay, sumUsd }) {
         <>
           <Card className="p-5">
             <SecLbl>پارەی لای خۆت بژمێرە</SecLbl>
-            <div className="text-xs text-slate-500 mb-4">
+            <div className="text-xs text-[var(--txt-2)] mb-4">
               تەنها ئەو پارەیە کە لای خۆتە — ئەوەی لای هاوبەشەکانە لێرە نایەت
             </div>
             {lines.map((l) => (
-              <div key={l.cur} className="py-3 border-b border-stone-100 last:border-0">
+              <div key={l.cur} className="py-3 border-b border-[var(--line-soft)] last:border-0">
                 <div className="flex items-center gap-2.5 mb-2">
                   <CurBadge c={l.c} size="sm" />
-                  <span className="text-sm font-semibold text-slate-800">{l.name}</span>
-                  <span className="text-xs text-slate-400 mr-auto">
-                    حیسابی سیستەم: <b style={num} className="text-slate-700">{fmt(l.expected, 0)}</b>
+                  <span className="text-sm font-semibold text-[var(--txt)]">{l.name}</span>
+                  <span className="text-xs text-[var(--txt-3)] mr-auto">
+                    حیسابی سیستەم: <b style={num} className="text-[var(--txt)]">{fmt(l.expected, 0)}</b>
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Inp type="number" dir="ltr" placeholder="ژماردنی ڕاستەقینە..."
                     value={counts[l.cur] ?? ""} onChange={(e) => setCounts({ ...counts, [l.cur]: e.target.value })}
-                    className={`flex-1 ${l.counted !== null && l.diff !== 0 ? "border-amber-500 bg-amber-50" : l.counted !== null ? "border-emerald-500 bg-emerald-50" : ""}`} />
+                    className={`flex-1 ${l.counted !== null && l.diff !== 0 ? "border-[var(--brass)] bg-[color-mix(in_srgb,var(--amber)_11%,transparent)]" : l.counted !== null ? "border-[var(--jade)] bg-[color-mix(in_srgb,var(--jade)_10%,transparent)]" : ""}`} />
                   <div className="w-28 text-left shrink-0">
-                    {l.counted === null ? <span className="text-xs text-slate-300">—</span> :
-                      l.diff === 0 ? <span className="text-sm font-bold text-emerald-700">✓ ڕێکە</span> :
-                        <span className={`text-sm font-bold ${l.diff > 0 ? "text-emerald-700" : "text-rose-700"}`} style={num}>
+                    {l.counted === null ? <span className="text-xs text-[var(--txt-3)]">—</span> :
+                      l.diff === 0 ? <span className="text-sm font-bold text-[var(--jade)]">✓ ڕێکە</span> :
+                        <span className={`text-sm font-bold ${l.diff > 0 ? "text-[var(--jade)]" : "text-[var(--verm)]"}`} style={num}>
                           {l.diff > 0 ? "+" : ""}{fmt(l.diff, 0)}
                         </span>}
                   </div>
@@ -4587,23 +4839,23 @@ function DayClose({ data, calc, cur, usr, closeDay, sumUsd }) {
           </Card>
 
           {entered.length > 0 && (
-            <Card className={`p-5 ${diffs.length ? "border-amber-300 bg-amber-50/50" : "border-emerald-300 bg-emerald-50/50"}`}>
+            <Card className={`p-5 ${diffs.length ? "border-[color-mix(in_srgb,var(--amber)_34%,transparent)] bg-[color-mix(in_srgb,var(--amber)_10%,transparent)]" : "border-[color-mix(in_srgb,var(--jade)_34%,transparent)] bg-[color-mix(in_srgb,var(--jade)_9%,transparent)]"}`}>
               <div className="flex items-center gap-2 mb-2">
-                {diffs.length ? <AlertTriangle className="w-5 h-5 text-amber-600" /> : <CheckCircle2 className="w-5 h-5 text-emerald-700" />}
-                <span className={`font-bold ${diffs.length ? "text-amber-900" : "text-emerald-900"}`}>
+                {diffs.length ? <AlertTriangle className="w-5 h-5 text-[var(--amber)]" /> : <CheckCircle2 className="w-5 h-5 text-[var(--jade)]" />}
+                <span className={`font-bold ${diffs.length ? "text-[var(--amber)]" : "text-[var(--jade)]"}`}>
                   {diffs.length ? `${diffs.length} دراو جیاوازی هەیە` : "هەموو شتێک ڕێکە"}
                 </span>
               </div>
               {diffs.map((l) => (
                 <div key={l.cur} className="flex justify-between text-sm py-1">
-                  <span className="text-slate-600">{l.name}</span>
-                  <span className={`font-bold ${l.diff > 0 ? "text-emerald-700" : "text-rose-700"}`} style={num}>
+                  <span className="text-[var(--txt-2)]">{l.name}</span>
+                  <span className={`font-bold ${l.diff > 0 ? "text-[var(--jade)]" : "text-[var(--verm)]"}`} style={num}>
                     {l.diff > 0 ? "زیادە " : "کەمە "}{fmt(Math.abs(l.diff), 0)}
                   </span>
                 </div>
               ))}
               {diffs.length > 0 && (
-                <div className="text-xs text-slate-500 mt-2 pt-2 border-t border-amber-200" style={num}>
+                <div className="text-xs text-[var(--txt-2)] mt-2 pt-2 border-t border-[color-mix(in_srgb,var(--amber)_26%,transparent)]" style={num}>
                   کۆی جیاوازی بە دۆلار ≈ {fmt(totalDiffUsd, 0)} $
                 </div>
               )}
@@ -4614,10 +4866,10 @@ function DayClose({ data, calc, cur, usr, closeDay, sumUsd }) {
             <div><Lbl>تێبینی (بۆچی جیاوازی هەیە؟)</Lbl><Inp value={note} onChange={(e) => setNote(e.target.value)} placeholder="نموونە: خەرجی تۆمار نەکراو..." /></div>
             {diffs.length > 0 && (
               <label className="flex items-start gap-2.5 mt-4 cursor-pointer">
-                <input type="checkbox" checked={adjust} onChange={(e) => setAdjust(e.target.checked)} className="mt-0.5 w-4 h-4 accent-emerald-700" />
-                <span className="text-sm text-slate-700">
+                <input type="checkbox" checked={adjust} onChange={(e) => setAdjust(e.target.checked)} className="mt-0.5 w-4 h-4 accent-[var(--jade)]" />
+                <span className="text-sm text-[var(--txt)]">
                   <b>قاسەکە ڕاست بکەرەوە</b>
-                  <div className="text-xs text-slate-500 mt-0.5">تۆمارێکی ڕاستکردنەوە زیاد دەکرێت تا حیسابی سیستەم بگونجێت لەگەڵ پارەی ڕاستەقینە</div>
+                  <div className="text-xs text-[var(--txt-2)] mt-0.5">تۆمارێکی ڕاستکردنەوە زیاد دەکرێت تا حیسابی سیستەم بگونجێت لەگەڵ پارەی ڕاستەقینە</div>
                 </span>
               </label>
             )}
@@ -4631,19 +4883,19 @@ function DayClose({ data, calc, cur, usr, closeDay, sumUsd }) {
           <SecLbl>دڵنیابوونەوە</SecLbl>
           <div className="space-y-1.5 mb-4">
             {entered.map((l) => (
-              <div key={l.cur} className="flex justify-between items-center py-2 border-b border-stone-100 text-sm">
-                <span className="text-slate-600">{l.name}</span>
+              <div key={l.cur} className="flex justify-between items-center py-2 border-b border-[var(--line-soft)] text-sm">
+                <span className="text-[var(--txt-2)]">{l.name}</span>
                 <span style={num}>
-                  <span className="text-slate-400">{fmt(l.expected, 0)}</span>
-                  <span className="mx-1.5 text-slate-300">→</span>
-                  <b className="text-slate-900">{fmt(l.counted, 0)}</b>
-                  {l.diff !== 0 && <span className={`mr-2 font-bold ${l.diff > 0 ? "text-emerald-700" : "text-rose-700"}`}>({l.diff > 0 ? "+" : ""}{fmt(l.diff, 0)})</span>}
+                  <span className="text-[var(--txt-3)]">{fmt(l.expected, 0)}</span>
+                  <span className="mx-1.5 text-[var(--txt-3)]">→</span>
+                  <b className="text-[var(--txt)]">{fmt(l.counted, 0)}</b>
+                  {l.diff !== 0 && <span className={`mr-2 font-bold ${l.diff > 0 ? "text-[var(--jade)]" : "text-[var(--verm)]"}`}>({l.diff > 0 ? "+" : ""}{fmt(l.diff, 0)})</span>}
                 </span>
               </div>
             ))}
           </div>
           {diffs.length > 0 && adjust && (
-            <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4">
+            <div className="text-xs text-[var(--amber)] bg-[color-mix(in_srgb,var(--amber)_11%,transparent)] border border-[color-mix(in_srgb,var(--amber)_26%,transparent)] rounded-xl p-3 mb-4">
               تۆمارێکی ڕاستکردنەوە زیاد دەکرێت بۆ گونجاندنی قاسە لەگەڵ ژماردنەکەت
             </div>
           )}
@@ -4658,7 +4910,7 @@ function DayClose({ data, calc, cur, usr, closeDay, sumUsd }) {
       {hist === null ? <Card><Empty t="بارکردن..." /></Card> :
         hist.length === 0 ? (
           <Card className="p-4">
-            <div className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-xl p-3">
+            <div className="text-sm text-[var(--amber)] bg-[color-mix(in_srgb,var(--amber)_11%,transparent)] border border-[color-mix(in_srgb,var(--amber)_26%,transparent)] rounded-xl p-3">
               هێشتا هیچ بەستنێک نییە — ئایا خشتەی <b>day_closes</b> لە Supabase درووست کراوە؟
             </div>
           </Card>
@@ -4666,12 +4918,12 @@ function DayClose({ data, calc, cur, usr, closeDay, sumUsd }) {
           <Card key={h.id} className="p-4">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <div className="font-semibold text-slate-800" style={num}>{h.close_date}</div>
-                <div className="text-[11px] text-slate-400 mt-0.5" style={num}>
+                <div className="font-semibold text-[var(--txt)]" style={num}>{h.close_date}</div>
+                <div className="text-[11px] text-[var(--txt-3)] mt-0.5" style={num}>
                   {new Date(h.created_at).toLocaleTimeString("en-GB")}
                   {h.closed_by && ` · ${usr(h.closed_by).name || ""}`}
                 </div>
-                {h.note && <div className="text-xs text-slate-500 mt-1">{h.note}</div>}
+                {h.note && <div className="text-xs text-[var(--txt-2)] mt-1">{h.note}</div>}
               </div>
               <div className="text-left shrink-0">
                 {h.has_diff
@@ -4680,11 +4932,11 @@ function DayClose({ data, calc, cur, usr, closeDay, sumUsd }) {
               </div>
             </div>
             {h.has_diff && Array.isArray(h.lines) && (
-              <div className="mt-2.5 pt-2.5 border-t border-stone-100 space-y-1">
+              <div className="mt-2.5 pt-2.5 border-t border-[var(--line-soft)] space-y-1">
                 {h.lines.filter((l) => l.diff).map((l, i) => (
                   <div key={i} className="flex justify-between text-xs">
-                    <span className="text-slate-500">{l.code}</span>
-                    <span className={`font-bold ${l.diff > 0 ? "text-emerald-700" : "text-rose-700"}`} style={num}>
+                    <span className="text-[var(--txt-2)]">{l.code}</span>
+                    <span className={`font-bold ${l.diff > 0 ? "text-[var(--jade)]" : "text-[var(--verm)]"}`} style={num}>
                       {l.diff > 0 ? "+" : ""}{fmt(l.diff, 0)}
                     </span>
                   </div>
@@ -4705,10 +4957,10 @@ function Audit({ data }) {
       {data.audit.length === 0 ? <Card><Empty t="هێشتا هیچ" /></Card> :
         data.audit.slice(0, 150).map((a) => (
           <Card key={a.id} className="p-3.5 flex items-center gap-3 text-sm">
-            <History className="w-4 h-4 text-slate-300 shrink-0" />
-            <span className="font-semibold text-slate-700">{a.action}</span>
-            <span className="text-slate-500 flex-1">{a.detail}</span>
-            <span className="text-[11px] text-slate-400" style={num}>{new Date(a.date).toLocaleString("en-GB")}</span>
+            <History className="w-4 h-4 text-[var(--txt-3)] shrink-0" />
+            <span className="font-semibold text-[var(--txt)]">{a.action}</span>
+            <span className="text-[var(--txt-2)] flex-1">{a.detail}</span>
+            <span className="text-[11px] text-[var(--txt-3)]" style={num}>{new Date(a.date).toLocaleString("en-GB")}</span>
           </Card>
         ))}
     </div>
@@ -4727,17 +4979,18 @@ function CustomerPortal({ user, c, base, data, cur, usr, flash, reloadBatches })
     <div className="space-y-4">
       <H sub={`بەخێربێیت، ${user.name}`}>ئەکاونتی من</H>
 
-      <div className="flex gap-1 bg-white border border-stone-200 rounded-xl p-1">
+      <div className="flex gap-1 rounded-2xl p-1" style={{ background: "var(--card)", border: "1px solid var(--line)", boxShadow: "var(--shadow-1)" }}>
         {TABS.map(([k, t]) => (
           <button key={k} onClick={() => setTab(k)}
-            className={`flex-1 py-2.5 rounded-lg text-sm ${tab === k ? "bg-emerald-700 text-white font-semibold" : "text-slate-600 hover:bg-stone-100"}`}>{t}</button>
+            style={tab === k ? { background: "linear-gradient(180deg, var(--jade-lt), var(--jade))", color: "#fff", boxShadow: "0 2px 8px -2px rgba(14,122,107,.4)" } : { color: "var(--txt-2)" }}
+            className={`flex-1 py-2.5 rounded-xl text-sm transition-all press ${tab === k ? "font-bold" : "font-medium hover:bg-[var(--line-soft)]"}`}>{t}</button>
         ))}
       </div>
 
       {tab === "send" && (
         <>
-          <Card className="p-4 bg-stone-50/70">
-            <div className="text-sm text-slate-600 leading-relaxed">
+          <Card className="p-4 bg-[var(--line-soft)]">
+            <div className="text-sm text-[var(--txt-2)] leading-relaxed">
               سکرینشۆتی ئەو فیشانە هەڵبژێرە کە پارەت پێ ناردووە. سیستەمەکە خۆی دەیانخوێنێتەوە، کۆیان دەکاتەوە، و دووبارەکان دەدۆزێتەوە.
             </div>
           </Card>
@@ -4750,23 +5003,23 @@ function CustomerPortal({ user, c, base, data, cur, usr, flash, reloadBatches })
 
       {tab === "account" && (<>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <Card className="p-4 border-emerald-200 bg-emerald-50/40">
-          <div className="text-xs font-semibold text-emerald-800 mb-2">پارەی من لای ئەوان</div>
-          {owe.length === 0 ? <div className="text-sm text-slate-400">هیچ</div> :
+        <Card className="p-4 border-[color-mix(in_srgb,var(--jade)_26%,transparent)] bg-[color-mix(in_srgb,var(--jade)_8%,transparent)]">
+          <div className="text-xs font-semibold text-[var(--jade)] mb-2">پارەی من لای ئەوان</div>
+          {owe.length === 0 ? <div className="text-sm text-[var(--txt-3)]">هیچ</div> :
             owe.map(([cid, v]) => (
               <div key={cid} className="flex justify-between py-1">
-                <span className="text-sm text-slate-600">{cur(cid).name}</span>
-                <span className="text-lg font-bold text-emerald-700" style={num}>{fmt(v, 0)}</span>
+                <span className="text-sm text-[var(--txt-2)]">{cur(cid).name}</span>
+                <span className="text-lg font-bold text-[var(--jade)]" style={num}>{fmt(v, 0)}</span>
               </div>
             ))}
         </Card>
-        <Card className="p-4 border-rose-200 bg-rose-50/40">
-          <div className="text-xs font-semibold text-rose-800 mb-2">قەرزی من</div>
-          {due.length === 0 ? <div className="text-sm text-slate-400">هیچ</div> :
+        <Card className="p-4 border-[color-mix(in_srgb,var(--verm)_26%,transparent)] bg-[color-mix(in_srgb,var(--verm)_8%,transparent)]">
+          <div className="text-xs font-semibold text-[var(--verm)] mb-2">قەرزی من</div>
+          {due.length === 0 ? <div className="text-sm text-[var(--txt-3)]">هیچ</div> :
             due.map(([cid, v]) => (
               <div key={cid} className="flex justify-between py-1">
-                <span className="text-sm text-slate-600">{cur(cid).name}</span>
-                <span className="text-lg font-bold text-rose-700" style={num}>{fmt(v, 0)}</span>
+                <span className="text-sm text-[var(--txt-2)]">{cur(cid).name}</span>
+                <span className="text-lg font-bold text-[var(--verm)]" style={num}>{fmt(v, 0)}</span>
               </div>
             ))}
         </Card>
@@ -4790,10 +5043,11 @@ function PartnerPortal({ user, data, calc, cur, usr, flash, reloadBatches, accou
   return (
     <div className="space-y-4">
       <H sub={`بەخێربێیت، ${user.name}`}>ئەکاونتی من</H>
-      <div className="flex gap-1 bg-white border border-stone-200 rounded-xl p-1">
+      <div className="flex gap-1 rounded-2xl p-1" style={{ background: "var(--card)", border: "1px solid var(--line)", boxShadow: "var(--shadow-1)" }}>
         {[["balance", "باڵانس"], ["safe", "قاسە"], ["receipts", "فیشەکان"], ["send", "ناردنی فیش"], ["history", "مێژوو"]].map(([k, t]) => (
           <button key={k} onClick={() => setTab(k)}
-            className={`flex-1 whitespace-nowrap px-2 py-2.5 rounded-lg text-sm ${tab === k ? "bg-emerald-700 text-white font-semibold" : "text-slate-600 hover:bg-stone-100"}`}>{t}</button>
+            style={tab === k ? { background: "linear-gradient(180deg, var(--jade-lt), var(--jade))", color: "#fff", boxShadow: "0 2px 8px -2px rgba(14,122,107,.4)" } : { color: "var(--txt-2)" }}
+            className={`flex-1 whitespace-nowrap px-2 py-2.5 rounded-xl text-sm transition-all press ${tab === k ? "font-bold" : "font-medium hover:bg-[var(--line-soft)]"}`}>{t}</button>
         ))}
       </div>
 
@@ -4803,8 +5057,8 @@ function PartnerPortal({ user, data, calc, cur, usr, flash, reloadBatches, accou
             <SecLbl>باڵانسی لای من</SecLbl>
             {Object.keys(bal).length === 0 ? <Empty t="بەتاڵە" /> :
               Object.entries(bal).map(([cid, v]) => (
-                <div key={cid} className="flex justify-between py-2 border-b border-stone-100 last:border-0">
-                  <span className="text-sm text-slate-600">{cur(cid).name}</span><Money v={v} dec={0} />
+                <div key={cid} className="flex justify-between py-2 border-b border-[var(--line-soft)] last:border-0">
+                  <span className="text-sm text-[var(--txt-2)]">{cur(cid).name}</span><Money v={v} dec={0} />
                 </div>
               ))}
           </Card>
@@ -4812,8 +5066,8 @@ function PartnerPortal({ user, data, calc, cur, usr, flash, reloadBatches, accou
             <SecLbl>عمولەی وەرگیراو ({user.rate}٪)</SecLbl>
             {Object.keys(fees).length === 0 ? <Empty t="هێشتا هیچ" /> :
               Object.entries(fees).map(([cid, v]) => (
-                <div key={cid} className="flex justify-between py-2 border-b border-stone-100 last:border-0">
-                  <span className="text-sm text-slate-600">{cur(cid).name}</span><Money v={v} dec={0} pos />
+                <div key={cid} className="flex justify-between py-2 border-b border-[var(--line-soft)] last:border-0">
+                  <span className="text-sm text-[var(--txt-2)]">{cur(cid).name}</span><Money v={v} dec={0} pos />
                 </div>
               ))}
           </Card>
@@ -4825,8 +5079,8 @@ function PartnerPortal({ user, data, calc, cur, usr, flash, reloadBatches, accou
 
       {tab === "send" && (
         <>
-          <Card className="p-4 bg-stone-50/70">
-            <div className="text-sm text-slate-600 leading-relaxed">
+          <Card className="p-4 bg-[var(--line-soft)]">
+            <div className="text-sm text-[var(--txt-2)] leading-relaxed">
               فیشی ئەو پارەیە بنێرە کە لە ئەکاونتی تۆوە نێردراوە یان بۆ تۆ هاتووە.
               سیستەمەکە خۆی دەیخوێنێتەوە و دووبارەکان دەدۆزێتەوە.
             </div>
@@ -4843,8 +5097,8 @@ function PartnerPortal({ user, data, calc, cur, usr, flash, reloadBatches, accou
             <Card key={e.id} className="p-3.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
               <Pill tone={e.amount >= 0 ? "green" : "red"}>{e.amount >= 0 ? "هاتنە ژوورەوە" : "چوونە دەرەوە"}</Pill>
               <span><Money v={e.amount} dec={0} /> {cur(e.curId).code}</span>
-              {e.type === "partner_fee" && <span className="text-slate-500">عمولە</span>}
-              <span className="text-[11px] text-slate-400 mr-auto" style={num}>{new Date(e.date).toLocaleString("en-GB")}</span>
+              {e.type === "partner_fee" && <span className="text-[var(--txt-2)]">عمولە</span>}
+              <span className="text-[11px] text-[var(--txt-3)] mr-auto" style={num}>{new Date(e.date).toLocaleString("en-GB")}</span>
             </Card>
           ))
       )}
@@ -4877,8 +5131,8 @@ function Portal({ user, data, calc, cur, usr, officePay, settle, invUnpaid, flas
             <SecLbl>باڵانسی لای من</SecLbl>
             {Object.keys(bal).length === 0 ? <Empty t="بەتاڵە" /> :
               Object.entries(bal).map(([cid, v]) => (
-                <div key={cid} className="flex justify-between py-2 border-b border-stone-100 last:border-0">
-                  <span className="text-sm text-slate-600">{cur(cid).name}</span><Money v={v} dec={cur(cid).dec} />
+                <div key={cid} className="flex justify-between py-2 border-b border-[var(--line-soft)] last:border-0">
+                  <span className="text-sm text-[var(--txt-2)]">{cur(cid).name}</span><Money v={v} dec={cur(cid).dec} />
                 </div>
               ))}
           </Card>
@@ -4886,8 +5140,8 @@ function Portal({ user, data, calc, cur, usr, officePay, settle, invUnpaid, flas
             <SecLbl>عمولەی وەرگیراو ({user.rate}٪)</SecLbl>
             {Object.keys(fees).length === 0 ? <Empty t="هێشتا هیچ" /> :
               Object.entries(fees).map(([cid, v]) => (
-                <div key={cid} className="flex justify-between py-2 border-b border-stone-100 last:border-0">
-                  <span className="text-sm text-slate-600">{cur(cid).name}</span><Money v={v} dec={cur(cid).dec} pos />
+                <div key={cid} className="flex justify-between py-2 border-b border-[var(--line-soft)] last:border-0">
+                  <span className="text-sm text-[var(--txt-2)]">{cur(cid).name}</span><Money v={v} dec={cur(cid).dec} pos />
                 </div>
               ))}
           </Card>
@@ -4898,8 +5152,8 @@ function Portal({ user, data, calc, cur, usr, officePay, settle, invUnpaid, flas
             <Card key={e.id} className="p-3.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
               <Pill tone={e.amount >= 0 ? "green" : "red"}>{e.amount >= 0 ? "هاتنە ژوورەوە" : "چوونە دەرەوە"}</Pill>
               <span><Money v={e.amount} dec={cur(e.curId).dec} /> {cur(e.curId).code}</span>
-              {e.type === "partner_fee" && <span className="text-slate-500">عمولە</span>}
-              <span className="text-[11px] text-slate-400 mr-auto" style={num}>{new Date(e.date).toLocaleString("en-GB")}</span>
+              {e.type === "partner_fee" && <span className="text-[var(--txt-2)]">عمولە</span>}
+              <span className="text-[11px] text-[var(--txt-3)] mr-auto" style={num}>{new Date(e.date).toLocaleString("en-GB")}</span>
             </Card>
           ))}
       </div>

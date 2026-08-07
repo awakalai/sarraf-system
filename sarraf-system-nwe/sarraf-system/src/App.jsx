@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Vault, ArrowLeftRight, ListOrdered, Users, Handshake,
   TrendingUp, Building2, UserCog, PieChart, History, Plus, Trash2, Pencil,
   CheckCircle2, AlertTriangle, Eye, LogOut, Wallet, ChevronLeft, Coins,
-  Receipt, TrendingDown, ScanLine, Upload, XCircle, SlidersHorizontal, MoreHorizontal, X, Share2, Database, Download, ClipboardCheck, RotateCcw, MessageCircle, Moon, Sun
+  Receipt, TrendingDown, ScanLine, Upload, XCircle, SlidersHorizontal, MoreHorizontal, X, Share2, Database, Download, ClipboardCheck, RotateCcw, MessageCircle, Moon, Sun, WifiOff, Wifi, EyeOff
 } from "lucide-react";
 
 /* ══════════════════ یارمەتیدەرەکان ══════════════════ */
@@ -467,6 +467,14 @@ export default function App() {
   const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
   const [more, setMore] = useState(false);
+  const [stale, setStale] = useState(null);
+  const [online, setOnline] = useState(() => (typeof navigator === "undefined" ? true : navigator.onLine));
+  useEffect(() => {
+    const on = () => setOnline(true), off = () => setOnline(false);
+    window.addEventListener("online", on); window.addEventListener("offline", off);
+    return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
+  }, []);
+
   const [theme, setTheme] = useState(() => {
     try { return localStorage.getItem("theme") || "light"; } catch { return "light"; }
   });
@@ -486,6 +494,7 @@ export default function App() {
     return () => sub.subscription.unsubscribe();
   }, []);
   useEffect(() => { if (session) loadAll(); }, [session]);
+  useEffect(() => { if (online && stale && session) { setStale(null); loadAll(); } }, [online]);
   useEffect(() => { if (profile?.role === "admin") { const id = setTimeout(() => autoBackup(), 4000); return () => clearTimeout(id); } }, [profile]);
 
   const flash = (t) => { setMsg(t); setTimeout(() => setMsg(null), 3000); };
@@ -520,8 +529,23 @@ export default function App() {
           amount: +r.amount, type: r.type, refId: r.ref_id, note: r.note, date: r.created_at })),
       };
       setData(d);
+      // کۆپییەک هەڵبگرە بۆ کاتی بێ ئینتەرنێت
+      try { localStorage.setItem("cache", JSON.stringify({ at: Date.now(), d })); } catch {}
       if (session) setProfile(d.users.find((x) => x.authId === session.user.id) || null);
-    } catch (err) { console.error(err); flash("هەڵە لە بارکردنی داتا"); }
+    } catch (err) {
+      console.error(err);
+      // بێ ئینتەرنێت: کۆپیی هەڵگیراو بەکاربهێنە
+      try {
+        const c = JSON.parse(localStorage.getItem("cache") || "null");
+        if (c?.d && !data) {
+          setData(c.d); setStale(c.at);
+          if (session) setProfile(c.d.users.find((x) => x.authId === session.user.id) || null);
+          flash("داتای هەڵگیراو پیشان دەدرێت — ئینتەرنێت نییە");
+          return;
+        }
+      } catch {}
+      flash("هەڵە لە بارکردنی داتا");
+    }
   };
 
   const A = (action, detail) => supabase.from("audit").insert({ id: uid(), date: now(), action, detail });
@@ -532,7 +556,8 @@ export default function App() {
 
   const lockRef = useRef(false);
   const run = async (fn) => {
-    if (lockRef.current) return false;                  // قوفڵی هاوکات — خێراتر لە state
+    if (lockRef.current) return false;
+    if (!navigator.onLine) { flash("ئینتەرنێت نییە — ناتوانرێت تۆمار بکرێت"); return false; }                  // قوفڵی هاوکات — خێراتر لە state
     lockRef.current = true; setBusy(true);
     try { await fn(); await loadAll(); return true; }
     catch (err) { console.error(err); flash("هەڵەیەک ڕوویدا — دووبارە هەوڵ بدەوە"); return false; }
@@ -1170,6 +1195,14 @@ export default function App() {
     <div dir="rtl" className="min-h-screen" style={{ background: "var(--paper)", color: "var(--txt)" }}>
       <Styles />
 
+      {(!online || stale) && (
+        <div className="sticky top-[57px] z-30 px-3 py-2 text-center text-[12px] font-semibold flex items-center justify-center gap-2"
+          style={{ background: "color-mix(in srgb, var(--amber) 92%, black)", color: "#fff" }}>
+          <WifiOff className="w-3.5 h-3.5" />
+          {online ? "پەیوەندی گەڕایەوە — نوێکردنەوە..." : "ئینتەرنێت نییە — داتای هەڵگیراو پیشان دەدرێت"}
+          {stale && <span className="opacity-75" style={num}>({new Date(stale).toLocaleTimeString("en-GB")})</span>}
+        </div>
+      )}
       {msg && (
         <div className="fixed top-0 right-0 left-0 z-[60] flex justify-center px-4" style={{ paddingTop: "calc(env(safe-area-inset-top) + 12px)" }}>
           <div className={`toast-in flex items-center gap-2.5 px-5 py-3.5 rounded-2xl shadow-xl text-white font-bold text-sm max-w-md w-full justify-center ${/✓|کرا|تۆمار|نێردرا|وەرگ/.test(msg) ? "bg-emerald-600" : "bg-slate-900"}`}>
@@ -1344,17 +1377,24 @@ function Splash({ t, signOut }) {
 }
 
 function Login() {
-  const [phone, setPhone] = useState("");
+  const [id, setId] = useState("");
   const [pw, setPw] = useState("");
+  const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
+  // ئیمەیل بێت وەک خۆی، ژمارە بێت دەکرێت بە ئیمەیلی ناوخۆیی
+  const toEmail = (v) => {
+    const t = String(v).trim();
+    if (t.includes("@")) return t.toLowerCase();
+    return `${t.replace(/\D/g, "")}@sarraf.local`;
+  };
+
   const go = async () => {
-    if (!phone || !pw) return setErr("ژمارە و وشەی نهێنی پێویستە");
+    if (!id || !pw) return setErr("ژمارە/ئیمەیل و وشەی نهێنی پێویستە");
     setBusy(true); setErr("");
-    const email = `${String(phone).replace(/\D/g, "")}@sarraf.local`;
-    const { error } = await supabase.auth.signInWithPassword({ email, password: pw });
-    if (error) setErr("ژمارە یان وشەی نهێنی هەڵەیە");
+    const { error } = await supabase.auth.signInWithPassword({ email: toEmail(id), password: pw });
+    if (error) setErr("زانیارییەکان هەڵەن — دووبارە هەوڵ بدە");
     setBusy(false);
   };
 
@@ -1384,9 +1424,11 @@ function Login() {
                    boxShadow: "0 24px 60px -14px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.09)" }}>
           <div className="space-y-4">
             <div>
-              <label className="block text-[12px] font-semibold mb-2" style={{ color: "rgba(255,255,255,.62)" }}>ژمارەی مۆبایل</label>
-              <input dir="ltr" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="07701234567"
-                onKeyDown={(e) => e.key === "Enter" && go()}
+              <label className="block text-[12px] font-semibold mb-2" style={{ color: "rgba(255,255,255,.62)" }}>
+                ژمارەی مۆبایل یان ئیمەیل
+              </label>
+              <input dir="ltr" type="text" autoComplete="username" value={id} onChange={(e) => setId(e.target.value)}
+                placeholder="07701234567" onKeyDown={(e) => e.key === "Enter" && go()}
                 className="w-full rounded-xl px-4 py-3 text-white text-sm outline-none transition-all placeholder:text-white/25"
                 style={{ background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)", fontFamily: "'IBM Plex Mono', monospace" }}
                 onFocus={(e) => { e.target.style.borderColor = "var(--brass)"; e.target.style.background = "rgba(255,255,255,.09)"; }}
@@ -1394,12 +1436,19 @@ function Login() {
             </div>
             <div>
               <label className="block text-[12px] font-semibold mb-2" style={{ color: "rgba(255,255,255,.62)" }}>وشەی نهێنی</label>
-              <input type="password" value={pw} onChange={(e) => setPw(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && go()}
-                className="w-full rounded-xl px-4 py-3 text-white text-sm outline-none transition-all"
-                style={{ background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)" }}
-                onFocus={(e) => { e.target.style.borderColor = "var(--brass)"; e.target.style.background = "rgba(255,255,255,.09)"; }}
-                onBlur={(e) => { e.target.style.borderColor = "rgba(255,255,255,.12)"; e.target.style.background = "rgba(255,255,255,.06)"; }} />
+              <div className="relative">
+                <input type={show ? "text" : "password"} autoComplete="current-password" value={pw}
+                  onChange={(e) => setPw(e.target.value)} onKeyDown={(e) => e.key === "Enter" && go()}
+                  className="w-full rounded-xl pr-4 pl-11 py-3 text-white text-sm outline-none transition-all"
+                  style={{ background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)" }}
+                  onFocus={(e) => { e.target.style.borderColor = "var(--brass)"; e.target.style.background = "rgba(255,255,255,.09)"; }}
+                  onBlur={(e) => { e.target.style.borderColor = "rgba(255,255,255,.12)"; e.target.style.background = "rgba(255,255,255,.06)"; }} />
+                <button type="button" onClick={() => setShow(!show)}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 p-1 transition-colors"
+                  style={{ color: "rgba(255,255,255,.4)" }} tabIndex={-1}>
+                  {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
 
             {err && (
@@ -1419,7 +1468,7 @@ function Login() {
         </div>
 
         <p className="text-center text-[11px] mt-7" style={{ color: "rgba(255,255,255,.28)" }}>
-          ژمارەکەت لە بەڕێوەبەرەوە وەربگرە
+          زانیارییەکانت لە بەڕێوەبەرەوە وەربگرە
         </p>
       </div>
     </div>
@@ -4957,6 +5006,70 @@ function Backup({ data, calc, cur, saveBackup, downloadBackup, flash, sumUsd, my
   );
 }
 
+/* نرخی جیهانی — تەنها بۆ زانیاری، پەیوەندی بە نرخی خۆت نییە */
+function WorldRates({ data, cur }) {
+  const [rates, setRates] = useState(null);
+  const [at, setAt] = useState(null);
+
+  const load = () => {
+    setRates(null);
+    fetch("https://api.exchangerate-api.com/v4/latest/USD")
+      .then((r) => r.json())
+      .then((j) => { setRates(j.rates || {}); setAt(Date.now()); })
+      .catch(() => setRates({}));
+  };
+  useEffect(() => { load(); }, []);
+
+  const mine = data.currencies.filter((c) => c.id !== "usd");
+
+  return (
+    <Card className="p-5">
+      <div className="flex items-center justify-between mb-1">
+        <SecLbl>نرخی جیهانی</SecLbl>
+        <button onClick={load} className="text-[11px] font-semibold" style={{ color: "var(--brass)" }}>نوێکردنەوە</button>
+      </div>
+      <div className="text-[11px] mb-3 leading-relaxed" style={{ color: "var(--txt-3)" }}>
+        نرخی بازاڕی جیهانی — تەنها بۆ زانیاری. نرخی مامەڵەکانت لە «نرخی ئەمڕۆ»وە دێت.
+      </div>
+
+      {rates === null ? <Empty t="بارکردن..." /> :
+        Object.keys(rates).length === 0 ? (
+          <div className="text-sm rounded-xl p-3"
+            style={{ background: "color-mix(in srgb, var(--amber) 11%, transparent)", color: "var(--amber)" }}>
+            نەتوانرا نرخەکان وەربگیرێن
+          </div>
+        ) : (
+          <>
+            {mine.map((c) => {
+              const w = rates[c.code];
+              if (!w) return null;
+              const own = c.buyRate && c.sellRate ? (c.buyRate + c.sellRate) / 2 : (c.buyRate || c.sellRate);
+              const diff = own ? ((own - w) / w) * 100 : null;
+              return (
+                <div key={c.id} className="flex items-center justify-between py-2.5 border-b last:border-0" style={{ borderColor: "var(--line-soft)" }}>
+                  <span className="text-sm flex items-center gap-2.5" style={{ color: "var(--txt-2)" }}>
+                    <CurBadge c={c} size="sm" /> {c.name}
+                  </span>
+                  <div className="text-left">
+                    <div className="font-bold" style={{ ...num, color: "var(--txt)" }}>{fmt(w, 3)}</div>
+                    {diff !== null && Math.abs(diff) > .05 && (
+                      <div className="text-[10px]" style={{ ...num, color: diff > 0 ? "var(--jade)" : "var(--verm)" }}>
+                        نرخی تۆ {diff > 0 ? "+" : ""}{diff.toFixed(1)}٪
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+            {at && <div className="text-[10px] mt-3" style={{ ...num, color: "var(--txt-3)" }}>
+              نوێکراوەتەوە {new Date(at).toLocaleTimeString("en-GB")}
+            </div>}
+          </>
+        )}
+    </Card>
+  );
+}
+
 /* ══════════════════ ڕەوت و شیکاری ══════════════════ */
 function Insights({ data, calc, cur, usr, profitIn, ownProfitIn, sumUsd, ratesReady, mySafe, flash }) {
   const [tab, setTab] = useState("trend");
@@ -5069,7 +5182,34 @@ function Insights({ data, calc, cur, usr, profitIn, ownProfitIn, sumUsd, ratesRe
     return L.join("\n");
   };
 
-  const TABS = [["trend", "ڕەوت"], ["rates", "مێژووی نرخ"], ["report", "ڕاپۆرتی ڕۆژ"], ["log", "چالاکی"]];
+  /* ── پێشبینینی خێر ── */
+  const fc = (() => {
+    const vals = dayProfit.map((d) => d.v);
+    const n = vals.length;
+    if (n < 3) return null;
+    // هێڵی ڕەوت (کەمترین چوارگۆشە)
+    const sx = vals.reduce((a, _, i) => a + i, 0);
+    const sy = vals.reduce((a, v) => a + v, 0);
+    const sxy = vals.reduce((a, v, i) => a + i * v, 0);
+    const sxx = vals.reduce((a, _, i) => a + i * i, 0);
+    const den = n * sxx - sx * sx;
+    const slope = den ? (n * sxy - sx * sy) / den : 0;
+    const icpt = (sy - slope * sx) / n;
+    const avg = sy / n;
+    const at = (i) => icpt + slope * i;
+    // وردی: چەند هێڵەکە لە داتای ڕابردوو نزیکە
+    const ss = vals.reduce((a, v, i) => a + (v - at(i)) ** 2, 0);
+    const tt = vals.reduce((a, v) => a + (v - avg) ** 2, 0);
+    const fit = tt > 0 ? Math.max(0, 1 - ss / tt) : 0;
+    return {
+      avg: Math.round(avg), slope: Math.round(slope * 10) / 10, fit,
+      day: Math.round(at(n)), week: Math.round([...Array(7)].reduce((a, _, k) => a + at(n + k), 0)),
+      month: Math.round([...Array(30)].reduce((a, _, k) => a + at(n + k), 0)),
+      proj: [...Array(7)].map((_, k) => Math.round(at(n + k))),
+    };
+  })();
+
+  const TABS = [["trend", "ڕەوت"], ["fc", "پێشبینین"], ["rates", "مێژووی نرخ"], ["report", "ڕاپۆرتی ڕۆژ"], ["log", "چالاکی"]];
 
   return (
     <div className="space-y-4">
@@ -5135,8 +5275,74 @@ function Insights({ data, calc, cur, usr, profitIn, ownProfitIn, sumUsd, ratesRe
         </>
       )}
 
+      {tab === "fc" && (
+        fc === null ? <Card><Empty t="داتای پێویست نییە — لانیکەم ٣ ڕۆژ مامەڵە پێویستە" /></Card> : <>
+          <Card dark className="p-5">
+            <div className="text-[11px] mb-1" style={{ color: "rgba(255,255,255,.5)" }}>
+              بەپێی ڕەوتی {span} ڕۆژی ڕابردوو
+            </div>
+            <div className="flex items-baseline gap-2">
+              <span className="text-3xl font-bold" style={num}>{fmt(fc.avg, 0)}</span>
+              <span className="text-sm" style={{ color: "rgba(255,255,255,.5)" }}>
+                {ratesReady ? "$ " : ""}مامناوەندی ڕۆژانە
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 mt-2 text-sm">
+              <span style={{ color: fc.slope >= 0 ? "var(--jade-lt)" : "var(--verm-lt)" }} className="font-bold">
+                {fc.slope > 0 ? "▲" : fc.slope < 0 ? "▼" : "■"} {fmt(Math.abs(fc.slope), 1)}
+              </span>
+              <span style={{ color: "rgba(255,255,255,.5)" }}>
+                {fc.slope > 0 ? "بەرەو بەرزبوونەوە" : fc.slope < 0 ? "بەرەو نزمبوونەوە" : "جێگیر"} — ڕۆژانە
+              </span>
+            </div>
+          </Card>
+
+          <div className="grid grid-cols-3 gap-3">
+            {[["سبەی", fc.day], ["٧ ڕۆژ", fc.week], ["٣٠ ڕۆژ", fc.month]].map(([l, v], i) => (
+              <Card key={l} className="p-4 fade-up" style={{ animationDelay: `${i * 60}ms` }}>
+                <div className="text-[11px]" style={{ color: "var(--txt-2)" }}>{l}</div>
+                <div className="text-xl font-bold mt-0.5" style={{ ...num, color: v >= 0 ? "var(--jade)" : "var(--verm)" }}>
+                  {fmt(v, 0)}
+                </div>
+              </Card>
+            ))}
+          </div>
+
+          <Card className="p-5">
+            <SecLbl>٧ ڕۆژی داهاتوو</SecLbl>
+            <Bars rows={fc.proj.map((v, i) => {
+              const d = new Date(); d.setDate(d.getDate() + i + 1);
+              return { k: `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`, v };
+            })} h={120} />
+          </Card>
+
+          <Card className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold" style={{ color: "var(--txt-2)" }}>دڵنیایی پێشبینین</span>
+              <span className="text-sm font-bold" style={{ ...num, color: fc.fit > .6 ? "var(--jade)" : fc.fit > .3 ? "var(--amber)" : "var(--verm)" }}>
+                {(fc.fit * 100).toFixed(0)}٪
+              </span>
+            </div>
+            <div className="h-2 rounded-full overflow-hidden" style={{ background: "var(--line-soft)" }}>
+              <div className="h-full rounded-full transition-all duration-700"
+                style={{ width: `${Math.max(3, fc.fit * 100)}%`,
+                  background: fc.fit > .6 ? "linear-gradient(90deg, var(--jade-lt), var(--jade))"
+                    : fc.fit > .3 ? "linear-gradient(90deg, var(--brass-lt), var(--brass))"
+                    : "linear-gradient(90deg, var(--verm-lt), var(--verm))" }} />
+            </div>
+            <div className="text-[11px] mt-2.5 leading-relaxed" style={{ color: "var(--txt-3)" }}>
+              {fc.fit > .6 ? "ڕەوتەکە جێگیرە — پێشبینینەکە بەهێزە"
+                : fc.fit > .3 ? "ڕەوتەکە هەڵکشانی هەیە — بە ئاگاداری وەریبگرە"
+                : "مامەڵەکان زۆر جیاوازن — پێشبینینەکە تەنها ئاماژەیەکە"}
+              <br />ئەمە خەمڵاندنێکە بەپێی ڕابردوو، نەک دڵنیایی.
+            </div>
+          </Card>
+        </>
+      )}
+
       {tab === "rates" && (
         <>
+          <WorldRates data={data} cur={cur} />
           <div className="flex gap-1.5 flex-wrap">
             {rateCurs.map((c) => (
               <button key={c.id} onClick={() => setRateCur(c.id)}

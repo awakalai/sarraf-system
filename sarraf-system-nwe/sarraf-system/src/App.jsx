@@ -66,6 +66,169 @@ const usdConv = (data) => (amount, code) => {
 const UsdHint = ({ v, className = "" }) =>
   v == null ? null : <span className={className} style={{ ...num, color: "var(--txt-3)" }}>≈ {fmt(v, 0)} $</span>;
 
+/* ══════════════════ چارتەکان ══════════════════ */
+
+/* هێڵی بچووک — ڕەوتی خێرا */
+function Spark({ data, w = 96, h = 30, color = "var(--jade)" }) {
+  if (!data?.length) return <div style={{ width: w, height: h }} />;
+  const mx = Math.max(...data, 0), mn = Math.min(...data, 0);
+  const rng = mx - mn || 1;
+  const pts = data.map((v, i) => [(i / Math.max(1, data.length - 1)) * w, h - ((v - mn) / rng) * (h - 4) - 2]);
+  const d = pts.map((p, i) => `${i ? "L" : "M"}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" ");
+  const area = `${d} L${w},${h} L0,${h} Z`;
+  const id = "sg" + Math.random().toString(36).slice(2, 7);
+  return (
+    <svg width={w} height={h} className="overflow-visible">
+      <defs><linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stopColor={color} stopOpacity=".22" /><stop offset="100%" stopColor={color} stopOpacity="0" />
+      </linearGradient></defs>
+      <path d={area} fill={`url(#${id})`} />
+      <path d={d} fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      {pts.length > 0 && <circle cx={pts[pts.length - 1][0]} cy={pts[pts.length - 1][1]} r="2.6" fill={color} />}
+    </svg>
+  );
+}
+
+/* چارتی ستوونی */
+function Bars({ rows, h = 150, fmtV = (v) => fmt(v, 0) }) {
+  const [hover, setHover] = useState(null);
+  if (!rows?.length) return <Empty t="هیچ داتایەک نییە" />;
+  const mx = Math.max(...rows.map((r) => Math.abs(r.v)), 1);
+  return (
+    <div>
+      <div className="flex items-end gap-1.5" style={{ height: h }}>
+        {rows.map((r, i) => {
+          const pct = (Math.abs(r.v) / mx) * 100;
+          const neg = r.v < 0;
+          const on = hover === i;
+          return (
+            <div key={i} className="flex-1 flex flex-col justify-end items-center group relative"
+              onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}>
+              {on && (
+                <div className="absolute -top-1 z-10 px-2 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap pointer-events-none"
+                  style={{ background: "var(--ink)", color: "#fff", boxShadow: "var(--shadow-2)", transform: "translateY(-100%)" }}>
+                  <span style={num}>{fmtV(r.v)}</span>
+                </div>
+              )}
+              <div className="w-full rounded-t-md transition-all duration-300"
+                style={{
+                  height: `${Math.max(pct, 2)}%`,
+                  background: neg
+                    ? "linear-gradient(180deg, var(--verm-lt), var(--verm))"
+                    : "linear-gradient(180deg, var(--jade-lt), var(--jade))",
+                  opacity: hover === null || on ? 1 : .45,
+                  boxShadow: on ? "0 4px 12px -3px rgba(14,122,107,.5)" : "none",
+                }} />
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex gap-1.5 mt-2">
+        {rows.map((r, i) => (
+          <div key={i} className="flex-1 text-center text-[10px] truncate" style={{ color: "var(--txt-3)" }}>{r.k}</div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* چارتی هێڵی — بۆ مێژووی نرخ */
+function LineChart({ series, h = 190, unit = "" }) {
+  const [hover, setHover] = useState(null);
+  const all = series.flatMap((s2) => s2.pts.map((p) => p.v));
+  if (!all.length) return <Empty t="هێشتا مێژوویەک نییە" />;
+  const mx = Math.max(...all), mn = Math.min(...all);
+  const pad = (mx - mn) * .12 || mx * .04 || 1;
+  const hi = mx + pad, lo = Math.max(0, mn - pad), rng = hi - lo || 1;
+  const W = 320, H = h - 26;
+  const n = Math.max(...series.map((s2) => s2.pts.length));
+  const X = (i, len) => (len <= 1 ? W / 2 : (i / (len - 1)) * W);
+  const Y = (v) => H - ((v - lo) / rng) * H;
+
+  return (
+    <div className="relative">
+      <svg viewBox={`0 0 ${W} ${h}`} className="w-full" style={{ overflow: "visible" }}
+        onMouseLeave={() => setHover(null)}>
+        {[0, .25, .5, .75, 1].map((f) => (
+          <g key={f}>
+            <line x1="0" y1={H * f} x2={W} y2={H * f} stroke="var(--line-soft)" strokeWidth="1" />
+            <text x={W} y={H * f - 3} textAnchor="end" fontSize="8.5" fill="var(--txt-3)" style={num}>
+              {fmt(hi - rng * f, 3)}
+            </text>
+          </g>
+        ))}
+        {series.map((s2, si) => {
+          const d = s2.pts.map((p, i) => `${i ? "L" : "M"}${X(i, s2.pts.length).toFixed(1)},${Y(p.v).toFixed(1)}`).join(" ");
+          return (
+            <g key={si}>
+              <path d={d} fill="none" stroke={s2.color} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+              {s2.pts.map((p, i) => (
+                <circle key={i} cx={X(i, s2.pts.length)} cy={Y(p.v)} r={hover === i ? 4.5 : 2.4}
+                  fill={s2.color} stroke="var(--card)" strokeWidth="1.5"
+                  onMouseEnter={() => setHover(i)} style={{ cursor: "pointer", transition: "r .15s" }} />
+              ))}
+            </g>
+          );
+        })}
+        {hover != null && series[0]?.pts[hover] && (
+          <line x1={X(hover, series[0].pts.length)} y1="0" x2={X(hover, series[0].pts.length)} y2={H}
+            stroke="var(--brass)" strokeWidth="1" strokeDasharray="3 3" />
+        )}
+      </svg>
+      {hover != null && series[0]?.pts[hover] && (
+        <div className="absolute top-0 right-0 px-2.5 py-1.5 rounded-lg text-[11px] pointer-events-none"
+          style={{ background: "var(--ink)", color: "#fff", boxShadow: "var(--shadow-2)" }}>
+          <div style={{ color: "rgba(255,255,255,.55)" }}>{series[0].pts[hover].k}</div>
+          {series.map((s2, i) => s2.pts[hover] && (
+            <div key={i} className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full" style={{ background: s2.color }} />
+              <b style={num}>{fmt(s2.pts[hover].v, 3)}</b> <span style={{ color: "rgba(255,255,255,.5)" }}>{s2.name}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="flex justify-between mt-1 text-[10px]" style={{ color: "var(--txt-3)" }}>
+        <span>{series[0]?.pts[0]?.k}</span>
+        <span>{series[0]?.pts[series[0].pts.length - 1]?.k}</span>
+      </div>
+    </div>
+  );
+}
+
+/* بازنەی دابەشکردن */
+function Donut({ rows, size = 132 }) {
+  const tot = rows.reduce((s2, r) => s2 + Math.abs(r.v), 0);
+  if (!tot) return <Empty t="هیچ نییە" />;
+  const R = size / 2, r = R * .64, C = 2 * Math.PI * r;
+  let acc = 0;
+  return (
+    <div className="flex items-center gap-5 flex-wrap">
+      <svg width={size} height={size} className="shrink-0" style={{ transform: "rotate(-90deg)" }}>
+        {rows.map((row, i) => {
+          const f = Math.abs(row.v) / tot;
+          const dash = `${(C * f).toFixed(2)} ${(C * (1 - f)).toFixed(2)}`;
+          const off = -C * acc;
+          acc += f;
+          return <circle key={i} cx={R} cy={R} r={r} fill="none" stroke={row.color} strokeWidth={R - r}
+            strokeDasharray={dash} strokeDashoffset={off} />;
+        })}
+      </svg>
+      <div className="flex-1 min-w-[130px] space-y-1.5">
+        {rows.map((row, i) => (
+          <div key={i} className="flex items-center justify-between gap-3 text-sm">
+            <span className="flex items-center gap-2" style={{ color: "var(--txt-2)" }}>
+              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: row.color }} />{row.k}
+            </span>
+            <span className="font-bold" style={{ ...num, color: "var(--txt)" }}>
+              {((Math.abs(row.v) / tot) * 100).toFixed(1)}٪
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ژمارەی جوڵاو */
 function CountUp({ v, dec = 0, className = "", style }) {
   const [d, setD] = useState(v);
@@ -195,6 +358,102 @@ const Tabs = ({ items, value, onChange, className = "" }) => (
     })}
   </div>
 );
+
+function Styles() {
+  return <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');
+
+        :root {
+          --ink:        #0D1117;
+          --ink-soft:   #161C26;
+          --paper:      #F6F7F9;
+          --card:       #FFFFFF;
+          --line:       #E3E6EB;
+          --line-soft:  #EDEFF3;
+          --txt:        #16202E;
+          --txt-2:      #5A6678;
+          --txt-3:      #8B95A5;
+          --brass:      #B8863B;
+          --brass-lt:   #D9A857;
+          --brass-dp:   #8C6425;
+          --jade:       #0E7A6B;
+          --jade-lt:    #14A08C;
+          --jade-dp:    #095A4F;
+          --verm:       #B4362C;
+          --verm-lt:    #D14A3C;
+          --amber:      #B4770E;
+          --shadow-1:   0 1px 2px rgba(13,17,23,.05), 0 1px 3px rgba(13,17,23,.04);
+          --shadow-2:   0 2px 4px rgba(13,17,23,.05), 0 6px 16px -4px rgba(13,17,23,.09);
+          --shadow-3:   0 8px 28px -6px rgba(13,17,23,.16), 0 2px 6px rgba(13,17,23,.06);
+          --inset:      inset 0 1px 0 rgba(255,255,255,.7);
+        }
+        [data-theme="dark"] {
+          --ink:        #05080C;
+          --ink-soft:   #0C1219;
+          --paper:      #0A0E14;
+          --card:       #141A23;
+          --line:       #232C38;
+          --line-soft:  #1B222C;
+          --txt:        #E8EDF4;
+          --txt-2:      #9BA7B8;
+          --txt-3:      #6B7688;
+          --brass:      #D9A857;
+          --brass-lt:   #E8C27E;
+          --jade:       #17A892;
+          --jade-lt:    #22C5AB;
+          --verm:       #E05A4A;
+          --verm-lt:    #F07666;
+          --amber:      #D99A2B;
+          --shadow-1:   0 1px 2px rgba(0,0,0,.4);
+          --shadow-2:   0 2px 6px rgba(0,0,0,.45), 0 8px 20px -6px rgba(0,0,0,.5);
+          --shadow-3:   0 10px 34px -8px rgba(0,0,0,.6);
+          --inset:      inset 0 1px 0 rgba(255,255,255,.05);
+        }
+
+        body, input, select, textarea, button { font-family: 'IBM Plex Sans Arabic', 'Segoe UI', Tahoma, sans-serif; }
+        .mono, [style*="tabular-nums"] { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-feature-settings: "tnum" 1; }
+
+        /* ── جووڵە ── */
+        @keyframes fadeUp   { from { opacity:0; transform: translateY(10px) } to { opacity:1; transform:none } }
+        @keyframes popIn    { 0% { transform: scale(.72) rotate(-8deg); opacity:0 } 60% { transform: scale(1.06) rotate(2deg) } 100% { transform: none; opacity:1 } }
+        @keyframes slideDn  { from { opacity:0; transform: translateY(-16px) scale(.96) } to { opacity:1; transform:none } }
+        @keyframes sheetUp  { from { transform: translateY(100%) } to { transform: none } }
+        @keyframes glowPulse{ 0%,100% { box-shadow: 0 0 0 0 rgba(184,134,59,.35) } 50% { box-shadow: 0 0 0 8px rgba(184,134,59,0) } }
+        .fade-up  { animation: fadeUp .42s cubic-bezier(.16,1,.3,1) both }
+        .cur-pop  { animation: popIn .5s cubic-bezier(.2,1.3,.35,1) both }
+        .toast-in { animation: slideDn .34s cubic-bezier(.16,1,.3,1) both }
+        .sheet-in { animation: sheetUp .32s cubic-bezier(.16,1,.3,1) both }
+        .glow     { animation: glowPulse 2.4s ease-in-out infinite }
+
+        /* ── قووڵایی ── */
+        .lift  { transition: transform .22s cubic-bezier(.16,1,.3,1), box-shadow .22s ease, border-color .22s ease }
+        .lift:hover  { transform: translateY(-3px); box-shadow: var(--shadow-3) }
+        .press:active { transform: scale(.975) }
+        .tilt { transition: transform .3s cubic-bezier(.16,1,.3,1) }
+        .tilt:hover { transform: perspective(700px) rotateX(3deg) translateY(-2px) }
+
+        /* ── ڕووکاری قاسە ── */
+        .vault {
+          background: linear-gradient(160deg, var(--card) 0%, var(--card) 62%, color-mix(in srgb, var(--line-soft) 55%, var(--card)) 100%);
+          box-shadow: var(--shadow-2), var(--inset);
+        }
+        .brass-edge { position: relative; overflow: hidden }
+        .brass-edge::before {
+          content:''; position:absolute; inset-inline-start:0; top:0; bottom:0; width:3px;
+          background: linear-gradient(180deg, var(--brass-lt), var(--brass), var(--brass-dp));
+        }
+
+        ::-webkit-scrollbar { width: 9px; height: 9px }
+        ::-webkit-scrollbar-track { background: transparent }
+        ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 9px; border: 2px solid transparent; background-clip: content-box }
+        ::-webkit-scrollbar-thumb:hover { background: var(--txt-3); background-clip: content-box }
+
+        *:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px }
+        @media (prefers-reduced-motion: reduce) {
+          *, *::before, *::after { animation-duration:.01ms !important; transition-duration:.01ms !important }
+        }
+      `}</style>;
+}
 
 /* ══════════════════ ئەپی سەرەکی ══════════════════ */
 export default function App() {
@@ -880,10 +1139,10 @@ export default function App() {
   const signOut = () => supabase.auth.signOut();
 
   /* ───────── ڕەندەر ───────── */
-  if (session === undefined) return <Splash t="بارکردنی سیستەم..." />;
-  if (!session) return <Login />;
-  if (!data || !calc) return <Splash t="بارکردنی داتا..." />;
-  if (!profile) return <Splash t="ئەکاونتەکەت بە سیستەمەکە نەبەستراوە — پەیوەندی بە ئەدمینەوە بکە." signOut={signOut} />;
+  if (session === undefined) return <><Styles /><Splash t="بارکردنی سیستەم..." /></>;
+  if (!session) return <><Styles /><Login /></>;
+  if (!data || !calc) return <><Styles /><Splash t="بارکردنی داتا..." /></>;
+  if (!profile) return <><Styles /><Splash t="ئەکاونتەکەت بە سیستەمەکە نەبەستراوە — پەیوەندی بە ئەدمینەوە بکە." signOut={signOut} /></>;
 
   const isAdmin = profile.role === "admin";
   const va = viewAs ? usr(viewAs) : null;
@@ -897,6 +1156,7 @@ export default function App() {
     ["people", "بەکارهێنەران", Users],
     ["report", "ڕاپۆرت", PieChart],
     ["audit", "تۆمار", History],
+    ["insights", "ڕەوت و شیکاری", TrendingUp],
     ["close", "بەستنی ڕۆژ", ClipboardCheck],
     ["backup", "پاراستنی داتا", Database],
   ];
@@ -908,99 +1168,8 @@ export default function App() {
 
   return (
     <div dir="rtl" className="min-h-screen" style={{ background: "var(--paper)", color: "var(--txt)" }}>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');
+      <Styles />
 
-        :root {
-          --ink:        #0D1117;
-          --ink-soft:   #161C26;
-          --paper:      #F6F7F9;
-          --card:       #FFFFFF;
-          --line:       #E3E6EB;
-          --line-soft:  #EDEFF3;
-          --txt:        #16202E;
-          --txt-2:      #5A6678;
-          --txt-3:      #8B95A5;
-          --brass:      #B8863B;
-          --brass-lt:   #D9A857;
-          --brass-dp:   #8C6425;
-          --jade:       #0E7A6B;
-          --jade-lt:    #14A08C;
-          --jade-dp:    #095A4F;
-          --verm:       #B4362C;
-          --verm-lt:    #D14A3C;
-          --amber:      #B4770E;
-          --shadow-1:   0 1px 2px rgba(13,17,23,.05), 0 1px 3px rgba(13,17,23,.04);
-          --shadow-2:   0 2px 4px rgba(13,17,23,.05), 0 6px 16px -4px rgba(13,17,23,.09);
-          --shadow-3:   0 8px 28px -6px rgba(13,17,23,.16), 0 2px 6px rgba(13,17,23,.06);
-          --inset:      inset 0 1px 0 rgba(255,255,255,.7);
-        }
-        [data-theme="dark"] {
-          --ink:        #05080C;
-          --ink-soft:   #0C1219;
-          --paper:      #0A0E14;
-          --card:       #141A23;
-          --line:       #232C38;
-          --line-soft:  #1B222C;
-          --txt:        #E8EDF4;
-          --txt-2:      #9BA7B8;
-          --txt-3:      #6B7688;
-          --brass:      #D9A857;
-          --brass-lt:   #E8C27E;
-          --jade:       #17A892;
-          --jade-lt:    #22C5AB;
-          --verm:       #E05A4A;
-          --verm-lt:    #F07666;
-          --amber:      #D99A2B;
-          --shadow-1:   0 1px 2px rgba(0,0,0,.4);
-          --shadow-2:   0 2px 6px rgba(0,0,0,.45), 0 8px 20px -6px rgba(0,0,0,.5);
-          --shadow-3:   0 10px 34px -8px rgba(0,0,0,.6);
-          --inset:      inset 0 1px 0 rgba(255,255,255,.05);
-        }
-
-        body, input, select, textarea, button { font-family: 'IBM Plex Sans Arabic', 'Segoe UI', Tahoma, sans-serif; }
-        .mono, [style*="tabular-nums"] { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-feature-settings: "tnum" 1; }
-
-        /* ── جووڵە ── */
-        @keyframes fadeUp   { from { opacity:0; transform: translateY(10px) } to { opacity:1; transform:none } }
-        @keyframes popIn    { 0% { transform: scale(.72) rotate(-8deg); opacity:0 } 60% { transform: scale(1.06) rotate(2deg) } 100% { transform: none; opacity:1 } }
-        @keyframes slideDn  { from { opacity:0; transform: translateY(-16px) scale(.96) } to { opacity:1; transform:none } }
-        @keyframes sheetUp  { from { transform: translateY(100%) } to { transform: none } }
-        @keyframes glowPulse{ 0%,100% { box-shadow: 0 0 0 0 rgba(184,134,59,.35) } 50% { box-shadow: 0 0 0 8px rgba(184,134,59,0) } }
-        .fade-up  { animation: fadeUp .42s cubic-bezier(.16,1,.3,1) both }
-        .cur-pop  { animation: popIn .5s cubic-bezier(.2,1.3,.35,1) both }
-        .toast-in { animation: slideDn .34s cubic-bezier(.16,1,.3,1) both }
-        .sheet-in { animation: sheetUp .32s cubic-bezier(.16,1,.3,1) both }
-        .glow     { animation: glowPulse 2.4s ease-in-out infinite }
-
-        /* ── قووڵایی ── */
-        .lift  { transition: transform .22s cubic-bezier(.16,1,.3,1), box-shadow .22s ease, border-color .22s ease }
-        .lift:hover  { transform: translateY(-3px); box-shadow: var(--shadow-3) }
-        .press:active { transform: scale(.975) }
-        .tilt { transition: transform .3s cubic-bezier(.16,1,.3,1) }
-        .tilt:hover { transform: perspective(700px) rotateX(3deg) translateY(-2px) }
-
-        /* ── ڕووکاری قاسە ── */
-        .vault {
-          background: linear-gradient(160deg, var(--card) 0%, var(--card) 62%, color-mix(in srgb, var(--line-soft) 55%, var(--card)) 100%);
-          box-shadow: var(--shadow-2), var(--inset);
-        }
-        .brass-edge { position: relative; overflow: hidden }
-        .brass-edge::before {
-          content:''; position:absolute; inset-inline-start:0; top:0; bottom:0; width:3px;
-          background: linear-gradient(180deg, var(--brass-lt), var(--brass), var(--brass-dp));
-        }
-
-        ::-webkit-scrollbar { width: 9px; height: 9px }
-        ::-webkit-scrollbar-track { background: transparent }
-        ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 9px; border: 2px solid transparent; background-clip: content-box }
-        ::-webkit-scrollbar-thumb:hover { background: var(--txt-3); background-clip: content-box }
-
-        *:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px }
-        @media (prefers-reduced-motion: reduce) {
-          *, *::before, *::after { animation-duration:.01ms !important; transition-duration:.01ms !important }
-        }
-      `}</style>
       {msg && (
         <div className="fixed top-0 right-0 left-0 z-[60] flex justify-center px-4" style={{ paddingTop: "calc(env(safe-area-inset-top) + 12px)" }}>
           <div className={`toast-in flex items-center gap-2.5 px-5 py-3.5 rounded-2xl shadow-xl text-white font-bold text-sm max-w-md w-full justify-center ${/✓|کرا|تۆمار|نێردرا|وەرگ/.test(msg) ? "bg-emerald-600" : "bg-slate-900"}`}>
@@ -1083,6 +1252,7 @@ export default function App() {
             {page === "people" && <PeopleHub {...shared} accountMove={accountMove} accountTransfer={accountTransfer} profile={profile} detailId={detailId} setDetailId={setDetailId} onSave={saveTx} transfer={transfer} officePay={officePay} settle={settle} createUser={createUser} deleteUser={deleteUser} setUserRate={setUserRate} flash={flash} />}
             {page === "report" && <Report {...shared} />}
             {page === "audit" && <Audit data={data} />}
+            {page === "insights" && <Insights {...shared} flash={flash} />}
             {page === "close" && <DayClose data={data} calc={calc} cur={cur} usr={usr} closeDay={closeDay} sumUsd={sumUsd} />}
             {page === "backup" && <Backup data={data} calc={calc} cur={cur} saveBackup={saveBackup} downloadBackup={downloadBackup} flash={flash} sumUsd={sumUsd} mySafe={mySafe} owners={owners} ratesReady={ratesReady} />}
           </main>
@@ -1259,7 +1429,7 @@ function Login() {
 /* هەڵبژاردنی بەکارهێنەر بە گەڕان */
 
 /* ══════════════════ داشبۆرد ══════════════════ */
-function Dashboard({ data, calc, cur, mySafe, profitIn, investorsProfitIn, sumUsd, ratesReady, owners, batches, go }) {
+function Dashboard({ data, calc, cur, mySafe, profitIn, ownProfitIn, investorsProfitIn, sumUsd, ratesReady, owners, batches, go }) {
   const today = dOnly(new Date().toISOString());
   const todayTxs = data.txs.filter((t) => !t.deleted && dOnly(t.date) === today);
   const pTod = profitIn(today, today);
@@ -1268,6 +1438,17 @@ function Dashboard({ data, calc, cur, mySafe, profitIn, investorsProfitIn, sumUs
   const pendSell = data.txs.filter((t) => !t.deleted && t.status === "pending" && t.type === "sell").length;
   const pendingCount = pendBuy + pendSell;
   const noRates = data.currencies.some((c) => c.id !== "usd" && (!c.buyRate || !c.sellRate));
+
+  /* ڕەوتی ٧ ڕۆژ */
+  const last7 = [...Array(7)].map((_, i) => {
+    const d = new Date(); d.setDate(d.getDate() - (6 - i));
+    const k = d.toISOString().slice(0, 10);
+    const p = profitIn(k, k), o = ownProfitIn ? ownProfitIn(k, k) : {};
+    const m = {};
+    [...Object.keys(p), ...Object.keys(o)].forEach((c) => (m[c] = (p[c] || 0) + (o[c] || 0)));
+    return { k, v: ratesReady ? Math.round(sumUsd(m)) : (Object.values(m)[0] || 0) };
+  });
+  const week7 = last7.reduce((s2, d) => s2 + d.v, 0);
 
   /* ئاگادارییەکان — ئەوەی پێویستە سەرنجی بدەیت */
   const alerts = [];
@@ -1306,6 +1487,20 @@ function Dashboard({ data, calc, cur, mySafe, profitIn, investorsProfitIn, sumUs
             </Card>
           ))}
         </div>
+      )}
+
+      {last7.some((d) => d.v) && (
+        <Card className="p-4 fade-up" onClick={() => go("insights")}>
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <div className="text-[11px]" style={{ color: "var(--txt-2)" }}>خێری ٧ ڕۆژی ڕابردوو</div>
+              <div className="text-xl font-bold mt-0.5" style={{ ...num, color: week7 >= 0 ? "var(--jade)" : "var(--verm)" }}>
+                {fmt(week7, 0)}{ratesReady && <span className="text-xs mr-1" style={{ color: "var(--txt-3)" }}>$</span>}
+              </div>
+            </div>
+            <Spark data={last7.map((d) => d.v)} w={120} h={34} />
+          </div>
+        </Card>
       )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -4758,6 +4953,322 @@ function Backup({ data, calc, cur, saveBackup, downloadBackup, flash, sumUsd, my
           <b className="text-[var(--txt)]">ئامۆژگاری:</b> بۆ کۆمپانیایەک کە ملیۆنان دۆلار ئاڵووگۆڕ دەکات، پێشنیار دەکەم پلانی <b>Supabase Pro</b> وەربگریت ($25/مانگ) — باکئەپی خۆکاری ڕۆژانەی هەیە لەگەڵ توانای گەڕاندنەوەی هەر خولەکێک، و پڕۆژەکەشت هەرگیز ناوەستێت. هەروەها مانگی جارێک فایلێکی باکئەپ دابەزێنە و لە شوێنێکی جیا هەڵیبگرە.
         </div>
       </Card>
+    </div>
+  );
+}
+
+/* ══════════════════ ڕەوت و شیکاری ══════════════════ */
+function Insights({ data, calc, cur, usr, profitIn, ownProfitIn, sumUsd, ratesReady, mySafe, flash }) {
+  const [tab, setTab] = useState("trend");
+  const [span, setSpan] = useState(14);
+  const [rateCur, setRateCur] = useState(null);
+  const [hist, setHist] = useState(null);
+
+  useEffect(() => {
+    supabase.from("rate_history").select("*").order("created_at", { ascending: true }).limit(600)
+      .then(({ data: d }) => setHist(d || [])).catch(() => setHist([]));
+  }, []);
+
+  const iso = (d) => d.toISOString().slice(0, 10);
+  const days = [...Array(span)].map((_, i) => {
+    const d = new Date(); d.setDate(d.getDate() - (span - 1 - i)); return iso(d);
+  });
+  const short = (k) => k.slice(8) + "/" + k.slice(5, 7);
+
+  /* ── خێری ڕۆژانە ── */
+  const dayProfit = days.map((k) => {
+    const shared = profitIn(k, k), own = ownProfitIn(k, k);
+    const m = {};
+    [...Object.keys(shared), ...Object.keys(own)].forEach((c) => (m[c] = (shared[c] || 0) + (own[c] || 0)));
+    return { k: short(k), v: ratesReady ? Math.round(sumUsd(m)) : (Object.values(m)[0] || 0), raw: k };
+  });
+  const totProfit = dayProfit.reduce((s2, d) => s2 + d.v, 0);
+  const best = dayProfit.reduce((a, b) => (b.v > a.v ? b : a), dayProfit[0] || { v: 0 });
+
+  /* ── قەبارەی مامەڵەکان ── */
+  const dayVol = days.map((k) => {
+    const t = data.txs.filter((x) => !x.deleted && dOnly(x.date) === k);
+    return { k: short(k), v: t.length };
+  });
+  const totTx = dayVol.reduce((s2, d) => s2 + d.v, 0);
+
+  /* ── کڕین بەرامبەر فرۆشتن ── */
+  const from = days[0];
+  const inRange = data.txs.filter((t) => !t.deleted && dOnly(t.date) >= from);
+  const buySell = [
+    { k: "کڕین", v: inRange.filter((t) => t.type === "buy").length, color: "var(--jade)" },
+    { k: "فرۆشتن", v: inRange.filter((t) => t.type === "sell").length, color: "var(--verm)" },
+  ].filter((r) => r.v);
+
+  /* ── دابەشکردنی قاسە ── */
+  const safeSplit = data.currencies.map((c) => ({
+    k: c.name, v: ratesReady ? Math.abs(sumUsd({ [c.id]: calc.phys[c.id] || 0 })) : Math.abs(calc.phys[c.id] || 0),
+    color: `linear-gradient(${curStyle(c).mid})`.includes("gradient") ? curStyle(c).mid : curStyle(c).mid,
+  })).filter((r) => r.v > 0);
+
+  /* ── مێژووی نرخ ── */
+  const rateCurs = data.currencies.filter((c) => c.id !== "usd");
+  const activeCur = rateCur || rateCurs[0]?.id;
+  const rateSeries = (() => {
+    if (!hist?.length || !activeCur) return [];
+    const rows = hist.filter((h) => h.cur_id === activeCur);
+    if (!rows.length) return [];
+    const mk = (key, name, color) => ({
+      name, color,
+      pts: rows.filter((r) => r[key] != null).map((r) => ({
+        k: new Date(r.created_at).toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit" }),
+        v: +r[key],
+      })),
+    });
+    return [mk("buy_rate", "کڕین", "var(--jade)"), mk("sell_rate", "فرۆشتن", "var(--verm)")].filter((s2) => s2.pts.length);
+  })();
+
+  /* ── هێڵی کاتی چالاکی ── */
+  const timeline = (data.audit || []).slice(0, 60);
+  const dayGroups = {};
+  timeline.forEach((a) => {
+    const k = dOnly(a.date);
+    (dayGroups[k] = dayGroups[k] || []).push(a);
+  });
+
+  /* ── ڕاپۆرتی ڕۆژانە ── */
+  const today = iso(new Date());
+  const rep = (() => {
+    const t = data.txs.filter((x) => !x.deleted && dOnly(x.date) === today);
+    const p = profitIn(today, today), o = ownProfitIn(today, today);
+    const prof = {};
+    [...Object.keys(p), ...Object.keys(o)].forEach((c) => (prof[c] = (p[c] || 0) + (o[c] || 0)));
+    const vol = {};
+    t.forEach((x) => { vol[x.curId] = vol[x.curId] || { buy: 0, sell: 0 }; vol[x.curId][x.type] += x.amount; });
+    const pend = data.txs.filter((x) => !x.deleted && x.status === "pending").length;
+    return { t, prof, vol, pend };
+  })();
+
+  const repText = () => {
+    const L = [`*ڕاپۆرتی ڕۆژانە*`, `📅 ${new Date().toLocaleDateString("en-GB")}`, ""];
+    L.push(`مامەڵە: ${rep.t.length}  (کڕین ${rep.t.filter((x) => x.type === "buy").length} · فرۆشتن ${rep.t.filter((x) => x.type === "sell").length})`);
+    if (rep.pend) L.push(`چاوەڕوانی پارە: ${rep.pend}`);
+    L.push("");
+    if (Object.keys(rep.vol).length) {
+      L.push("*قەبارە*");
+      Object.entries(rep.vol).forEach(([cid, v]) => {
+        const bits = [];
+        if (v.buy) bits.push(`کڕین ${fmt(v.buy, 0)}`);
+        if (v.sell) bits.push(`فرۆشتن ${fmt(v.sell, 0)}`);
+        L.push(`• ${cur(cid).name}: ${bits.join(" · ")}`);
+      });
+      L.push("");
+    }
+    L.push("*خێر*");
+    if (!Object.keys(rep.prof).length) L.push("• هیچ");
+    Object.entries(rep.prof).forEach(([cid, v]) => L.push(`• ${fmt(v, 0)} ${cur(cid).code}`));
+    L.push("");
+    L.push("*قاسەی گشتی*");
+    data.currencies.forEach((c) => { if (calc.phys[c.id]) L.push(`• ${c.name}: ${fmt(calc.phys[c.id], 0)}`); });
+    if (ratesReady) { L.push(""); L.push(`کۆی گشتی ≈ ${fmt(sumUsd(calc.phys), 0)} USD`); L.push(`ماڵی خۆم ≈ ${fmt(sumUsd(mySafe), 0)} USD`); }
+    return L.join("\n");
+  };
+
+  const TABS = [["trend", "ڕەوت"], ["rates", "مێژووی نرخ"], ["report", "ڕاپۆرتی ڕۆژ"], ["log", "چالاکی"]];
+
+  return (
+    <div className="space-y-4">
+      <H sub="ڕەوتی خێر، مێژووی نرخەکان، و کورتەی ڕۆژ">ڕەوت و شیکاری</H>
+
+      <div className="flex gap-1 rounded-2xl p-1 overflow-x-auto"
+        style={{ background: "var(--card)", border: "1px solid var(--line)", boxShadow: "var(--shadow-1)" }}>
+        {TABS.map(([k, t]) => (
+          <button key={k} onClick={() => setTab(k)}
+            style={tab === k ? { background: "linear-gradient(180deg, var(--jade-lt), var(--jade))", color: "#fff", boxShadow: "0 2px 8px -2px rgba(14,122,107,.4)" } : { color: "var(--txt-2)" }}
+            className={`flex-1 whitespace-nowrap px-3 py-2.5 rounded-xl text-sm transition-all press ${tab === k ? "font-bold" : "font-medium"}`}>{t}</button>
+        ))}
+      </div>
+
+      {tab === "trend" && (
+        <>
+          <div className="flex gap-1.5 flex-wrap">
+            {[[7, "٧ ڕۆژ"], [14, "١٤ ڕۆژ"], [30, "٣٠ ڕۆژ"]].map(([d, l]) => (
+              <button key={d} onClick={() => setSpan(d)}
+                style={span === d ? { background: "var(--brass)", color: "#fff" } : { background: "var(--line-soft)", color: "var(--txt-2)" }}
+                className="px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all press">{l}</button>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Card className="p-4 fade-up">
+              <div className="text-[11px]" style={{ color: "var(--txt-2)" }}>خێری {span} ڕۆژ</div>
+              <div className="text-2xl font-bold mt-0.5" style={{ ...num, color: totProfit >= 0 ? "var(--jade)" : "var(--verm)" }}>
+                {fmt(totProfit, 0)}{ratesReady && <span className="text-xs mr-1" style={{ color: "var(--txt-3)" }}>$</span>}
+              </div>
+              <div className="mt-1.5"><Spark data={dayProfit.map((d) => d.v)} w={110} h={26} /></div>
+            </Card>
+            <Card className="p-4 fade-up" style={{ animationDelay: "60ms" }}>
+              <div className="text-[11px]" style={{ color: "var(--txt-2)" }}>مامەڵەکان</div>
+              <div className="text-2xl font-bold mt-0.5" style={{ ...num, color: "var(--txt)" }}>{totTx}</div>
+              <div className="mt-1.5"><Spark data={dayVol.map((d) => d.v)} w={110} h={26} color="var(--brass)" /></div>
+            </Card>
+          </div>
+
+          <Card className="p-5">
+            <SecLbl>خێری ڕۆژانە{ratesReady ? " (دۆلار)" : ""}</SecLbl>
+            <Bars rows={dayProfit} />
+            {best?.v > 0 && (
+              <div className="text-[11px] mt-3 pt-3" style={{ color: "var(--txt-3)", borderTop: "1px solid var(--line-soft)" }}>
+                باشترین ڕۆژ: <b style={{ ...num, color: "var(--jade)" }}>{fmt(best.v, 0)}</b> لە {best.k}
+              </div>
+            )}
+          </Card>
+
+          <Card className="p-5">
+            <SecLbl>ژمارەی مامەڵەکان</SecLbl>
+            <Bars rows={dayVol} h={110} />
+          </Card>
+
+          <div className="grid md:grid-cols-2 gap-4">
+            {buySell.length > 0 && (
+              <Card className="p-5"><SecLbl>کڕین بەرامبەر فرۆشتن</SecLbl><Donut rows={buySell} /></Card>
+            )}
+            {safeSplit.length > 0 && (
+              <Card className="p-5"><SecLbl>دابەشکردنی قاسە</SecLbl><Donut rows={safeSplit} /></Card>
+            )}
+          </div>
+        </>
+      )}
+
+      {tab === "rates" && (
+        <>
+          <div className="flex gap-1.5 flex-wrap">
+            {rateCurs.map((c) => (
+              <button key={c.id} onClick={() => setRateCur(c.id)}
+                style={activeCur === c.id
+                  ? { background: "var(--brass)", color: "#fff", boxShadow: "0 2px 8px -2px rgba(184,134,59,.45)" }
+                  : { background: "var(--line-soft)", color: "var(--txt-2)" }}
+                className="px-3.5 py-2 rounded-xl text-xs font-bold transition-all press flex items-center gap-2">
+                <CurBadge c={c} size="sm" /> {c.name}
+              </button>
+            ))}
+          </div>
+          <Card className="p-5">
+            <SecLbl>مێژووی نرخی {cur(activeCur).name} — ١ دۆلار بە چەند</SecLbl>
+            {hist === null ? <Empty t="بارکردن..." /> :
+              rateSeries.length === 0 ? (
+                <div className="text-sm rounded-xl p-3.5"
+                  style={{ background: "color-mix(in srgb, var(--amber) 11%, transparent)", color: "var(--amber)" }}>
+                  هێشتا مێژوویەک نییە — هەر جارێک نرخ بگۆڕیت، لێرە تۆمار دەبێت
+                </div>
+              ) : <>
+                <LineChart series={rateSeries} />
+                <div className="flex gap-4 mt-3 pt-3 text-xs" style={{ borderTop: "1px solid var(--line-soft)" }}>
+                  {rateSeries.map((s2, i) => {
+                    const last = s2.pts[s2.pts.length - 1]?.v, first = s2.pts[0]?.v;
+                    const ch = last - first;
+                    return (
+                      <span key={i} className="flex items-center gap-1.5" style={{ color: "var(--txt-2)" }}>
+                        <span className="w-2.5 h-2.5 rounded-full" style={{ background: s2.color }} />
+                        {s2.name}: <b style={num}>{fmt(last, 3)}</b>
+                        {Math.abs(ch) > 1e-9 && (
+                          <b style={{ ...num, color: ch > 0 ? "var(--jade)" : "var(--verm)" }}>
+                            {ch > 0 ? "▲" : "▼"} {fmt(Math.abs(ch), 3)}
+                          </b>
+                        )}
+                      </span>
+                    );
+                  })}
+                </div>
+              </>}
+          </Card>
+        </>
+      )}
+
+      {tab === "report" && (
+        <>
+          <Card dark className="p-5">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <div className="text-[11px]" style={{ color: "rgba(255,255,255,.5)" }}>ڕاپۆرتی ئەمڕۆ</div>
+                <div className="text-lg font-bold" style={num}>{new Date().toLocaleDateString("en-GB")}</div>
+              </div>
+              <div className="text-left">
+                <div className="text-[11px]" style={{ color: "rgba(255,255,255,.5)" }}>مامەڵە</div>
+                <div className="text-2xl font-bold" style={num}>{rep.t.length}</div>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {[["کڕین", rep.t.filter((x) => x.type === "buy").length], ["فرۆشتن", rep.t.filter((x) => x.type === "sell").length], ["چاوەڕوان", rep.pend]].map(([l, v], i) => (
+                <div key={i} className="rounded-xl p-2.5 text-center" style={{ background: "rgba(255,255,255,.06)" }}>
+                  <div className="text-[10px]" style={{ color: "rgba(255,255,255,.5)" }}>{l}</div>
+                  <div className="text-lg font-bold" style={num}>{v}</div>
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          <Card className="p-5">
+            <SecLbl>خێری ئەمڕۆ</SecLbl>
+            {Object.keys(rep.prof).length === 0 ? <Empty t="هێشتا هیچ خێرێک نییە" /> :
+              Object.entries(rep.prof).map(([cid, v]) => (
+                <div key={cid} className="flex items-center justify-between py-2.5 border-b last:border-0" style={{ borderColor: "var(--line-soft)" }}>
+                  <span className="text-sm flex items-center gap-2" style={{ color: "var(--txt-2)" }}><CurBadge c={cur(cid)} size="sm" /> {cur(cid).name}</span>
+                  <Money v={v} dec={0} pos />
+                </div>
+              ))}
+          </Card>
+
+          {Object.keys(rep.vol).length > 0 && (
+            <Card className="p-5">
+              <SecLbl>قەبارەی ئەمڕۆ</SecLbl>
+              {Object.entries(rep.vol).map(([cid, v]) => (
+                <div key={cid} className="flex items-center justify-between py-2.5 border-b last:border-0" style={{ borderColor: "var(--line-soft)" }}>
+                  <span className="text-sm flex items-center gap-2" style={{ color: "var(--txt-2)" }}><CurBadge c={cur(cid)} size="sm" /> {cur(cid).name}</span>
+                  <div className="text-left text-sm">
+                    {v.buy > 0 && <div style={{ ...num, color: "var(--jade)" }}>کڕین {fmt(v.buy, 0)}</div>}
+                    {v.sell > 0 && <div style={{ ...num, color: "var(--verm)" }}>فرۆشتن {fmt(v.sell, 0)}</div>}
+                  </div>
+                </div>
+              ))}
+            </Card>
+          )}
+
+          <div className="flex gap-2">
+            <Btn kind="gold" className="flex-1 flex items-center justify-center gap-2"
+              onClick={() => { const t = repText(); if (navigator.share) navigator.share({ text: t }).catch(() => {}); else window.open(`https://wa.me/?text=${encodeURIComponent(t)}`, "_blank"); }}>
+              <MessageCircle className="w-4 h-4" /> ناردن بە واتساپ
+            </Btn>
+            <Btn kind="ghost" className="flex-1"
+              onClick={() => navigator.clipboard.writeText(repText()).then(() => flash("کۆپی کرا ✓"))}>کۆپیکردن</Btn>
+          </div>
+        </>
+      )}
+
+      {tab === "log" && (
+        Object.keys(dayGroups).length === 0 ? <Card><Empty t="هیچ چالاکییەک نییە" /></Card> :
+          Object.entries(dayGroups).map(([day, items]) => (
+            <div key={day}>
+              <div className="flex items-center gap-2.5 mb-2.5 mt-4 first:mt-0">
+                <span className="px-2.5 py-1 rounded-lg text-[11px] font-bold"
+                  style={{ background: "var(--line-soft)", color: "var(--txt-2)", ...num }}>
+                  {new Date(day).toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short" })}
+                </span>
+                <span className="flex-1 h-px" style={{ background: "var(--line-soft)" }} />
+                <span className="text-[11px]" style={{ color: "var(--txt-3)" }}>{items.length} کردار</span>
+              </div>
+              <div className="relative pr-4">
+                <span className="absolute top-1 bottom-1 right-[5px] w-px" style={{ background: "var(--line)" }} />
+                {items.map((a, i) => (
+                  <div key={a.id || i} className="relative pb-3 last:pb-0 fade-up" style={{ animationDelay: `${Math.min(i, 8) * 30}ms` }}>
+                    <span className="absolute right-[-14px] top-1.5 w-2.5 h-2.5 rounded-full ring-4"
+                      style={{ background: "var(--brass)", ringColor: "var(--paper)", boxShadow: "0 0 0 4px var(--paper)" }} />
+                    <div className="text-sm font-semibold" style={{ color: "var(--txt)" }}>{a.action}</div>
+                    {a.detail && <div className="text-xs mt-0.5" style={{ color: "var(--txt-2)" }}>{a.detail}</div>}
+                    <div className="text-[10px] mt-0.5" style={{ ...num, color: "var(--txt-3)" }}>
+                      {new Date(a.date).toLocaleTimeString("en-GB")}{a.userName && ` · ${a.userName}`}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))
+      )}
     </div>
   );
 }

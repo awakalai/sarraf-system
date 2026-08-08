@@ -40,7 +40,7 @@ const CurBadge = ({ c, size = "md", pulse }) => {
   const st = curStyle(c);
   const dim = size === "lg" ? "w-12 h-12 text-lg" : size === "sm" ? "w-7 h-7 text-[11px]" : "w-9 h-9 text-sm";
   return (
-    <div className={`${dim} rounded-full font-bold flex items-center justify-center shrink-0 relative ${pulse ? "cur-pop" : ""}`}
+    <div className={`${dim} rounded-full font-bold flex items-center justify-center shrink-0 relative ${pulse ? "pop" : ""}`}
       style={{
         background: `radial-gradient(circle at 32% 26%, ${st.hi}, ${st.mid} 46%, ${st.lo})`,
         color: "#fff",
@@ -81,7 +81,166 @@ const tr = (k) => (_lang === "ku" ? k : (DICT[_lang]?.[k] ?? k));
 /* ══════════════════ چارتەکان ══════════════════ */
 
 /* هێڵی بچووک — ڕەوتی خێرا */
-function Spark({ data, w = 96, h = 30, color = "var(--jade)" }) {
+const Card = ({ children, className = "", onClick, tone, glass, style }) => {
+  const t = tone === "accent"
+    ? { background: "linear-gradient(150deg, var(--ac), var(--ac-2))", borderColor: "transparent", color: "#fff" }
+    : tone === "deep"
+      ? { background: "linear-gradient(155deg, var(--surf-2), var(--bg-2))", borderColor: "var(--line)" }
+      : {};
+  return (
+    <div onClick={onClick} style={{ ...t, ...style }}
+      className={`${glass ? "glass" : "card"} ${onClick ? "tap hov cursor-pointer" : ""} ${className}`}>
+      {children}
+    </div>
+  );
+};
+
+/* ── ژمارەی سەرەکی — گەورە و ڕوون ── */
+const Hero = ({ label, value, unit, sub, tone = "txt", size = "lg" }) => (
+  <div className="text-center py-1">
+    {label && <div className="text-[12px] font-medium mb-1.5" style={{ color: "var(--txt-3)" }}>{label}</div>}
+    <div className="flex items-baseline justify-center gap-1.5">
+      <span className={size === "lg" ? "text-[40px]" : "text-[28px]"}
+        style={{ ...num, fontWeight: 600, letterSpacing: "-.03em", lineHeight: 1,
+                 color: tone === "pos" ? "var(--pos)" : tone === "neg" ? "var(--neg)" : "var(--txt)" }}>
+        {value}
+      </span>
+      {unit && <span className="text-base font-medium" style={{ color: "var(--txt-3)" }}>{unit}</span>}
+    </div>
+    {sub && <div className="text-[12px] mt-2" style={{ color: "var(--txt-3)" }}>{sub}</div>}
+  </div>
+);
+
+/* ── دوگمەی بازنەیی — کرداری خێرا ── */
+const Quick = ({ icon: Ic, label, onClick, active }) => (
+  <button onClick={onClick} className="flex flex-col items-center gap-2 tap group">
+    <span className="w-[52px] h-[52px] rounded-full flex items-center justify-center transition-all"
+      style={active
+        ? { background: "linear-gradient(160deg, var(--ac), var(--ac-2))", boxShadow: "0 6px 18px -5px rgba(var(--ac-gl),.55)" }
+        : { background: "var(--glass)", border: "1px solid var(--line)", backdropFilter: "var(--blur)" }}>
+      <Ic className="w-[21px] h-[21px]" style={{ color: active ? "#fff" : "var(--txt-2)" }} />
+    </span>
+    <span className="text-[11px] font-medium" style={{ color: active ? "var(--txt)" : "var(--txt-3)" }}>{label}</span>
+  </button>
+);
+
+const H = ({ children, sub }) => (
+  <div className="mb-5">
+    <h2 className="text-[26px] font-semibold tracking-tight leading-tight" style={{ color: "var(--txt)" }}>{children}</h2>
+    {sub && <p className="text-[13px] mt-1 leading-relaxed" style={{ color: "var(--txt-3)" }}>{sub}</p>}
+  </div>
+);
+
+const SecLbl = ({ children }) => (
+  <div className="text-[12px] font-semibold mb-3" style={{ color: "var(--txt-2)" }}>{children}</div>
+);
+
+const Lbl = ({ children }) => (
+  <label className="block text-[12px] font-medium mb-1.5" style={{ color: "var(--txt-3)" }}>{children}</label>
+);
+
+const fieldSty = {
+  background: "var(--surf-2)", border: "1px solid var(--line)", color: "var(--txt)",
+  borderRadius: "var(--r-sm)", transition: "border-color .18s, box-shadow .18s, background .18s",
+};
+const onFoc = (e) => { e.target.style.borderColor = "var(--ac)"; e.target.style.boxShadow = "0 0 0 3px rgba(var(--ac-gl),.16)"; e.target.style.background = "var(--surf-3)"; };
+const onBlr = (e) => { e.target.style.borderColor = "var(--line)"; e.target.style.boxShadow = "none"; e.target.style.background = "var(--surf-2)"; };
+const Inp = (p) => (
+  <input {...p} style={{ ...fieldSty, ...(p.style || {}) }}
+    onFocus={(e) => { onFoc(e); p.onFocus?.(e); }} onBlur={(e) => { onBlr(e); p.onBlur?.(e); }}
+    className={`w-full px-4 py-3 text-[15px] outline-none ${p.className || ""}`} />
+);
+const Sel = (p) => (
+  <select {...p} style={{ ...fieldSty, ...(p.style || {}) }} onFocus={onFoc} onBlur={onBlr}
+    className={`w-full px-4 py-3 text-[15px] outline-none ${p.className || ""}`}>{p.children}</select>
+);
+
+const Btn = ({ kind = "primary", className = "", style, ...p }) => {
+  const k = {
+    primary: { background: "linear-gradient(170deg, var(--ac), var(--ac-2))", color: "#fff",
+               boxShadow: "0 4px 16px -4px rgba(var(--ac-gl),.5), inset 0 1px 0 rgba(255,255,255,.2)" },
+    danger:  { background: "linear-gradient(170deg, #FB7185, #E11D48)", color: "#fff",
+               boxShadow: "0 4px 16px -4px rgba(225,29,72,.45), inset 0 1px 0 rgba(255,255,255,.18)" },
+    gold:    { background: "linear-gradient(170deg, #F0C070, #C89232)", color: "#1A1408",
+               boxShadow: "0 4px 16px -4px rgba(200,146,50,.5), inset 0 1px 0 rgba(255,255,255,.3)" },
+    ghost:   { background: "var(--glass)", color: "var(--txt)", border: "1px solid var(--line)",
+               backdropFilter: "var(--blur)" },
+  }[kind];
+  return <button {...p} style={{ borderRadius: "var(--r-sm)", ...k, ...style }}
+    className={`px-5 py-3 text-[14px] font-semibold tap disabled:opacity-40 disabled:shadow-none ${className}`} />;
+};
+
+const Money = ({ v, dec, pos }) => (
+  <span style={{ ...num, fontWeight: 600, color: v < 0 ? "var(--neg)" : pos ? "var(--pos)" : "var(--txt)" }}>{fmt(v, dec)}</span>
+);
+
+const Empty = ({ t }) => (
+  <div className="text-center py-14 text-[13px]" style={{ color: "var(--txt-3)" }}>{t}</div>
+);
+
+const Back = ({ onClick, t }) => (
+  <button onClick={onClick} className="flex items-center gap-2 text-[13px] font-medium mb-5 tap"
+    style={{ color: "var(--txt-2)" }}>
+    <span className="w-7 h-7 rounded-full flex items-center justify-center"
+      style={{ background: "var(--glass)", border: "1px solid var(--line)" }}>
+      <ChevronLeft className="w-3.5 h-3.5 rotate-180" />
+    </span>
+    {t}
+  </button>
+);
+
+const Pill = ({ tone = "slate", children }) => {
+  const t = {
+    slate: { bg: "var(--glass-2)", fg: "var(--txt-2)" },
+    green: { bg: "rgba(52,211,153,.14)", fg: "var(--pos)" },
+    red:   { bg: "rgba(251,113,133,.14)", fg: "var(--neg)" },
+    amber: { bg: "rgba(251,191,36,.14)", fg: "var(--warn)" },
+  }[tone];
+  return <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold whitespace-nowrap"
+    style={{ background: t.bg, color: t.fg }}>{children}</span>;
+};
+
+/* ── تابەکان — سووک و سادە ── */
+const Tabs = ({ items, value, onChange, className = "" }) => (
+  <div className={`flex gap-1 p-1 rounded-full overflow-x-auto ${className}`}
+    style={{ background: "var(--glass)", border: "1px solid var(--line)", backdropFilter: "var(--blur)" }}>
+    {items.map(([k, t]) => {
+      const on = value === k;
+      return (
+        <button key={k} onClick={() => onChange(k)}
+          style={on
+            ? { background: "var(--surf-3)", color: "var(--txt)", boxShadow: "var(--sh-1)" }
+            : { color: "var(--txt-3)" }}
+          className={`flex-1 whitespace-nowrap px-4 py-2 rounded-full text-[13px] tap ${on ? "font-semibold" : "font-medium"}`}>
+          {t}
+        </button>
+      );
+    })}
+  </div>
+);
+
+/* ── ڕیزی لیست — بنەمای هەموو لیستەکان ── */
+const Row = ({ icon, title, sub, right, rightSub, onClick, tone }) => (
+  <div onClick={onClick}
+    className={`flex items-center gap-3 py-3 ${onClick ? "tap cursor-pointer" : ""}`}>
+    {icon}
+    <div className="min-w-0 flex-1">
+      <div className="text-[14px] font-medium truncate" style={{ color: "var(--txt)" }}>{title}</div>
+      {sub && <div className="text-[11.5px] mt-0.5 truncate" style={{ color: "var(--txt-3)" }}>{sub}</div>}
+    </div>
+    {(right || rightSub) && (
+      <div className="text-end shrink-0">
+        {right && <div className="text-[14px] font-semibold" style={{ ...num, color: tone === "pos" ? "var(--pos)" : tone === "neg" ? "var(--neg)" : "var(--txt)" }}>{right}</div>}
+        {rightSub && <div className="text-[11px] mt-0.5" style={{ color: "var(--txt-3)" }}>{rightSub}</div>}
+      </div>
+    )}
+  </div>
+);
+
+/* ══════════════════ چارتەکان ══════════════════ */
+
+/* هێڵی بچووک — ڕەوتی خێرا */
+function Spark({ data, w = 96, h = 30, color = "var(--pos)" }) {
   if (!data?.length) return <div style={{ width: w, height: h }} />;
   const mx = Math.max(...data, 0), mn = Math.min(...data, 0);
   const rng = mx - mn || 1;
@@ -118,7 +277,7 @@ function Bars({ rows, h = 150, fmtV = (v) => fmt(v, 0) }) {
               onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}>
               {on && (
                 <div className="absolute -top-1 z-10 px-2 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap pointer-events-none"
-                  style={{ background: "var(--ink)", color: "#fff", boxShadow: "var(--shadow-2)", transform: "translateY(-100%)" }}>
+                  style={{ background: "var(--bg-2)", color: "#fff", boxShadow: "var(--sh-2)", transform: "translateY(-100%)" }}>
                   <span style={num}>{fmtV(r.v)}</span>
                 </div>
               )}
@@ -126,8 +285,8 @@ function Bars({ rows, h = 150, fmtV = (v) => fmt(v, 0) }) {
                 style={{
                   height: `${Math.max(pct, 2)}%`,
                   background: neg
-                    ? "linear-gradient(180deg, var(--verm-lt), var(--verm))"
-                    : "linear-gradient(180deg, var(--jade-lt), var(--jade))",
+                    ? "linear-gradient(180deg, var(--neg), var(--neg))"
+                    : "linear-gradient(180deg, var(--ac), var(--pos))",
                   opacity: hover === null || on ? 1 : .45,
                   boxShadow: on ? "0 4px 12px -3px rgba(14,122,107,.5)" : "none",
                 }} />
@@ -163,7 +322,7 @@ function LineChart({ series, h = 190, unit = "" }) {
         onMouseLeave={() => setHover(null)}>
         {[0, .25, .5, .75, 1].map((f) => (
           <g key={f}>
-            <line x1="0" y1={H * f} x2={W} y2={H * f} stroke="var(--line-soft)" strokeWidth="1" />
+            <line x1="0" y1={H * f} x2={W} y2={H * f} stroke="var(--line)" strokeWidth="1" />
             <text x={W} y={H * f - 3} textAnchor="end" fontSize="8.5" fill="var(--txt-3)" style={num}>
               {fmt(hi - rng * f, 3)}
             </text>
@@ -176,7 +335,7 @@ function LineChart({ series, h = 190, unit = "" }) {
               <path d={d} fill="none" stroke={s2.color} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
               {s2.pts.map((p, i) => (
                 <circle key={i} cx={X(i, s2.pts.length)} cy={Y(p.v)} r={hover === i ? 4.5 : 2.4}
-                  fill={s2.color} stroke="var(--card)" strokeWidth="1.5"
+                  fill={s2.color} stroke="var(--surf)" strokeWidth="1.5"
                   onMouseEnter={() => setHover(i)} style={{ cursor: "pointer", transition: "r .15s" }} />
               ))}
             </g>
@@ -184,12 +343,12 @@ function LineChart({ series, h = 190, unit = "" }) {
         })}
         {hover != null && series[0]?.pts[hover] && (
           <line x1={X(hover, series[0].pts.length)} y1="0" x2={X(hover, series[0].pts.length)} y2={H}
-            stroke="var(--brass)" strokeWidth="1" strokeDasharray="3 3" />
+            stroke="var(--ac)" strokeWidth="1" strokeDasharray="3 3" />
         )}
       </svg>
       {hover != null && series[0]?.pts[hover] && (
         <div className="absolute top-0 right-0 px-2.5 py-1.5 rounded-lg text-[11px] pointer-events-none"
-          style={{ background: "var(--ink)", color: "#fff", boxShadow: "var(--shadow-2)" }}>
+          style={{ background: "var(--bg-2)", color: "#fff", boxShadow: "var(--sh-2)" }}>
           <div style={{ color: "rgba(255,255,255,.55)" }}>{series[0].pts[hover].k}</div>
           {series.map((s2, i) => s2.pts[hover] && (
             <div key={i} className="flex items-center gap-1.5">
@@ -265,212 +424,115 @@ function CountUp({ v, dec = 0, className = "", style }) {
 const dOnly = (d) => (d || "").slice(0, 10);
 
 /* ══════════════════ پێکهاتە بچووکەکان ══════════════════ */
-const Card = ({ children, className = "", onClick, dark, accent, brass, style }) => {
-  const bg = dark
-    ? { background: "linear-gradient(155deg, var(--ink-soft), var(--ink))", borderColor: "transparent", color: "#F2F5F9" }
-    : accent
-      ? { background: "linear-gradient(155deg, var(--jade-lt), var(--jade-dp))", borderColor: "transparent", color: "#fff" }
-      : { background: "var(--card)", borderColor: "var(--line)", color: "var(--txt)" };
-  return (
-    <div onClick={onClick}
-      style={{ ...bg, boxShadow: dark || accent ? "var(--shadow-2)" : "var(--shadow-1), var(--inset)", ...style }}
-      className={`border rounded-2xl ${brass ? "brass-edge" : ""} ${onClick ? "cursor-pointer lift press" : ""} ${className}`}>
-      {children}
-    </div>
-  );
-};
-
-const H = ({ children, sub }) => (
-  <div className="mb-5">
-    <div className="flex items-center gap-2.5">
-      <span className="w-1 h-5 rounded-full" style={{ background: "linear-gradient(180deg, var(--brass-lt), var(--brass-dp))" }} />
-      <h2 className="text-[22px] font-bold tracking-tight" style={{ color: "var(--txt)" }}>{children}</h2>
-    </div>
-    {sub && <p className="text-[13px] mt-1 pr-3.5 leading-relaxed" style={{ color: "var(--txt-2)" }}>{sub}</p>}
-  </div>
-);
-
-const SecLbl = ({ children }) => (
-  <div className="text-[11px] font-bold uppercase tracking-[.12em] mb-3 flex items-center gap-2" style={{ color: "var(--txt-3)" }}>
-    {children}
-    <span className="flex-1 h-px" style={{ background: "var(--line-soft)" }} />
-  </div>
-);
-
-const Lbl = ({ children }) => (
-  <label className="block text-[12px] font-semibold mb-1.5" style={{ color: "var(--txt-2)" }}>{children}</label>
-);
-
-const fieldCls = "w-full border rounded-xl px-3.5 py-2.5 text-sm outline-none transition-all";
-const fieldSty = { background: "var(--card)", borderColor: "var(--line)", color: "var(--txt)" };
-const Inp = (p) => (
-  <input {...p} style={{ ...fieldSty, ...(p.style || {}) }}
-    onFocus={(e) => { e.target.style.borderColor = "var(--brass)"; e.target.style.boxShadow = "0 0 0 3px color-mix(in srgb, var(--brass) 16%, transparent)"; p.onFocus?.(e); }}
-    onBlur={(e) => { e.target.style.borderColor = "var(--line)"; e.target.style.boxShadow = "none"; p.onBlur?.(e); }}
-    className={`${fieldCls} ${p.className || ""}`} />
-);
-const Sel = (p) => (
-  <select {...p} style={{ ...fieldSty, ...(p.style || {}) }}
-    onFocus={(e) => { e.target.style.borderColor = "var(--brass)"; e.target.style.boxShadow = "0 0 0 3px color-mix(in srgb, var(--brass) 16%, transparent)"; }}
-    onBlur={(e) => { e.target.style.borderColor = "var(--line)"; e.target.style.boxShadow = "none"; }}
-    className={`${fieldCls} ${p.className || ""}`}>{p.children}</select>
-);
-
-const Btn = ({ kind = "primary", className = "", style, ...p }) => {
-  const k = {
-    primary: { background: "linear-gradient(180deg, var(--jade-lt), var(--jade))", color: "#fff", boxShadow: "0 1px 2px rgba(14,122,107,.3), 0 4px 12px -2px rgba(14,122,107,.35), inset 0 1px 0 rgba(255,255,255,.18)" },
-    danger:  { background: "linear-gradient(180deg, var(--verm-lt), var(--verm))", color: "#fff", boxShadow: "0 1px 2px rgba(180,54,44,.3), 0 4px 12px -2px rgba(180,54,44,.32), inset 0 1px 0 rgba(255,255,255,.18)" },
-    gold:    { background: "linear-gradient(180deg, var(--brass-lt), var(--brass))", color: "#fff", boxShadow: "0 1px 2px rgba(184,134,59,.3), 0 4px 12px -2px rgba(184,134,59,.35), inset 0 1px 0 rgba(255,255,255,.22)" },
-    ghost:   { background: "var(--card)", color: "var(--txt)", border: "1px solid var(--line)", boxShadow: "var(--shadow-1)" },
-  }[kind];
-  return <button {...p} style={{ ...k, ...style }}
-    className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition-all press disabled:opacity-45 disabled:shadow-none hover:brightness-[1.06] ${className}`} />;
-};
-
-const Money = ({ v, dec, pos }) => (
-  <span style={{ ...num, color: v < 0 ? "var(--verm)" : pos ? "var(--jade)" : "var(--txt)" }} className="font-bold">{fmt(v, dec)}</span>
-);
-
-const Empty = ({ t }) => (
-  <div className="text-center py-12 text-sm" style={{ color: "var(--txt-3)" }}>{t}</div>
-);
-
-const Back = ({ onClick, t }) => (
-  <button onClick={onClick} className="flex items-center gap-1.5 text-sm font-semibold mb-4 hover:gap-2.5 transition-all"
-    style={{ color: "var(--brass)" }}>
-    <ChevronLeft className="w-4 h-4 rotate-180" /> {t}
-  </button>
-);
-
-const Pill = ({ tone = "slate", children }) => {
-  const t = {
-    slate: { bg: "color-mix(in srgb, var(--txt-3) 12%, transparent)", fg: "var(--txt-2)" },
-    green: { bg: "color-mix(in srgb, var(--jade) 13%, transparent)", fg: "var(--jade)" },
-    red:   { bg: "color-mix(in srgb, var(--verm) 13%, transparent)", fg: "var(--verm)" },
-    amber: { bg: "color-mix(in srgb, var(--amber) 15%, transparent)", fg: "var(--amber)" },
-  }[tone];
-  return <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold whitespace-nowrap"
-    style={{ background: t.bg, color: t.fg }}>{children}</span>;
-};
-
-/* تابەکان — یەک شێواز بۆ هەموو شوێنێک */
-const Tabs = ({ items, value, onChange, className = "" }) => (
-  <div className={`flex gap-1 p-1 rounded-2xl border overflow-x-auto ${className}`}
-    style={{ background: "var(--card)", borderColor: "var(--line)", boxShadow: "var(--shadow-1)" }}>
-    {items.map(([k, t]) => {
-      const on = value === k;
-      return (
-        <button key={k} onClick={() => onChange(k)}
-          style={on
-            ? { background: "linear-gradient(180deg, var(--jade-lt), var(--jade))", color: "#fff", boxShadow: "0 2px 8px -2px rgba(14,122,107,.4)" }
-            : { color: "var(--txt-2)" }}
-          className="flex-1 whitespace-nowrap px-3.5 py-2.5 rounded-xl text-sm transition-all press font-medium data-[on=true]:font-bold"
-          data-on={on}>{t}</button>
-      );
-    })}
-  </div>
-);
-
 function Styles() {
   return <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 
-        :root {
-          --ink:        #0D1117;
-          --ink-soft:   #161C26;
-          --paper:      #F6F7F9;
-          --card:       #FFFFFF;
-          --line:       #E3E6EB;
-          --line-soft:  #EDEFF3;
-          --txt:        #16202E;
-          --txt-2:      #5A6678;
-          --txt-3:      #8B95A5;
-          --brass:      #B8863B;
-          --brass-lt:   #D9A857;
-          --brass-dp:   #8C6425;
-          --jade:       #0E7A6B;
-          --jade-lt:    #14A08C;
-          --jade-dp:    #095A4F;
-          --verm:       #B4362C;
-          --verm-lt:    #D14A3C;
-          --amber:      #B4770E;
-          --shadow-1:   0 1px 2px rgba(13,17,23,.05), 0 1px 3px rgba(13,17,23,.04);
-          --shadow-2:   0 2px 4px rgba(13,17,23,.05), 0 6px 16px -4px rgba(13,17,23,.09);
-          --shadow-3:   0 8px 28px -6px rgba(13,17,23,.16), 0 2px 6px rgba(13,17,23,.06);
-          --inset:      inset 0 1px 0 rgba(255,255,255,.7);
-        }
-        [data-theme="dark"] {
-          --ink:        #05080C;
-          --ink-soft:   #0C1219;
-          --paper:      #0A0E14;
-          --card:       #141A23;
-          --line:       #232C38;
-          --line-soft:  #1B222C;
-          --txt:        #E8EDF4;
-          --txt-2:      #9BA7B8;
-          --txt-3:      #6B7688;
-          --brass:      #D9A857;
-          --brass-lt:   #E8C27E;
-          --jade:       #17A892;
-          --jade-lt:    #22C5AB;
-          --verm:       #E05A4A;
-          --verm-lt:    #F07666;
-          --amber:      #D99A2B;
-          --shadow-1:   0 1px 2px rgba(0,0,0,.4);
-          --shadow-2:   0 2px 6px rgba(0,0,0,.45), 0 8px 20px -6px rgba(0,0,0,.5);
-          --shadow-3:   0 10px 34px -8px rgba(0,0,0,.6);
-          --inset:      inset 0 1px 0 rgba(255,255,255,.05);
-        }
+:root, [data-theme="dark"] {
+  --bg:        #08090C;
+  --bg-2:      #0B0D11;
+  --surf:      #12151B;
+  --surf-2:    #171B22;
+  --surf-3:    #1E232C;
+  --line:      rgba(255,255,255,.07);
+  --line-2:    rgba(255,255,255,.12);
+  --txt:       #F2F4F8;
+  --txt-2:     #9AA3B2;
+  --txt-3:     #616B7C;
+  --pos:       #34D399;
+  --neg:       #FB7185;
+  --warn:      #FBBF24;
+  --glass:     rgba(255,255,255,.045);
+  --glass-2:   rgba(255,255,255,.075);
+  --blur:      saturate(180%) blur(22px);
+  --r-sm: 14px; --r: 20px; --r-lg: 26px; --r-xl: 32px;
+  --sh-1: 0 1px 2px rgba(0,0,0,.4);
+  --sh-2: 0 4px 16px -4px rgba(0,0,0,.5), 0 1px 3px rgba(0,0,0,.4);
+  --sh-3: 0 18px 48px -12px rgba(0,0,0,.7), 0 4px 12px rgba(0,0,0,.4);
+  --ring: inset 0 1px 0 rgba(255,255,255,.07);
+}
 
-        body, input, select, textarea, button { font-family: 'IBM Plex Sans Arabic', 'Segoe UI', Tahoma, sans-serif; }
-        html[lang="en"] body, html[lang="en"] input, html[lang="en"] select,
-        html[lang="en"] textarea, html[lang="en"] button { font-family: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif; }
-        .mono, [style*="tabular-nums"] { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-feature-settings: "tnum" 1; }
-        /* لە دۆخی ئینگلیزیدا فۆنتێکی گونجاو */
-        [lang="en"] body, [lang="en"] input, [lang="en"] select, [lang="en"] button {
-          font-family: 'IBM Plex Sans Arabic', 'Segoe UI', system-ui, sans-serif;
-        }
+[data-theme="light"] {
+  --bg:        #F4F5F8;
+  --bg-2:      #EDEFF4;
+  --surf:      #FFFFFF;
+  --surf-2:    #FFFFFF;
+  --surf-3:    #F3F5F9;
+  --line:      rgba(10,14,22,.08);
+  --line-2:    rgba(10,14,22,.14);
+  --txt:       #0E1420;
+  --txt-2:     #5A6577;
+  --txt-3:     #8C96A6;
+  --pos:       #059669;
+  --neg:       #E11D48;
+  --warn:      #D97706;
+  --glass:     rgba(255,255,255,.7);
+  --glass-2:   rgba(255,255,255,.9);
+  --sh-1: 0 1px 2px rgba(10,14,22,.05);
+  --sh-2: 0 4px 14px -4px rgba(10,14,22,.1), 0 1px 3px rgba(10,14,22,.05);
+  --sh-3: 0 18px 44px -12px rgba(10,14,22,.16);
+  --ring: inset 0 1px 0 rgba(255,255,255,.9);
+}
 
-        /* ── جووڵە ── */
-        @keyframes fadeUp   { from { opacity:0; transform: translateY(10px) } to { opacity:1; transform:none } }
-        @keyframes popIn    { 0% { transform: scale(.72) rotate(-8deg); opacity:0 } 60% { transform: scale(1.06) rotate(2deg) } 100% { transform: none; opacity:1 } }
-        @keyframes slideDn  { from { opacity:0; transform: translateY(-16px) scale(.96) } to { opacity:1; transform:none } }
-        @keyframes sheetUp  { from { transform: translateY(100%) } to { transform: none } }
-        @keyframes glowPulse{ 0%,100% { box-shadow: 0 0 0 0 rgba(184,134,59,.35) } 50% { box-shadow: 0 0 0 8px rgba(184,134,59,0) } }
-        .fade-up  { animation: fadeUp .42s cubic-bezier(.16,1,.3,1) both }
-        .cur-pop  { animation: popIn .5s cubic-bezier(.2,1.3,.35,1) both }
-        .toast-in { animation: slideDn .34s cubic-bezier(.16,1,.3,1) both }
-        .sheet-in { animation: sheetUp .32s cubic-bezier(.16,1,.3,1) both }
-        .glow     { animation: glowPulse 2.4s ease-in-out infinite }
+/* ── ڕەنگی هەر ڕۆڵێک ── */
+[data-role="admin"]    { --ac: #E0A94A; --ac-2: #C4883A; --ac-lo: #7A5418; --ac-gl: 224,169,74; }
+[data-role="customer"] { --ac: #7C6BF5; --ac-2: #6354E0; --ac-lo: #35299B; --ac-gl: 124,107,245; }
+[data-role="partner"]  { --ac: #2DD4BF; --ac-2: #14B8A6; --ac-lo: #0B6B60; --ac-gl: 45,212,191; }
+[data-role="investor"] { --ac: #4ADE80; --ac-2: #22C55E; --ac-lo: #14532D; --ac-gl: 74,222,128; }
+[data-role="office"]   { --ac: #FB923C; --ac-2: #F97316; --ac-lo: #7C2D12; --ac-gl: 251,146,60; }
 
-        /* ── قووڵایی ── */
-        .lift  { transition: transform .22s cubic-bezier(.16,1,.3,1), box-shadow .22s ease, border-color .22s ease }
-        .lift:hover  { transform: translateY(-3px); box-shadow: var(--shadow-3) }
-        .press:active { transform: scale(.975) }
-        .tilt { transition: transform .3s cubic-bezier(.16,1,.3,1) }
-        .tilt:hover { transform: perspective(700px) rotateX(3deg) translateY(-2px) }
+body { background: var(--bg); color: var(--txt); font-family: 'IBM Plex Sans Arabic','Outfit',system-ui,sans-serif; -webkit-font-smoothing: antialiased; }
+html[lang="en"] body, html[lang="en"] input, html[lang="en"] select, html[lang="en"] textarea, html[lang="en"] button {
+  font-family: 'Outfit', system-ui, sans-serif;
+}
+.mono, [style*="tabular-nums"] { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-feature-settings: "tnum" 1; letter-spacing: -.01em; }
 
-        /* ── ڕووکاری قاسە ── */
-        .vault {
-          background: linear-gradient(160deg, var(--card) 0%, var(--card) 62%, color-mix(in srgb, var(--line-soft) 55%, var(--card)) 100%);
-          box-shadow: var(--shadow-2), var(--inset);
-        }
-        .brass-edge { position: relative; overflow: hidden }
-        .brass-edge::before {
-          content:''; position:absolute; inset-inline-start:0; top:0; bottom:0; width:3px;
-          background: linear-gradient(180deg, var(--brass-lt), var(--brass), var(--brass-dp));
-        }
+/* ── جووڵە ── */
+@keyframes rise    { from { opacity:0; transform: translateY(14px) } to { opacity:1; transform:none } }
+@keyframes pop     { 0% { transform: scale(.8); opacity:0 } 55% { transform: scale(1.05) } 100% { transform:none; opacity:1 } }
+@keyframes drop    { from { opacity:0; transform: translateY(-14px) scale(.97) } to { opacity:1; transform:none } }
+@keyframes sheet   { from { transform: translateY(100%) } to { transform:none } }
+@keyframes breathe { 0%,100% { opacity:.55 } 50% { opacity:1 } }
+@keyframes shimmer { 0% { background-position: 200% 0 } 100% { background-position: -200% 0 } }
+.rise   { animation: rise .5s cubic-bezier(.16,1,.3,1) both }
+.pop    { animation: pop .45s cubic-bezier(.2,1.4,.35,1) both }
+.drop   { animation: drop .34s cubic-bezier(.16,1,.3,1) both }
+.sheet  { animation: sheet .36s cubic-bezier(.16,1,.3,1) both }
+.breathe{ animation: breathe 2.6s ease-in-out infinite }
 
-        ::-webkit-scrollbar { width: 9px; height: 9px }
-        ::-webkit-scrollbar-track { background: transparent }
-        ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 9px; border: 2px solid transparent; background-clip: content-box }
-        ::-webkit-scrollbar-thumb:hover { background: var(--txt-3); background-clip: content-box }
+/* ── کارت ── */
+.card {
+  background: var(--surf);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  box-shadow: var(--sh-1), var(--ring);
+}
+.glass {
+  background: var(--glass);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  border: 1px solid var(--line);
+}
+.tap { transition: transform .18s cubic-bezier(.16,1,.3,1), box-shadow .2s ease, background .2s ease }
+.tap:active { transform: scale(.97) }
+.hov:hover { background: var(--surf-2); border-color: var(--line-2) }
 
-        *:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px }
-        @media (prefers-reduced-motion: reduce) {
-          *, *::before, *::after { animation-duration:.01ms !important; transition-duration:.01ms !important }
-        }
-      `}</style>;
+/* ── تیشکی ڕەنگی ڕۆڵ ── */
+.aura::before {
+  content:''; position:absolute; inset:-40% -20% auto -20%; height:70%;
+  background: radial-gradient(60% 100% at 50% 0%, rgba(var(--ac-gl),.22), transparent 70%);
+  pointer-events:none;
+}
+
+::-webkit-scrollbar { width:8px; height:8px }
+::-webkit-scrollbar-track { background:transparent }
+::-webkit-scrollbar-thumb { background: var(--line-2); border-radius:8px }
+::-webkit-scrollbar-thumb:hover { background: var(--txt-3) }
+input,select,textarea { color-scheme: dark }
+[data-theme="light"] input, [data-theme="light"] select, [data-theme="light"] textarea { color-scheme: light }
+*:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px }
+@media (prefers-reduced-motion: reduce) { *,*::before,*::after { animation-duration:.01ms !important; transition-duration:.01ms !important } }
+  `}</style>;
 }
 
 /* ══════════════════ ئەپی سەرەکی ══════════════════ */
@@ -508,7 +570,7 @@ export default function App() {
   useEffect(() => {
     try {
       document.documentElement.setAttribute("data-theme", theme);
-      document.body.style.background = "var(--paper)";
+      document.body.style.background = "var(--bg)";
       localStorage.setItem("theme", theme);
     } catch {}
   }, [theme]);
@@ -1219,12 +1281,12 @@ export default function App() {
     toUsd, sumUsd, ratesReady, owners };
 
   return (
-    <div dir={LANGS[lang]?.dir || "rtl"} key={lang} className="min-h-screen" style={{ background: "var(--paper)", color: "var(--txt)" }}>
+    <div dir={LANGS[lang]?.dir || "rtl"} key={lang} className="min-h-screen" style={{ background: "var(--bg)", color: "var(--txt)" }}>
       <Styles />
 
       {(!online || stale) && (
         <div className="sticky top-[57px] z-30 px-3 py-2 text-center text-[12px] font-semibold flex items-center justify-center gap-2"
-          style={{ background: "color-mix(in srgb, var(--amber) 92%, black)", color: "#fff" }}>
+          style={{ background: "color-mix(in srgb, var(--warn) 92%, black)", color: "#fff" }}>
           <WifiOff className="w-3.5 h-3.5" />
           {online ? "پەیوەندی گەڕایەوە — نوێکردنەوە..." : "ئینتەرنێت نییە — داتای هەڵگیراو پیشان دەدرێت"}
           {stale && <span className="opacity-75" style={num}>({new Date(stale).toLocaleTimeString("en-GB")})</span>}
@@ -1232,7 +1294,7 @@ export default function App() {
       )}
       {msg && (
         <div className="fixed top-0 right-0 left-0 z-[60] flex justify-center px-4" style={{ paddingTop: "calc(env(safe-area-inset-top) + 12px)" }}>
-          <div className={`toast-in flex items-center gap-2.5 px-5 py-3.5 rounded-2xl shadow-xl text-white font-bold text-sm max-w-md w-full justify-center ${/✓|کرا|تۆمار|نێردرا|وەرگ/.test(msg) ? "bg-emerald-600" : "bg-slate-900"}`}>
+          <div className={`drop flex items-center gap-2.5 px-5 py-3.5 rounded-[var(--r)] shadow-xl text-white font-bold text-sm max-w-md w-full justify-center ${/✓|کرا|تۆمار|نێردرا|وەرگ/.test(msg) ? "bg-emerald-600" : "bg-slate-900"}`}>
             {/✓|کرا|تۆمار|نێردرا|وەرگ/.test(msg) ? <CheckCircle2 className="w-5 h-5 shrink-0" /> : <AlertTriangle className="w-5 h-5 shrink-0" />}
             <span>{msg.replace(" ✓", "")}</span>
           </div>
@@ -1240,43 +1302,49 @@ export default function App() {
       )}
       {busy && <div className="fixed top-0 right-0 left-0 h-0.5 bg-emerald-600 animate-pulse z-50" />}
 
-      <header className="text-white sticky top-0 z-40 backdrop-blur-xl"
-        style={{ paddingTop: "env(safe-area-inset-top)", background: "color-mix(in srgb, var(--ink) 94%, transparent)", borderBottom: "1px solid color-mix(in srgb, var(--brass) 22%, transparent)" }}>
-        <div className="px-3 md:px-4 py-2.5 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
-              style={{ background: "linear-gradient(150deg, var(--brass-lt), var(--brass-dp))", boxShadow: "0 2px 8px -2px rgba(184,134,59,.5), inset 0 1px 0 rgba(255,255,255,.3)" }}>
-              <Vault className="w-[18px] h-[18px] text-white" />
+      <header className="sticky top-0 z-40 glass"
+        style={{ paddingTop: "env(safe-area-inset-top)", borderInline: 0, borderTop: 0, borderBottom: "1px solid var(--line)" }}>
+        <div className="px-4 md:px-6 py-3 flex items-center justify-between gap-3 max-w-[1400px] mx-auto">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
+              style={{ background: "linear-gradient(155deg, var(--ac), var(--ac-2))",
+                       boxShadow: "0 4px 14px -3px rgba(var(--ac-gl),.55)" }}>
+              <span className="text-[15px] font-bold text-white">{(profile.name || "?").slice(0, 1)}</span>
             </div>
             <div className="min-w-0">
-              <div className="font-bold leading-tight text-sm md:text-base truncate">{tr("سیستەمی دراو")}</div>
-              <div className="text-[11px] text-[var(--txt-3)] truncate">{profile.name} — {ROLE_KU[profile.role]}</div>
+              <div className="text-[15px] font-semibold leading-tight truncate" style={{ color: "var(--txt)" }}>
+                {profile.name}
+              </div>
+              <div className="text-[11.5px] truncate" style={{ color: "var(--txt-3)" }}>
+                {va ? `${tr("بینین وەک")} · ${va.name}` : tr(ROLE_KU[profile.role])}
+              </div>
             </div>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+
+          <div className="flex items-center gap-1.5 shrink-0">
             {isAdmin && va && (
-              <button onClick={() => setViewAs(null)} className="flex items-center gap-1 text-xs bg-amber-600 hover:bg-amber-700 px-2.5 py-1.5 rounded-lg">
+              <button onClick={() => setViewAs(null)}
+                className="flex items-center gap-1.5 text-[12px] font-semibold px-3 py-2 rounded-full tap"
+                style={{ background: "rgba(var(--ac-gl),.16)", color: "var(--ac)" }}>
                 <LogOut className="w-3.5 h-3.5" /> {tr("گەڕانەوە")}
               </button>
             )}
             <div className="relative">
               <button onClick={() => setLangOpen(!langOpen)}
-                className="px-2.5 py-2 rounded-xl border transition-all press text-[11px] font-bold"
-                style={{ background: "rgba(255,255,255,.06)", borderColor: "rgba(255,255,255,.1)" }}>
+                className="w-9 h-9 rounded-full text-[11px] font-bold tap flex items-center justify-center"
+                style={{ background: "var(--glass)", border: "1px solid var(--line)", color: "var(--txt-2)" }}>
                 {LANGS[lang]?.flag || "KU"}
               </button>
               {langOpen && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setLangOpen(false)} />
-                  <div className="absolute top-full mt-2 left-0 z-50 rounded-xl overflow-hidden min-w-[130px]"
-                    style={{ background: "var(--card)", border: "1px solid var(--line)", boxShadow: "var(--shadow-3)" }}>
+                  <div className="absolute top-full mt-2 end-0 z-50 rounded-[var(--r-sm)] overflow-hidden min-w-[140px] drop"
+                    style={{ background: "var(--surf-2)", border: "1px solid var(--line)", boxShadow: "var(--sh-3)" }}>
                     {Object.entries(LANGS).map(([k, v]) => (
                       <button key={k} onClick={() => { changeLang(k); setLangOpen(false); }}
-                        className="w-full text-start px-3.5 py-2.5 text-sm transition-colors flex items-center gap-2.5"
-                        style={lang === k
-                          ? { background: "var(--jade)", color: "#fff", fontWeight: 700 }
-                          : { color: "var(--txt)" }}>
-                        <span className="text-[10px] font-bold opacity-70">{v.flag}</span> {v.name}
+                        className="w-full text-start px-4 py-2.5 text-[13px] flex items-center gap-2.5 tap"
+                        style={lang === k ? { background: "rgba(var(--ac-gl),.16)", color: "var(--ac)", fontWeight: 600 } : { color: "var(--txt-2)" }}>
+                        <span className="text-[10px] font-bold opacity-60">{v.flag}</span> {v.name}
                       </button>
                     ))}
                   </div>
@@ -1284,13 +1352,12 @@ export default function App() {
               )}
             </div>
             <button onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-              className="p-2 rounded-xl border transition-all press"
-              style={{ background: "rgba(255,255,255,.06)", borderColor: "rgba(255,255,255,.1)" }}
-              title={theme === "dark" ? "ڕووناک" : "تاریک"}>
+              className="w-9 h-9 rounded-full tap flex items-center justify-center"
+              style={{ background: "var(--glass)", border: "1px solid var(--line)", color: "var(--txt-2)" }}>
               {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
-            <button onClick={signOut} className="p-2 rounded-xl border transition-all press"
-              style={{ background: "rgba(255,255,255,.06)", borderColor: "rgba(255,255,255,.1)" }}>
+            <button onClick={signOut} className="w-9 h-9 rounded-full tap flex items-center justify-center"
+              style={{ background: "var(--glass)", border: "1px solid var(--line)", color: "var(--txt-2)" }}>
               <LogOut className="w-4 h-4" />
             </button>
           </div>
@@ -1298,31 +1365,34 @@ export default function App() {
       </header>
 
       {portalUser ? (
-        <main className="p-3 md:p-5 pb-10 max-w-3xl mx-auto"><Portal user={portalUser} {...shared} officePay={officePay} settle={settle} flash={flash} reloadBatches={reloadBatches} accountMove={accountMove} accountTransfer={accountTransfer} /></main>
+        <main className="px-4 pt-5 pb-28 md:px-8 md:pb-10 max-w-[700px] mx-auto"><Portal user={portalUser} {...shared} officePay={officePay} settle={settle} flash={flash} reloadBatches={reloadBatches} accountMove={accountMove} accountTransfer={accountTransfer} /></main>
       ) : (
         <div className="flex flex-col md:flex-row">
           {/* لیستی لاتەنیشت — تەنها لە شاشەی گەورە */}
-          <nav className="hidden md:flex md:w-60 md:min-h-screen p-3 flex-col gap-1 sticky top-[57px] self-start"
-            style={{ background: "var(--card)", borderInlineStart: "1px solid var(--line)" }}>
-            {NAV.map(([id, t, Ic]) => (
-              <button key={id} onClick={() => { setPage(id); setDetailId(null); setEditTx(null); }}
-                style={page === id
-                  ? { background: "linear-gradient(180deg, var(--jade-lt), var(--jade))", color: "#fff", boxShadow: "0 2px 10px -3px rgba(14,122,107,.5)" }
-                  : { color: "var(--txt-2)" }}
-                className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm whitespace-nowrap transition-all press ${page === id ? "font-bold" : "font-medium hover:bg-[var(--line-soft)]"}`}>
-                <Ic className="w-[18px] h-[18px]" /> {t}
-              </button>
-            ))}
+          <nav className="hidden md:flex md:w-[236px] md:min-h-screen p-4 flex-col gap-1 sticky top-[64px] self-start">
+            {NAV.map(([id, t, Ic]) => {
+              const on = page === id;
+              return (
+                <button key={id} onClick={() => { setPage(id); setDetailId(null); setEditTx(null); }}
+                  style={on
+                    ? { background: "var(--surf-2)", color: "var(--txt)", boxShadow: "var(--sh-1), var(--ring)" }
+                    : { color: "var(--txt-3)" }}
+                  className={`flex items-center gap-3 px-4 py-3 rounded-[var(--r-sm)] text-[14px] tap relative ${on ? "font-semibold" : "font-medium hover:text-[var(--txt-2)]"}`}>
+                  {on && <span className="absolute inset-y-2 start-0 w-[3px] rounded-full" style={{ background: "var(--ac)" }} />}
+                  <Ic className="w-[18px] h-[18px]" style={{ color: on ? "var(--ac)" : "inherit" }} /> {t}
+                </button>
+              );
+            })}
             {isAdmin && (
-              <div className="mt-4 pt-3 border-t border-[var(--line)]">
-                <div className="flex items-center gap-1.5 text-[11px] font-semibold text-[var(--txt-3)] mb-1.5 px-1">
+              <div className="mt-5 pt-4" style={{ borderTop: "1px solid var(--line)" }}>
+                <div className="flex items-center gap-1.5 text-[11px] font-semibold mb-2 px-1" style={{ color: "var(--txt-3)" }}>
                   <Eye className="w-3.5 h-3.5" /> {tr("بینین وەک")}
                 </div>
                 <ViewAsPicker users={data.users} onPick={setViewAs} compact />
               </div>
             )}
           </nav>
-          <main className="flex-1 p-3 pb-24 md:p-6 md:pb-6 max-w-5xl w-full mx-auto">
+          <main className="flex-1 px-4 pt-5 pb-28 md:px-8 md:pt-7 md:pb-10 max-w-[900px] w-full mx-auto">
             {page === "dash" && <Dashboard {...shared} batches={batches} go={setPage} />}
             {page === "safes" && <><Back onClick={() => setPage("dash")} t={tr("گەڕانەوە بۆ داشبۆرد")} /><Safes {...shared} addDeposit={addDeposit} addExpense={addExpense} addCurrency={addCurrency} /></>}
             {page === "rates" && <><Back onClick={() => setPage("dash")} t={tr("گەڕانەوە بۆ داشبۆرد")} /><Rates {...shared} saveRates={saveRates} /></>}
@@ -1342,27 +1412,34 @@ export default function App() {
           </main>
 
           {/* لیستی خوارەوە — تەنها لە مۆبایل */}
-          <nav className="md:hidden fixed bottom-0 right-0 left-0 z-40 flex backdrop-blur-xl"
-            style={{ paddingBottom: "max(env(safe-area-inset-bottom), 4px)", background: "color-mix(in srgb, var(--card) 92%, transparent)", borderTop: "1px solid var(--line)", boxShadow: "0 -4px 20px -8px rgba(13,17,23,.14)" }}>
-            {NAV.slice(0, 4).map(([id, t, Ic]) => (
-              <button key={id} onClick={() => { setPage(id); setDetailId(null); setEditTx(null); setMore(false); }}
-                style={{ color: page === id ? "var(--jade)" : "var(--txt-3)" }}
-                className="flex-1 flex flex-col items-center gap-1 py-2.5 text-[10px] font-bold transition-all press relative">
-                {page === id && <span className="absolute top-0 w-8 h-[3px] rounded-full" style={{ background: "linear-gradient(90deg, var(--brass-lt), var(--brass))" }} />}
-                <Ic className="w-[19px] h-[19px]" /> {t}
+          <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 px-3 pb-[max(env(safe-area-inset-bottom),10px)] pt-2 pointer-events-none">
+            <div className="flex glass rounded-full p-1.5 pointer-events-auto mx-auto max-w-md"
+              style={{ boxShadow: "var(--sh-3)" }}>
+              {NAV.slice(0, 4).map(([id, t, Ic]) => {
+                const on = page === id;
+                return (
+                  <button key={id} onClick={() => { setPage(id); setDetailId(null); setEditTx(null); setMore(false); }}
+                    className="flex-1 flex flex-col items-center gap-1 py-2 rounded-full tap"
+                    style={on ? { background: "var(--surf-3)" } : {}}>
+                    <Ic className="w-[19px] h-[19px]" style={{ color: on ? "var(--ac)" : "var(--txt-3)" }} />
+                    <span className="text-[9.5px] font-semibold" style={{ color: on ? "var(--txt)" : "var(--txt-3)" }}>{t}</span>
+                  </button>
+                );
+              })}
+              <button onClick={() => setMore(!more)}
+                className="flex-1 flex flex-col items-center gap-1 py-2 rounded-full tap"
+                style={NAV.slice(4).some(([id]) => id === page) ? { background: "var(--surf-3)" } : {}}>
+                <MoreHorizontal className="w-[19px] h-[19px]"
+                  style={{ color: NAV.slice(4).some(([id]) => id === page) ? "var(--ac)" : "var(--txt-3)" }} />
+                <span className="text-[9.5px] font-semibold" style={{ color: "var(--txt-3)" }}>{tr("زیاتر")}</span>
               </button>
-            ))}
-            <button onClick={() => setMore(!more)}
-              style={{ color: NAV.slice(4).some(([id]) => id === page) ? "var(--jade)" : "var(--txt-3)" }}
-              className="flex-1 flex flex-col items-center gap-1 py-2.5 text-[10px] font-bold transition-all press">
-              <MoreHorizontal className="w-[19px] h-[19px]" /> {tr("زیاتر")}
-            </button>
+            </div>
           </nav>
 
           {more && (
             <div className="md:hidden fixed inset-0 z-50 bg-slate-900/40" onClick={() => setMore(false)}>
-              <div className="absolute bottom-0 right-0 left-0 rounded-t-[28px] p-4 pb-8 sheet-in"
-                style={{ background: "var(--card)", boxShadow: "0 -8px 40px -8px rgba(13,17,23,.3)" }} onClick={(e) => e.stopPropagation()}>
+              <div className="absolute bottom-0 right-0 left-0 rounded-t-[28px] p-4 pb-8 sheet"
+                style={{ background: "var(--surf)", boxShadow: "0 -8px 40px -8px rgba(13,17,23,.3)" }} onClick={(e) => e.stopPropagation()}>
                 <div className="w-10 h-1 rounded-full mx-auto mb-4" style={{ background: "var(--line)" }} />
                 <div className="flex items-center justify-between mb-3">
                   <div className="font-bold text-[var(--txt)]">{tr("بەشەکانی تر")}</div>
@@ -1370,7 +1447,7 @@ export default function App() {
                 </div>
                 {NAV.slice(4).map(([id, t, Ic]) => (
                   <button key={id} onClick={() => { setPage(id); setDetailId(null); setEditTx(null); setMore(false); }}
-                    className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm mb-1 ${page === id ? "bg-[var(--jade)] text-white font-semibold" : "text-[var(--txt)] hover:bg-[var(--line-soft)]"}`}>
+                    className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-[var(--r-sm)] text-sm mb-1 ${page === id ? "bg-[var(--pos)] text-white font-semibold" : "text-[var(--txt)] hover:bg-[var(--line)]"}`}>
                     <Ic className="w-5 h-5" /> {t}
                   </button>
                 ))}
@@ -1404,7 +1481,7 @@ function ViewAsPicker({ users, onPick, compact }) {
         {list.length === 0 ? <div className="text-xs text-[var(--txt-3)] py-2 text-center">{tr("هیچ نەدۆزرایەوە")}</div> :
           list.map((u) => (
             <button key={u.id} onClick={() => onPick(u.id)}
-              className="w-full text-right px-3 py-2 rounded-lg hover:bg-[var(--jade)] hover:text-white transition group">
+              className="w-full text-right px-3 py-2 rounded-lg hover:bg-[var(--pos)] hover:text-white transition group">
               <div className={`font-semibold ${compact ? "text-xs" : "text-sm"} text-[var(--txt)] group-hover:text-white`}>{u.name}</div>
               <div className="text-[10px] text-[var(--txt-3)] group-hover:text-emerald-100">
                 {ROLE_KU[u.role]}{u.phone && <span style={num}> · {u.phone}</span>}
@@ -1419,7 +1496,7 @@ function ViewAsPicker({ users, onPick, compact }) {
 /* ══════════════════ لۆگین ══════════════════ */
 function Splash({ t, signOut }) {
   return (
-    <div dir={LANGS[_lang]?.dir || "rtl"} className="min-h-screen flex flex-col items-center justify-center gap-4 p-6 text-center" style={{ background: "var(--paper)", color: "var(--txt-2)" }}>
+    <div dir={LANGS[_lang]?.dir || "rtl"} className="min-h-screen flex flex-col items-center justify-center gap-4 p-6 text-center" style={{ background: "var(--bg)", color: "var(--txt-2)" }}>
       <Vault className="w-10 h-10 text-amber-500" />
       <div>{t}</div>
       {signOut && <Btn kind="ghost" onClick={signOut}>{tr("دەرچوون")}</Btn>}
@@ -1450,92 +1527,85 @@ function Login() {
   };
 
   return (
-    <div dir={LANGS[_lang]?.dir || "rtl"} className="min-h-screen flex items-center justify-center p-5 relative overflow-hidden"
-      style={{ background: "linear-gradient(165deg, var(--ink) 0%, #131A24 55%, #0A1015 100%)" }}>
+    <div dir={LANGS[_lang]?.dir || "rtl"} data-role="admin"
+      className="min-h-screen flex items-center justify-center p-6 relative overflow-hidden"
+      style={{ background: "var(--bg)" }}>
 
-      {/* تیشکی پاشبنەما */}
-      <div className="absolute -top-40 -right-32 w-[520px] h-[520px] rounded-full pointer-events-none"
-        style={{ background: "radial-gradient(circle, rgba(184,134,59,.18), transparent 68%)" }} />
-      <div className="absolute -bottom-48 -left-40 w-[560px] h-[560px] rounded-full pointer-events-none"
-        style={{ background: "radial-gradient(circle, rgba(14,122,107,.16), transparent 68%)" }} />
+      <div className="absolute inset-x-0 -top-24 h-[420px] pointer-events-none"
+        style={{ background: "radial-gradient(60% 100% at 50% 0%, rgba(224,169,74,.14), transparent 72%)" }} />
+      <div className="absolute -bottom-32 -start-24 w-[400px] h-[400px] rounded-full pointer-events-none"
+        style={{ background: "radial-gradient(circle, rgba(124,107,245,.09), transparent 70%)" }} />
 
-      <div className="w-full max-w-sm relative fade-up">
-        <div className="text-center mb-9">
-          <div className="w-[74px] h-[74px] rounded-[22px] mx-auto mb-5 flex items-center justify-center glow"
-            style={{ background: "linear-gradient(150deg, var(--brass-lt), var(--brass-dp))",
-                     boxShadow: "0 10px 32px -8px rgba(184,134,59,.55), inset 0 1px 0 rgba(255,255,255,.35)" }}>
-            <Vault className="w-9 h-9 text-white" />
+      <div className="w-full max-w-[380px] relative rise">
+        <div className="text-center mb-10">
+          <div className="w-16 h-16 rounded-[22px] mx-auto mb-5 flex items-center justify-center"
+            style={{ background: "linear-gradient(155deg, #E0A94A, #A9772C)",
+                     boxShadow: "0 12px 36px -10px rgba(224,169,74,.6), inset 0 1px 0 rgba(255,255,255,.3)" }}>
+            <Vault className="w-7 h-7 text-white" />
           </div>
-          <h1 className="text-[26px] font-bold text-white tracking-tight">{tr("سیستەمی دراو")}</h1>
-          <p className="text-[13px] mt-1.5" style={{ color: "rgba(255,255,255,.42)" }}>{tr("کڕین و فرۆشتن · قاسە · حیسابات")}</p>
+          <h1 className="text-[24px] font-semibold tracking-tight" style={{ color: "var(--txt)" }}>
+            {tr("سیستەمی دراو")}
+          </h1>
+          <p className="text-[13px] mt-1.5" style={{ color: "var(--txt-3)" }}>
+            {tr("کڕین و فرۆشتن · قاسە · حیسابات")}
+          </p>
         </div>
 
-        <div className="rounded-[26px] p-7 backdrop-blur-2xl"
-          style={{ background: "rgba(255,255,255,.045)", border: "1px solid rgba(255,255,255,.09)",
-                   boxShadow: "0 24px 60px -14px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.09)" }}>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-[12px] font-semibold mb-2" style={{ color: "rgba(255,255,255,.62)" }}>
-                {tr("ژمارەی مۆبایل یان ئیمەیل")}
-              </label>
-              <input dir="ltr" type="text" autoComplete="username" value={id} onChange={(e) => setId(e.target.value)}
-                placeholder="07701234567" onKeyDown={(e) => e.key === "Enter" && go()}
-                className="w-full rounded-xl px-4 py-3 text-white text-sm outline-none transition-all placeholder:text-white/25"
-                style={{ background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)", fontFamily: "'IBM Plex Mono', monospace" }}
-                onFocus={(e) => { e.target.style.borderColor = "var(--brass)"; e.target.style.background = "rgba(255,255,255,.09)"; }}
-                onBlur={(e) => { e.target.style.borderColor = "rgba(255,255,255,.12)"; e.target.style.background = "rgba(255,255,255,.06)"; }} />
-            </div>
-            <div>
-              <label className="block text-[12px] font-semibold mb-2" style={{ color: "rgba(255,255,255,.62)" }}>{tr("وشەی نهێنی")}</label>
-              <div className="relative">
-                <input type={show ? "text" : "password"} autoComplete="current-password" value={pw}
-                  onChange={(e) => setPw(e.target.value)} onKeyDown={(e) => e.key === "Enter" && go()}
-                  className="w-full rounded-xl pr-4 pl-11 py-3 text-white text-sm outline-none transition-all"
-                  style={{ background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)" }}
-                  onFocus={(e) => { e.target.style.borderColor = "var(--brass)"; e.target.style.background = "rgba(255,255,255,.09)"; }}
-                  onBlur={(e) => { e.target.style.borderColor = "rgba(255,255,255,.12)"; e.target.style.background = "rgba(255,255,255,.06)"; }} />
-                <button type="button" onClick={() => setShow(!show)}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 p-1 transition-colors"
-                  style={{ color: "rgba(255,255,255,.4)" }} tabIndex={-1}>
-                  {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
-
-            {err && (
-              <div className="text-[13px] rounded-xl px-3.5 py-2.5 flex items-center gap-2"
-                style={{ background: "rgba(224,90,74,.14)", color: "#F5A99E", border: "1px solid rgba(224,90,74,.24)" }}>
-                <AlertTriangle className="w-4 h-4 shrink-0" /> {err}
-              </div>
-            )}
-
-            <button onClick={go} disabled={busy}
-              className="w-full py-3.5 rounded-xl font-bold text-[15px] transition-all press disabled:opacity-55"
-              style={{ background: "linear-gradient(180deg, var(--brass-lt), var(--brass))", color: "#fff",
-                       boxShadow: "0 6px 20px -5px rgba(184,134,59,.55), inset 0 1px 0 rgba(255,255,255,.28)" }}>
-              {busy ? "چوونە ژوورەوە..." : "چوونە ژوورەوە"}
-            </button>
+        <div className="space-y-3">
+          <div>
+            <Lbl>{tr("ژمارەی مۆبایل یان ئیمەیل")}</Lbl>
+            <input dir="ltr" type="text" autoComplete="username" value={id} onChange={(e) => setId(e.target.value)}
+              placeholder="07701234567" onKeyDown={(e) => e.key === "Enter" && go()}
+              className="w-full px-4 py-3.5 text-[15px] outline-none"
+              style={{ ...fieldSty, fontFamily: "'IBM Plex Mono', monospace" }}
+              onFocus={onFoc} onBlur={onBlr} />
           </div>
+          <div>
+            <Lbl>{tr("وشەی نهێنی")}</Lbl>
+            <div className="relative">
+              <input type={show ? "text" : "password"} autoComplete="current-password" value={pw}
+                onChange={(e) => setPw(e.target.value)} onKeyDown={(e) => e.key === "Enter" && go()}
+                className="w-full ps-4 pe-12 py-3.5 text-[15px] outline-none"
+                style={fieldSty} onFocus={onFoc} onBlur={onBlr} />
+              <button type="button" onClick={() => setShow(!show)} tabIndex={-1}
+                className="absolute end-3 top-1/2 -translate-y-1/2 p-1.5 tap"
+                style={{ color: "var(--txt-3)" }}>
+                {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          {err && (
+            <div className="text-[13px] rounded-[var(--r-sm)] px-4 py-3 flex items-center gap-2.5 drop"
+              style={{ background: "rgba(251,113,133,.12)", color: "var(--neg)", border: "1px solid rgba(251,113,133,.2)" }}>
+              <AlertTriangle className="w-4 h-4 shrink-0" /> {err}
+            </div>
+          )}
+
+          <Btn onClick={go} disabled={busy} className="w-full !py-3.5 !text-[15px] mt-1">
+            {busy ? "..." : tr("چوونە ژوورەوە")}
+          </Btn>
         </div>
 
-        <div className="flex justify-center gap-1.5 mt-7">
+        <div className="flex justify-center gap-1.5 mt-8">
           {Object.entries(LANGS).map(([k, v]) => (
             <button key={k} onClick={() => { setLangGlobal(k); location.reload(); }}
-              className="px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all press"
+              className="px-3.5 py-1.5 rounded-full text-[11.5px] font-semibold tap"
               style={_lang === k
-                ? { background: "rgba(184,134,59,.22)", color: "var(--brass-lt)", border: "1px solid rgba(184,134,59,.35)" }
-                : { background: "rgba(255,255,255,.05)", color: "rgba(255,255,255,.4)", border: "1px solid rgba(255,255,255,.08)" }}>
+                ? { background: "rgba(224,169,74,.16)", color: "#E0A94A" }
+                : { color: "var(--txt-3)" }}>
               {v.name}
             </button>
           ))}
         </div>
-        <p className="text-center text-[11px] mt-4" style={{ color: "rgba(255,255,255,.28)" }}>
-          {tr("زانیارییەکانت لە بەڕێوەبەرەوە وەربگرە")}
-        </p>
       </div>
     </div>
   );
 }
+
+/* ══════════════════ ئەپی سەرەکی ══════════════════ */
+
+/* هەڵبژاردنی بەکارهێنەر بە گەڕان */
 
 /* هەڵبژاردنی بەکارهێنەر بە گەڕان */
 
@@ -1575,98 +1645,106 @@ function Dashboard({ data, calc, cur, mySafe, profitIn, ownProfitIn, investorsPr
   if (negP.length) alerts.push({ tone: "red", Ic: TrendingDown, t: `قەرزارت لای ${negP.map((u) => u.name).join("، ")}`, go: () => go("people") });
 
   const Stat = ({ t, v, tone, i = 0 }) => (
-    <Card className="p-4 fade-up" style={{ animationDelay: `${i * 50}ms` }}>
+    <Card className="p-4 rise" style={{ animationDelay: `${i * 50}ms` }}>
       <div className="text-xs text-[var(--txt-2)] mb-1">{t}</div>
       <div className={`text-2xl font-bold ${tone || ""}`} style={num}>{v}</div>
     </Card>
   );
 
   return (
-    <div className="space-y-4">
-      <H sub={new Date().toLocaleDateString("en-GB")}>{tr("داشبۆرد")}</H>
+    <div className="space-y-5">
+      {/* ── ژمارەی سەرەکی ── */}
+      <div className="relative pt-3 pb-2 aura">
+        <Hero
+          label={ratesReady ? tr("کۆی گشتی") : tr("قاسەی گشتی")}
+          value={ratesReady ? fmt(sumUsd(calc.phys), 0) : "—"}
+          unit={ratesReady ? "$" : ""}
+          sub={ratesReady ? `${tr("ماڵی خۆم")} · ${fmt(sumUsd(mySafe), 0)} $` : tr("نرخەکان دابنێ")}
+        />
+      </div>
 
+      {/* ── کرداری خێرا ── */}
+      <div className="flex justify-around px-2">
+        <Quick icon={ArrowLeftRight} label={tr("مامەڵە")} onClick={() => go("newtx")} active />
+        <Quick icon={ScanLine} label={tr("فیش")} onClick={() => go("receipts")} />
+        <Quick icon={Vault} label={tr("قاسە")} onClick={() => go("safes")} />
+        <Quick icon={TrendingUp} label={tr("ڕەوت")} onClick={() => go("insights")} />
+      </div>
+
+      {/* ── ئاگادارییەکان ── */}
       {alerts.length > 0 && (
         <div className="space-y-2">
           {alerts.map((a, i) => (
-            <Card key={i} onClick={a.go} style={{ animationDelay: `${i * 50}ms` }}
-              className={`fade-up p-3.5 ${a.tone === "red" ? "border-[color-mix(in_srgb,var(--verm)_34%,transparent)] bg-[color-mix(in_srgb,var(--verm)_9%,transparent)]" : a.tone === "amber" ? "border-[color-mix(in_srgb,var(--amber)_34%,transparent)] bg-[color-mix(in_srgb,var(--amber)_10%,transparent)]" : "border-[color-mix(in_srgb,var(--jade)_34%,transparent)] bg-[color-mix(in_srgb,var(--jade)_9%,transparent)]"}`}>
-              <div className={`flex items-center gap-2 text-sm font-semibold ${a.tone === "red" ? "text-[var(--verm)]" : a.tone === "amber" ? "text-[var(--amber)]" : "text-[var(--jade)]"}`}>
-                <a.Ic className="w-4 h-4 shrink-0" />
-                <span className="flex-1">{a.t}</span>
-                <ChevronLeft className="w-4 h-4 opacity-40" />
+            <Card key={i} onClick={a.go} className="p-3.5 rise" style={{ animationDelay: `${i * 60}ms` }}>
+              <div className="flex items-center gap-3">
+                <span className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
+                  style={{ background: a.tone === "red" ? "rgba(251,113,133,.14)" : a.tone === "amber" ? "rgba(251,191,36,.14)" : "rgba(var(--ac-gl),.14)" }}>
+                  <a.Ic className="w-4 h-4" style={{ color: a.tone === "red" ? "var(--neg)" : a.tone === "amber" ? "var(--warn)" : "var(--ac)" }} />
+                </span>
+                <span className="flex-1 text-[13px] font-medium" style={{ color: "var(--txt)" }}>{a.t}</span>
+                <ChevronLeft className="w-4 h-4 rotate-180 shrink-0" style={{ color: "var(--txt-3)" }} />
               </div>
             </Card>
           ))}
         </div>
       )}
 
+      {/* ── ڕەوتی خێر ── */}
       {last7.some((d) => d.v) && (
-        <Card className="p-4 fade-up" onClick={() => go("insights")}>
-          <div className="flex items-center justify-between gap-4">
+        <Card tone="deep" className="p-5 rise" onClick={() => go("insights")}>
+          <div className="flex items-start justify-between gap-4">
             <div>
-              <div className="text-[11px]" style={{ color: "var(--txt-2)" }}>{tr("خێری ٧ ڕۆژی ڕابردوو")}</div>
-              <div className="text-xl font-bold mt-0.5" style={{ ...num, color: week7 >= 0 ? "var(--jade)" : "var(--verm)" }}>
-                {fmt(week7, 0)}{ratesReady && <span className="text-xs mr-1" style={{ color: "var(--txt-3)" }}>$</span>}
+              <div className="text-[12px]" style={{ color: "var(--txt-3)" }}>{tr("خێری ٧ ڕۆژی ڕابردوو")}</div>
+              <div className="text-[26px] font-semibold mt-1"
+                style={{ ...num, letterSpacing: "-.02em", color: week7 >= 0 ? "var(--pos)" : "var(--neg)" }}>
+                {fmt(week7, 0)}{ratesReady && <span className="text-[13px] font-normal ms-1" style={{ color: "var(--txt-3)" }}>$</span>}
               </div>
             </div>
-            <Spark data={last7.map((d) => d.v)} w={120} h={34} />
+            <Spark data={last7.map((d) => d.v)} w={130} h={44} color={week7 >= 0 ? "var(--pos)" : "var(--neg)"} />
           </div>
         </Card>
       )}
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Stat t={tr("مامەڵەی ئەمڕۆ")} v={todayTxs.length} i={0} />
-        <Stat t={tr("کڕین")} v={todayTxs.filter((t) => t.type === "buy").length} tone="text-[var(--jade)]" i={1} />
-        <Stat t={tr("فرۆشتن")} v={todayTxs.filter((t) => t.type === "sell").length} tone="text-[var(--verm)]" i={2} />
-        <Stat t={tr("چاوەڕوانی پارە")} v={pendingCount} tone={pendingCount ? "text-[var(--amber)]" : ""} i={3} />
+      {/* ── ژمارەکانی ئەمڕۆ ── */}
+      <div className="grid grid-cols-3 gap-2.5">
+        {[[tr("مامەڵە"), todayTxs.length, "var(--txt)"],
+          [tr("کڕین"), todayTxs.filter((t) => t.type === "buy").length, "var(--pos)"],
+          [tr("فرۆشتن"), todayTxs.filter((t) => t.type === "sell").length, "var(--neg)"]].map(([l, v, c], i) => (
+          <Card key={i} className="p-3.5 text-center rise" style={{ animationDelay: `${i * 50}ms` }}>
+            <div className="text-[24px] font-semibold" style={{ ...num, color: c }}>{v}</div>
+            <div className="text-[11px] mt-0.5" style={{ color: "var(--txt-3)" }}>{l}</div>
+          </Card>
+        ))}
       </div>
 
-      <div className="grid md:grid-cols-2 gap-4">
-        <Card className="p-5" onClick={() => go("profit")}>
-          <div className="flex items-center justify-between mb-3">
-            <SecLbl>{tr("خێری ئەمڕۆ")}</SecLbl>
-            <span className="text-xs text-[var(--jade)] font-semibold">{tr("وردەکاری ←")}</span>
-          </div>
-          {Object.keys(pTod).length === 0 ? <div className="text-sm text-[var(--txt-3)]">{tr("هێشتا فرۆشتنێک نەکراوە")}</div> :
-            Object.entries(pTod).map(([cid, v]) => (
-              <div key={cid} className="py-2 border-b border-[var(--line-soft)] last:border-0">
-                <div className="flex justify-between items-baseline">
-                  <span className="text-sm text-[var(--txt-2)]">{cur(cid).name}</span>
-                  <span className="text-lg"><Money v={v} dec={cur(cid).dec} pos /></span>
-                </div>
-                <div className="flex gap-4 text-[11px] text-[var(--txt-3)] mt-1">
-                  <span>{tr("خۆم:")} <span style={num}>{fmt(v - (invTod[cid] || 0), cur(cid).dec)}</span></span>
-                  <span>{tr("وەبەرهێنەران:")} <span style={num}>{fmt(invTod[cid] || 0, cur(cid).dec)}</span></span>
-                </div>
-              </div>
-            ))}
-        </Card>
+      {/* ── قاسەی گشتی ── */}
+      <SafeCards data={data} calc={calc} cur={cur} mySafe={mySafe} sumUsd={sumUsd}
+        ratesReady={ratesReady} owners={owners} go={go} />
 
-        <Card className="p-5" onClick={() => go("rates")}>
-          <div className="flex items-center justify-between mb-3">
-            <SecLbl>{tr("نرخی ئەمڕۆ")}</SecLbl>
-            <span className="text-xs text-[var(--jade)] font-semibold">{tr("گۆڕین ←")}</span>
-          </div>
-          {data.currencies.filter((c) => c.id !== "usd").map((c) => (
-            <div key={c.id} className="flex justify-between items-center py-1.5 border-b border-[var(--line-soft)] last:border-0 text-sm">
-              <span className="text-[var(--txt-2)] flex items-center gap-2"><CurBadge c={c} size="sm" /> {c.name}</span>
-              <span style={num} className="text-[var(--txt)]">
-                <span className="text-[var(--jade)] font-semibold">{c.buyRate ? fmt(c.buyRate, 3) : "—"}</span>
-                <span className="text-[var(--txt-3)] mx-1.5">/</span>
-                <span className="text-[var(--verm)] font-semibold">{c.sellRate ? fmt(c.sellRate, 3) : "—"}</span>
-              </span>
-            </div>
-          ))}
-          <div className="text-[11px] text-[var(--txt-3)] mt-2">{tr("کڕین / فرۆشتن — ١ دۆلار بە چەند")}</div>
-        </Card>
-      </div>
-
-      <SafeCards data={data} calc={calc} cur={cur} mySafe={mySafe} sumUsd={sumUsd} ratesReady={ratesReady} owners={owners} go={go} />
+      {/* ── نرخی ڕۆژ ── */}
+      <Card className="p-5">
+        <div className="flex items-center justify-between mb-1">
+          <SecLbl>{tr("نرخی ئەمڕۆ")}</SecLbl>
+          <button onClick={() => go("rates")} className="text-[12px] font-semibold tap" style={{ color: "var(--ac)" }}>
+            {tr("گۆڕین ←")}
+          </button>
+        </div>
+        {data.currencies.filter((c) => c.id !== "usd").map((c) => (
+          <Row key={c.id}
+            icon={<CurBadge c={c} size="sm" />}
+            title={c.name}
+            right={<span>
+              <span style={{ color: "var(--pos)" }}>{c.buyRate ? fmt(c.buyRate, 3) : "—"}</span>
+              <span className="mx-1.5" style={{ color: "var(--txt-3)" }}>/</span>
+              <span style={{ color: "var(--neg)" }}>{c.sellRate ? fmt(c.sellRate, 3) : "—"}</span>
+            </span>} />
+        ))}
+        <div className="text-[11px] mt-2" style={{ color: "var(--txt-3)" }}>{tr("کڕین / فرۆشتن — ١ دۆلار بە چەند")}</div>
+      </Card>
     </div>
   );
 }
 
-/* قاسەی گشتی + دابەشبوونی هەر دراوێک */
 function SafeCards({ data, calc, cur, mySafe, sumUsd, ratesReady, owners, go }) {
   const [open, setOpen] = useState(null);
   const [view, setView] = useState("where");
@@ -1676,73 +1754,57 @@ function SafeCards({ data, calc, cur, mySafe, sumUsd, ratesReady, owners, go }) 
 
   return (
     <Card className="p-5">
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between mb-1">
         <SecLbl>{tr("قاسەی گشتی")}</SecLbl>
-        <button onClick={() => go("safes")} className="text-xs text-[var(--jade)] font-semibold">پارە و خەرجی ←</button>
+        <button onClick={() => go("safes")} className="text-[12px] font-semibold tap" style={{ color: "var(--ac)" }}>
+          {tr("وردەکاری ←")}
+        </button>
       </div>
 
-      {ratesReady && (
-        <div className="grid grid-cols-2 gap-3 mb-5">
-          <div className="rounded-2xl p-4 relative overflow-hidden fade-up"
-            style={{ background: "linear-gradient(150deg, var(--ink-soft), var(--ink))", boxShadow: "var(--shadow-2)" }}>
-            <div className="absolute -top-8 -left-8 w-28 h-28 rounded-full"
-              style={{ background: "radial-gradient(circle, rgba(184,134,59,.16), transparent 70%)" }} />
-            <div className="text-[11px] relative" style={{ color: "rgba(255,255,255,.5)" }}>{tr("کۆی گشتی")}</div>
-            <div className="text-[26px] font-bold text-white relative leading-tight">
-              <CountUp v={sumUsd(calc.phys)} />
-              <span className="text-sm mr-1" style={{ color: "var(--brass-lt)" }}>$</span>
-            </div>
-          </div>
-          <div className="rounded-2xl p-4 relative overflow-hidden fade-up" style={{ animationDelay: "70ms",
-            background: "linear-gradient(150deg, var(--jade-lt), var(--jade-dp))", boxShadow: "0 4px 18px -4px rgba(14,122,107,.45)" }}>
-            <div className="absolute -bottom-10 -right-6 w-28 h-28 rounded-full"
-              style={{ background: "radial-gradient(circle, rgba(255,255,255,.14), transparent 70%)" }} />
-            <div className="text-[11px] relative" style={{ color: "rgba(255,255,255,.72)" }}>{tr("ماڵی خۆم")}</div>
-            <div className="text-[26px] font-bold text-white relative leading-tight">
-              <CountUp v={sumUsd(mySafe)} />
-              <span className="text-sm mr-1" style={{ color: "rgba(255,255,255,.7)" }}>$</span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="text-[11px] text-[var(--txt-3)] mb-2">{tr("کلیک لە هەر دراوێک بکە بۆ وردەکاری")}</div>
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
+      <div className="space-y-1">
         {data.currencies.map((cc, i) => {
           const isOpen = open === cc.id;
           const v = calc.phys[cc.id] || 0;
+          const usd = ratesReady ? sumUsd({ [cc.id]: v }) : null;
           return (
-            <button key={cc.id} onClick={() => { setOpen(isOpen ? null : cc.id); setView("where"); }}
-              style={{ animationDelay: `${i * 45}ms`,
-                background: isOpen ? "color-mix(in srgb, var(--brass) 9%, var(--card))" : "var(--card)",
-                borderColor: isOpen ? "var(--brass)" : "var(--line)",
-                boxShadow: isOpen ? "0 0 0 3px color-mix(in srgb, var(--brass) 15%, transparent), var(--shadow-2)" : "var(--shadow-1), var(--inset)" }}
-              className={`fade-up press text-right border rounded-2xl p-3.5 transition-all ${isOpen ? "" : "lift"}`}>
-              <div className="flex items-center gap-2.5">
-                <CurBadge c={cc} pulse={isOpen} />
-                <div className="min-w-0">
-                  <div className="text-[11px] text-[var(--txt-2)] truncate">
-                    {cc.name}{cc.external && <span className="text-[var(--amber)] mr-1">{tr("· دەرەوە")}</span>}
-                  </div>
-                  <div className={`text-lg font-bold ${v < 0 ? "text-[var(--verm)]" : "text-[var(--txt)]"}`}>
-                    <CountUp v={v} />
-                  </div>
-                </div>
+            <div key={cc.id}>
+              <div onClick={() => { setOpen(isOpen ? null : cc.id); setView("where"); }}
+                className="tap cursor-pointer rounded-[var(--r-sm)] px-2 -mx-2"
+                style={isOpen ? { background: "var(--surf-2)" } : {}}>
+                <Row
+                  icon={<CurBadge c={cc} pulse={isOpen} />}
+                  title={cc.name}
+                  sub={cc.external ? tr("· دەرەوە") : null}
+                  right={fmt(v, 0)}
+                  rightSub={usd != null && cc.id !== "usd" ? `≈ ${fmt(usd, 0)} $` : null}
+                  tone={v < 0 ? "neg" : null} />
               </div>
-            </button>
+              {isOpen && (
+                <div className="py-3 px-3 my-1 rounded-[var(--r-sm)] drop" style={{ background: "var(--surf-2)" }}>
+                  <Tabs items={[["where", tr("لای کێیە؟")], ["whose", tr("هی کێیە؟")]]} value={view} onChange={setView} className="mb-3" />
+                  {view === "where" ? (
+                    <>
+                      <Row title={tr("لای خۆم (قاسەی سەرەکی)")} right={fmt(calc.atMe[cc.id] || 0, 0)} />
+                      {partners.map((p) => {
+                        const pv = (calc.partner[p.id] || {})[cc.id];
+                        if (!pv) return null;
+                        return <Row key={p.id} title={p.name} sub={pv < 0 ? tr("· قەرز") : null}
+                          right={fmt(pv, 0)} tone={pv < 0 ? "neg" : null} />;
+                      })}
+                    </>
+                  ) : (
+                    !owners || owners.total <= 0 ? <Empty t={tr("هێشتا سەرمایە دانەنراوە")} /> :
+                      owners.list.map((o) => (
+                        <Row key={o.id} title={o.name} sub={`${(o.share * 100).toFixed(1)}٪`}
+                          right={fmt(bal * o.share, 0)} tone={o.isMe ? "pos" : null} />
+                      ))
+                  )}
+                </div>
+              )}
+            </div>
           );
         })}
       </div>
-
-      {open && (
-        <div className="mt-4 border-t border-[var(--line)] pt-4">
-          <div className="flex items-baseline justify-between mb-3">
-            <div className="font-bold text-[var(--txt)]">{c.name}</div>
-            <div className="text-xl font-bold text-[var(--txt)]" style={num}>{fmt(bal, 0)} <span className="text-sm text-[var(--amber)]">{c.symbol}</span></div>
-          </div>
-          <CurrencyBreakdown curId={open} data={data} calc={calc} cur={cur} owners={owners} ratesReady={ratesReady} />
-        </div>
-      )}
     </Card>
   );
 }
@@ -1755,16 +1817,16 @@ function CurrencyBreakdown({ curId, data, calc, cur, owners, ratesReady }) {
   const partners = data.users.filter((u) => u.role === "partner" && !u.deleted);
   return (
     <div>
-      <div className="flex gap-1 bg-[var(--line-soft)] rounded-xl p-1 mb-3">
+      <div className="flex gap-1 bg-[var(--line)] rounded-[var(--r-sm)] p-1 mb-3">
         {[["where", tr("لای کێیە؟")], ["whose", tr("هی کێیە؟")]].map(([k, t]) => (
           <button key={k} onClick={() => setView(k)}
-            className={`flex-1 py-2 rounded-lg text-sm transition ${view === k ? "bg-[var(--card)] text-[var(--jade)] font-bold shadow-sm" : "text-[var(--txt-2)]"}`}>{t}</button>
+            className={`flex-1 py-2 rounded-lg text-sm transition ${view === k ? "bg-[var(--surf)] text-[var(--pos)] font-bold shadow-sm" : "text-[var(--txt-2)]"}`}>{t}</button>
         ))}
       </div>
 
       {view === "where" ? (
         <div>
-          <div className="flex justify-between items-center py-2.5 border-b border-[var(--line-soft)]">
+          <div className="flex justify-between items-center py-2.5 border-b border-[var(--line)]">
             <span className="text-sm text-[var(--txt-2)]">{tr("لای خۆم (قاسەی سەرەکی)")}</span>
             <Money v={calc.atMe[curId] || 0} dec={0} />
           </div>
@@ -1772,8 +1834,8 @@ function CurrencyBreakdown({ curId, data, calc, cur, owners, ratesReady }) {
             const v = (calc.partner[p.id] || {})[curId];
             if (!v) return null;
             return (
-              <div key={p.id} className="flex justify-between items-center py-2.5 border-b border-[var(--line-soft)]">
-                <span className="text-sm text-[var(--txt-2)]">لای {p.name}{v < 0 && <span className="text-[var(--verm)] text-xs mr-1">{tr("(قەرز)")}</span>}</span>
+              <div key={p.id} className="flex justify-between items-center py-2.5 border-b border-[var(--line)]">
+                <span className="text-sm text-[var(--txt-2)]">لای {p.name}{v < 0 && <span className="text-[var(--neg)] text-xs mr-1">{tr("(قەرز)")}</span>}</span>
                 <Money v={v} dec={0} />
               </div>
             );
@@ -1788,15 +1850,15 @@ function CurrencyBreakdown({ curId, data, calc, cur, owners, ratesReady }) {
       ) : (
         <div>
           {!ratesReady && (
-            <div className="text-xs text-[var(--amber)] bg-[color-mix(in_srgb,var(--amber)_11%,transparent)] border border-[color-mix(in_srgb,var(--amber)_26%,transparent)] rounded-lg p-2.5 mb-2">
+            <div className="text-xs text-[var(--warn)] bg-[color-mix(in_srgb,var(--warn)_11%,transparent)] border border-[color-mix(in_srgb,var(--warn)_26%,transparent)] rounded-lg p-2.5 mb-2">
               {tr("بۆ وردی زیاتر، نرخی هەموو دراوەکان دابنێ")}
             </div>
           )}
           {!owners || owners.total <= 0 ? <Empty t={tr("هێشتا سەرمایە دانەنراوە")} /> :
             owners.list.map((o) => (
-              <div key={o.id} className="flex justify-between items-center py-2.5 border-b border-[var(--line-soft)] last:border-0">
+              <div key={o.id} className="flex justify-between items-center py-2.5 border-b border-[var(--line)] last:border-0">
                 <div>
-                  <span className={`text-sm ${o.isMe ? "font-bold text-[var(--jade)]" : "text-[var(--txt-2)]"}`}>{o.name}</span>
+                  <span className={`text-sm ${o.isMe ? "font-bold text-[var(--pos)]" : "text-[var(--txt-2)]"}`}>{o.name}</span>
                   <span className="text-xs text-[var(--txt-3)] mr-2" style={num}>{(o.share * 100).toFixed(1)}٪</span>
                 </div>
                 <Money v={bal * o.share} dec={0} pos={o.isMe} />
@@ -1820,12 +1882,12 @@ function Rates({ data, saveRates }) {
     <div className="space-y-4">
       <H sub="ڕەیتی هەر دراوێک بەرامبەر ١ دۆلار — لە مامەڵەکاندا ئۆتۆماتیکی بەکاردێت">{tr("نرخی ئەمڕۆ")}</H>
       <Card className="p-5">
-        <div className="text-xs text-[var(--txt-2)] mb-4 bg-[var(--line-soft)] rounded-xl p-3 leading-relaxed">
+        <div className="text-xs text-[var(--txt-2)] mb-4 bg-[var(--line)] rounded-[var(--r-sm)] p-3 leading-relaxed">
           <b className="text-[var(--txt)]">{tr("١ دۆلار = چەند؟")}</b> — نموونە: گەر ١ دۆلار بە <b>{tr("٧.٢٠")}</b> یەن بکڕیت و بە <b>{tr("٧.١٥")}</b> یەن بیفرۆشیت، ئەو دوو ژمارەیە بنووسە.
         </div>
         <div className="space-y-4">
           {rows.map((r) => (
-            <div key={r.id} className="pb-4 border-b border-[var(--line-soft)] last:border-0 last:pb-0">
+            <div key={r.id} className="pb-4 border-b border-[var(--line)] last:border-0 last:pb-0">
               <div className="flex items-center gap-2.5 mb-2.5">
                 <CurBadge c={r.c} size="sm" />
                 <span className="text-sm font-semibold text-[var(--txt)]">{r.name}</span>
@@ -1833,13 +1895,13 @@ function Rates({ data, saveRates }) {
               </div>
               <div className="grid grid-cols-2 gap-2.5">
                 <div>
-                  <div className="text-[11px] font-semibold text-[var(--jade)] mb-1">{tr("١ دۆلار بە چەند دەکڕم")}</div>
+                  <div className="text-[11px] font-semibold text-[var(--pos)] mb-1">{tr("١ دۆلار بە چەند دەکڕم")}</div>
                   <Inp type="number" step="any" dir="ltr" value={r.buyRate}
                     onChange={(e) => upd(r.id, "buyRate", e.target.value)}
                     className="text-center font-bold text-base" placeholder="7.20" />
                 </div>
                 <div>
-                  <div className="text-[11px] font-semibold text-[var(--verm)] mb-1">{tr("١ دۆلار بە چەند دەفرۆشم")}</div>
+                  <div className="text-[11px] font-semibold text-[var(--neg)] mb-1">{tr("١ دۆلار بە چەند دەفرۆشم")}</div>
                   <Inp type="number" step="any" dir="ltr" value={r.sellRate}
                     onChange={(e) => upd(r.id, "sellRate", e.target.value)}
                     className="text-center font-bold text-base" placeholder="7.15" />
@@ -1879,10 +1941,10 @@ function ProfitPage({ data, cur, profitIn, investorsProfitIn, invShare }) {
   return (
     <div className="space-y-4">
       <H>{tr("خێر بە وردی")}</H>
-      <div className="flex gap-1 bg-[var(--card)] border border-[var(--line)] rounded-xl p-1 w-fit">
+      <div className="flex gap-1 bg-[var(--surf)] border border-[var(--line)] rounded-[var(--r-sm)] p-1 w-fit">
         {[["day", tr("ئەمڕۆ")], ["week", tr("ئەم هەفتەیە")], ["month", tr("ئەم مانگە")]].map(([k, t2]) => (
           <button key={k} onClick={() => setMode(k)}
-            className={`px-4 py-2 rounded-lg text-sm ${mode === k ? "bg-[var(--jade)] text-white font-semibold" : "text-[var(--txt-2)] hover:bg-[var(--line-soft)]"}`}>{t2}</button>
+            className={`px-4 py-2 rounded-lg text-sm ${mode === k ? "bg-[var(--pos)] text-white font-semibold" : "text-[var(--txt-2)] hover:bg-[var(--line)]"}`}>{t2}</button>
         ))}
       </div>
 
@@ -1897,23 +1959,23 @@ function ProfitPage({ data, cur, profitIn, investorsProfitIn, invShare }) {
                 <div className="text-2xl"><Money v={tot} dec={c.dec} pos /></div>
               </div>
               <div className="grid grid-cols-2 gap-3 mb-4">
-                <div className="bg-[color-mix(in_srgb,var(--jade)_10%,transparent)]/70 rounded-xl p-3">
-                  <div className="text-xs text-[var(--jade)]/70">{tr("خێری خۆم")}</div>
+                <div className="bg-[color-mix(in_srgb,var(--pos)_10%,transparent)]/70 rounded-[var(--r-sm)] p-3">
+                  <div className="text-xs text-[var(--pos)]/70">{tr("خێری خۆم")}</div>
                   <div className="text-lg"><Money v={tot - invTot} dec={c.dec} pos /></div>
                 </div>
-                <div className="bg-[var(--line-soft)]/70 rounded-xl p-3">
+                <div className="bg-[var(--line)]/70 rounded-[var(--r-sm)] p-3">
                   <div className="text-xs text-[var(--txt-2)]">{tr("خێری وەبەرهێنەران")}</div>
                   <div className="text-lg"><Money v={invTot} dec={c.dec} /></div>
                 </div>
               </div>
               {invTot > 0 && (
-                <div className="border-t border-[var(--line-soft)] pt-3">
+                <div className="border-t border-[var(--line)] pt-3">
                   <div className="text-xs font-semibold text-[var(--txt-2)] mb-2">{tr("دابەشبوون بەسەر وەبەرهێنەران")}</div>
                   {investors.map((u) => {
                     const s = invShare(u.id, cid, tot);
                     if (!s) return null;
                     return (
-                      <div key={u.id} className="flex justify-between py-1.5 text-sm border-b border-[var(--line-soft)] last:border-0">
+                      <div key={u.id} className="flex justify-between py-1.5 text-sm border-b border-[var(--line)] last:border-0">
                         <span className="text-[var(--txt-2)]">{u.name} <span className="text-xs text-[var(--txt-3)]">({u.rate}٪)</span></span>
                         <Money v={s} dec={c.dec} />
                       </div>
@@ -1952,7 +2014,7 @@ function Safes({ data, calc, cur, usr, mySafe, invUnpaid, owners, ratesReady, ad
           {data.currencies.map((c) => (
             <div key={c.id}>
               <button onClick={() => setOpenCur(openCur === c.id ? null : c.id)}
-                className={`w-full flex justify-between items-center py-2.5 border-b border-[var(--line-soft)] transition ${openCur === c.id ? "text-[var(--jade)]" : "hover:text-[var(--jade)]"}`}>
+                className={`w-full flex justify-between items-center py-2.5 border-b border-[var(--line)] transition ${openCur === c.id ? "text-[var(--pos)]" : "hover:text-[var(--pos)]"}`}>
                 <span className="text-sm flex items-center gap-2">
                   <ChevronLeft className={`w-3.5 h-3.5 transition-transform ${openCur === c.id ? "-rotate-90" : "rotate-180"}`} />
                   <CurBadge c={c} size="sm" />
@@ -1961,7 +2023,7 @@ function Safes({ data, calc, cur, usr, mySafe, invUnpaid, owners, ratesReady, ad
                 <Money v={calc.phys[c.id] || 0} dec={0} />
               </button>
               {openCur === c.id && (
-                <div className="py-3 px-1 bg-[var(--line-soft)] rounded-xl my-2">
+                <div className="py-3 px-1 bg-[var(--line)] rounded-[var(--r-sm)] my-2">
                   <CurrencyBreakdown curId={c.id} data={data} calc={calc} cur={cur} owners={owners} ratesReady={ratesReady} />
                 </div>
               )}
@@ -1970,11 +2032,11 @@ function Safes({ data, calc, cur, usr, mySafe, invUnpaid, owners, ratesReady, ad
         </Card>
         <Card className="p-5">
           <div className="flex items-center gap-1.5 mb-3">
-            <Wallet className="w-4 h-4 text-[var(--jade)]" />
+            <Wallet className="w-4 h-4 text-[var(--pos)]" />
             <SecLbl>{tr("قاسەی تایبەتی خۆم")}</SecLbl>
           </div>
           {data.currencies.map((c) => (
-            <div key={c.id} className="flex justify-between py-2 border-b border-[var(--line-soft)] last:border-0">
+            <div key={c.id} className="flex justify-between py-2 border-b border-[var(--line)] last:border-0">
               <span className="text-sm text-[var(--txt-2)]">{c.name}</span>
               <Money v={mySafe[c.id] || 0} dec={c.dec} />
             </div>
@@ -1995,7 +2057,7 @@ function Safes({ data, calc, cur, usr, mySafe, invUnpaid, owners, ratesReady, ad
       </Card>
 
       <Card className="p-5">
-        <div className="flex items-center gap-1.5 mb-3"><Receipt className="w-4 h-4 text-[var(--verm)]" /><SecLbl>{tr("تۆمارکردنی خەرجی")}</SecLbl></div>
+        <div className="flex items-center gap-1.5 mb-3"><Receipt className="w-4 h-4 text-[var(--neg)]" /><SecLbl>{tr("تۆمارکردنی خەرجی")}</SecLbl></div>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           <div><Lbl>{tr("جۆری خەرجی")}</Lbl><Sel value={xf.category} onChange={(e) => setXf({ ...xf, category: e.target.value, investorId: "" })}>{XCATS.map((c) => <option key={c} value={c}>{c}</option>)}</Sel></div>
           {isPayout && (
@@ -2007,9 +2069,9 @@ function Safes({ data, calc, cur, usr, mySafe, invUnpaid, owners, ratesReady, ad
           <div className="flex items-end"><Btn kind="danger" className="w-full" onClick={() => { if (+xf.amount > 0) { addExpense(xf); setXf({ ...xf, amount: "", note: "" }); } }}>{tr("تۆمارکردن")}</Btn></div>
         </div>
         {isPayout && xf.investorId && (
-          <div className="mt-3 bg-[color-mix(in_srgb,var(--amber)_11%,transparent)] border border-[color-mix(in_srgb,var(--amber)_26%,transparent)] rounded-xl p-3 text-sm flex items-center justify-between flex-wrap gap-2">
-            <span className="text-[var(--amber)]">خێری نەدراوی {usr(xf.investorId).name}: <b style={num}>{fmt(unpaid, cur(xf.curId).dec)}</b> {cur(xf.curId).code}</span>
-            <button onClick={() => setXf({ ...xf, amount: String(Math.max(0, Math.round(unpaid * 100) / 100)) })} className="text-xs font-semibold text-[var(--jade)]">دانانی ئەم بڕە ←</button>
+          <div className="mt-3 bg-[color-mix(in_srgb,var(--warn)_11%,transparent)] border border-[color-mix(in_srgb,var(--warn)_26%,transparent)] rounded-[var(--r-sm)] p-3 text-sm flex items-center justify-between flex-wrap gap-2">
+            <span className="text-[var(--warn)]">خێری نەدراوی {usr(xf.investorId).name}: <b style={num}>{fmt(unpaid, cur(xf.curId).dec)}</b> {cur(xf.curId).code}</span>
+            <button onClick={() => setXf({ ...xf, amount: String(Math.max(0, Math.round(unpaid * 100) / 100)) })} className="text-xs font-semibold text-[var(--pos)]">دانانی ئەم بڕە ←</button>
           </div>
         )}
       </Card>
@@ -2022,9 +2084,9 @@ function Safes({ data, calc, cur, usr, mySafe, invUnpaid, owners, ratesReady, ad
           <div><Lbl>{tr("هێما")}</Lbl><Inp value={nc.symbol} onChange={(e) => setNc({ ...nc, symbol: e.target.value })} /></div>
           <div><Lbl>{tr("خانەی دەیمی")}</Lbl><Inp type="number" value={nc.dec} onChange={(e) => setNc({ ...nc, dec: +e.target.value })} /></div>
           <div className="col-span-2 md:col-span-5">
-            <label className="flex items-start gap-2.5 cursor-pointer bg-[var(--line-soft)] border border-[var(--line)] rounded-xl p-3">
+            <label className="flex items-start gap-2.5 cursor-pointer bg-[var(--line)] border border-[var(--line)] rounded-[var(--r-sm)] p-3">
               <input type="checkbox" checked={!!nc.external} onChange={(e) => setNc({ ...nc, external: e.target.checked })}
-                className="mt-0.5 w-4 h-4 accent-[var(--jade)]" />
+                className="mt-0.5 w-4 h-4 accent-[var(--pos)]" />
               <span className="text-sm text-[var(--txt)]">
                 <b>{tr("دراوی دەرەوە")}</b>
                 <div className="text-xs text-[var(--txt-2)] mt-0.5">{tr("لای تەرەفەکان هەڵدەگیرێت، لە قاسەی گشتیدا نامێنێتەوە (وەک یەن)")}</div>
@@ -2107,17 +2169,17 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
     <div className="space-y-4">
       <H>{e ? `ئیدیتی مامەڵە #${e.code}` : "مامەڵەی نوێ"}</H>
       {batch && (
-        <Card className="p-4 border-[color-mix(in_srgb,var(--jade)_40%,transparent)] bg-[color-mix(in_srgb,var(--jade)_9%,transparent)]">
+        <Card className="p-4 border-[color-mix(in_srgb,var(--pos)_40%,transparent)] bg-[color-mix(in_srgb,var(--pos)_9%,transparent)]">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <div className="text-sm font-bold text-[var(--jade)]">لە فیشەکانی {batch.customer_name}</div>
-              <div className="text-xs text-[var(--jade)] mt-1" style={num}>
+              <div className="text-sm font-bold text-[var(--pos)]">لە فیشەکانی {batch.customer_name}</div>
+              <div className="text-xs text-[var(--pos)] mt-1" style={num}>
                 {batch.n} فیش · بێ فی {fmt(batch.total_net, 0)} {batch.currency}
                 {batch.total_fee > 0 && ` · بە فی ${fmt(batch.total_gross, 0)}`}
               </div>
-              <div className="text-[11px] text-[var(--jade)] mt-1">{tr("بڕەکە خۆی دانراوە — تەنها نرخ و شوێنی دانان پڕ بکەرەوە")}</div>
+              <div className="text-[11px] text-[var(--pos)] mt-1">{tr("بڕەکە خۆی دانراوە — تەنها نرخ و شوێنی دانان پڕ بکەرەوە")}</div>
             </div>
-            <button onClick={onClearBatch} className="p-1.5 text-[var(--jade)]/60 hover:text-[var(--jade)]"><X className="w-4 h-4" /></button>
+            <button onClick={onClearBatch} className="p-1.5 text-[var(--pos)]/60 hover:text-[var(--pos)]"><X className="w-4 h-4" /></button>
           </div>
         </Card>
       )}
@@ -2130,7 +2192,7 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
             return (
               <button key={t} disabled={locked}
                 onClick={() => !locked && setF({ ...f, type: t, manualRate: false, quote: "", status: "completed" })}
-                className={`flex-1 py-2.5 rounded-xl font-bold text-sm transition ${active ? (t === "buy" ? "bg-[var(--jade)] text-white shadow-sm" : "bg-rose-700 text-white shadow-sm") : "bg-[var(--line-soft)] text-[var(--txt-2)] hover:bg-[var(--line)]"} ${locked ? "cursor-default" : ""}`}>
+                className={`flex-1 py-2.5 rounded-[var(--r-sm)] font-bold text-sm transition ${active ? (t === "buy" ? "bg-[var(--pos)] text-white shadow-sm" : "bg-rose-700 text-white shadow-sm") : "bg-[var(--line)] text-[var(--txt-2)] hover:bg-[var(--line)]"} ${locked ? "cursor-default" : ""}`}>
                 {t === "buy" ? "کڕین" : "فرۆشتن"}{locked && " (لە فیشەکانەوە)"}
               </button>
             );
@@ -2138,10 +2200,10 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
         </div>
 
         {!batch && (
-          <label className="flex items-start gap-2.5 cursor-pointer bg-[var(--line-soft)] border border-[var(--line)] rounded-xl p-3">
+          <label className="flex items-start gap-2.5 cursor-pointer bg-[var(--line)] border border-[var(--line)] rounded-[var(--r-sm)] p-3">
             <input type="checkbox" checked={f.direct}
               onChange={(ev) => setF({ ...f, direct: ev.target.checked, partnerId: "" })}
-              className="mt-0.5 w-4 h-4 accent-[var(--jade)]" />
+              className="mt-0.5 w-4 h-4 accent-[var(--pos)]" />
             <span className="text-sm text-[var(--txt)]">
               <b>{tr("مامەڵەی ڕاستەوخۆ")}</b>
               <div className="text-xs text-[var(--txt-2)] mt-0.5">{tr("پارەکە لای هیچ کەس هەڵناگیرێت — ڕاستەوخۆ دەکڕدرێت و دەفرۆشرێت، بێ عمولە")}</div>
@@ -2156,46 +2218,46 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
         </div>
 
         {f.direct ? (
-          <div className="bg-violet-50/60 border border-violet-200 rounded-xl p-4 space-y-3">
+          <div className="bg-violet-50/60 border border-violet-200 rounded-[var(--r-sm)] p-4 space-y-3">
             <div className="text-xs font-bold text-violet-900">{tr("ڕەیتی کڕین و فرۆشتن")}</div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <div className="text-[11px] font-semibold text-[var(--jade)] mb-1">{tr("بە چەند دەیکڕم")}</div>
+                <div className="text-[11px] font-semibold text-[var(--pos)] mb-1">{tr("بە چەند دەیکڕم")}</div>
                 <Inp type="number" step="any" dir="ltr" value={f.buyQuote}
                   onChange={(ev) => setF({ ...f, buyQuote: ev.target.value })}
                   className="text-center font-bold text-base" placeholder={autoQuote ? String(autoQuote) : "7.20"} />
               </div>
               <div>
-                <div className="text-[11px] font-semibold text-[var(--verm)] mb-1">{tr("بە چەند دەیفرۆشم")}</div>
+                <div className="text-[11px] font-semibold text-[var(--neg)] mb-1">{tr("بە چەند دەیفرۆشم")}</div>
                 <Inp type="number" step="any" dir="ltr" value={f.sellQuote}
                   onChange={(ev) => setF({ ...f, sellQuote: ev.target.value })}
                   className="text-center font-bold text-base" placeholder="7.15" />
               </div>
             </div>
             {bq > 0 && sq > 0 && amtR > 0 && (
-              <div className="bg-[var(--card)] rounded-xl p-3 space-y-1.5">
+              <div className="bg-[var(--surf)] rounded-[var(--r-sm)] p-3 space-y-1.5">
                 <div className="flex justify-between text-sm">
                   <span className="text-[var(--txt-2)]">{tr("دەدەم (کڕین)")}</span>
-                  <span className="font-bold text-[var(--verm)]" style={num}>{fmt(dBuyTotal, 0)} {cur(f.againstId).code}</span>
+                  <span className="font-bold text-[var(--neg)]" style={num}>{fmt(dBuyTotal, 0)} {cur(f.againstId).code}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-[var(--txt-2)]">{tr("وەردەگرم (فرۆشتن)")}</span>
-                  <span className="font-bold text-[var(--jade)]" style={num}>{fmt(dSellTotal, 0)} {cur(f.againstId).code}</span>
+                  <span className="font-bold text-[var(--pos)]" style={num}>{fmt(dSellTotal, 0)} {cur(f.againstId).code}</span>
                 </div>
                 <div className="flex justify-between pt-2 mt-1 border-t border-[var(--line)]">
                   <span className="text-sm font-bold text-[var(--txt)]">{tr("خێر")}</span>
-                  <span className={`text-xl font-bold ${dProfit >= 0 ? "text-[var(--jade)]" : "text-[var(--verm)]"}`} style={num}>
+                  <span className={`text-xl font-bold ${dProfit >= 0 ? "text-[var(--pos)]" : "text-[var(--neg)]"}`} style={num}>
                     {dProfit > 0 ? "+" : ""}{fmt(dProfit, 0)} {cur(f.againstId).code}
                   </span>
                 </div>
-                {dProfit < 0 && <div className="text-[11px] text-[var(--verm)] font-semibold">{tr("ئاگاداری: بە زەرەر دەفرۆشیت")}</div>}
+                {dProfit < 0 && <div className="text-[11px] text-[var(--neg)] font-semibold">{tr("ئاگاداری: بە زەرەر دەفرۆشیت")}</div>}
               </div>
             )}
             {autoQuote && (
               <div className="text-[11px] text-[var(--txt-2)] flex items-center gap-2">
                 <span style={num}>نرخی ڕۆژ: {fmt(autoQuote, 3)}</span>
                 <button onClick={() => setF({ ...f, buyQuote: autoQuote, sellQuote: autoQuote })}
-                  className="text-[var(--jade)] font-semibold underline">بەکارهێنانی نرخی ڕۆژ</button>
+                  className="text-[var(--pos)] font-semibold underline">بەکارهێنانی نرخی ڕۆژ</button>
               </div>
             )}
 
@@ -2230,7 +2292,7 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
             </div>
           </div>
         ) : (
-        <div className="bg-[var(--line-soft)] border border-[var(--line)] rounded-xl p-4">
+        <div className="bg-[var(--line)] border border-[var(--line)] rounded-[var(--r-sm)] p-4">
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div>
               <div className="text-xs text-[var(--txt-2)]">{tr("کۆی گشتی")}</div>
@@ -2242,7 +2304,7 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
               </div>
               <Inp type="number" step="any" dir="ltr" value={f.quote}
                 onChange={(ev) => setF({ ...f, quote: ev.target.value, manualRate: true })}
-                className="w-36 text-center font-bold text-lg" style={offDay ? { borderColor: "var(--brass)", background: "color-mix(in srgb, var(--brass) 9%, var(--card))" } : {}} />
+                className="w-36 text-center font-bold text-lg" style={offDay ? { borderColor: "var(--ac)", background: "color-mix(in srgb, var(--ac) 9%, var(--surf))" } : {}} />
             </div>
           </div>
 
@@ -2257,9 +2319,9 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
             </span>
             {offDay && (
               <div className="flex items-center gap-2">
-                <span className="text-[var(--amber)] font-semibold">{tr("نرخێکی تایبەت بەکاردێت")}</span>
+                <span className="text-[var(--warn)] font-semibold">{tr("نرخێکی تایبەت بەکاردێت")}</span>
                 <button onClick={() => setF({ ...f, manualRate: false, quote: autoQuote })}
-                  className="text-[var(--jade)] font-semibold underline">گەڕانەوە بۆ نرخی ڕۆژ</button>
+                  className="text-[var(--pos)] font-semibold underline">گەڕانەوە بۆ نرخی ڕۆژ</button>
               </div>
             )}
           </div>
@@ -2298,7 +2360,7 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
         {batch && (
           <div>
             <Lbl>{tr("لایەنی بەرامبەر")}</Lbl>
-            <div className="flex items-center gap-2 border border-[var(--line)] bg-[var(--line-soft)] rounded-xl px-3 py-2.5">
+            <div className="flex items-center gap-2 border border-[var(--line)] bg-[var(--line)] rounded-[var(--r-sm)] px-3 py-2.5">
               <Users className="w-4 h-4 text-[var(--txt-3)]" />
               <span className="text-sm font-semibold text-[var(--txt)]">{batch.customer_name || usr(batch.customer_id).name || "—"}</span>
               <span className="text-[11px] text-[var(--txt-3)] mr-auto">{tr("لە فیشەکانەوە — ناگۆڕدرێت")}</span>
@@ -2323,24 +2385,24 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
         )}
 
         {cur(f.curId).external && !f.partnerId && !f.direct && (
-          <div className="flex items-start gap-2 text-[var(--amber)] bg-[color-mix(in_srgb,var(--amber)_11%,transparent)] border border-[color-mix(in_srgb,var(--amber)_26%,transparent)] rounded-xl p-3 text-sm">
+          <div className="flex items-start gap-2 text-[var(--warn)] bg-[color-mix(in_srgb,var(--warn)_11%,transparent)] border border-[color-mix(in_srgb,var(--warn)_26%,transparent)] rounded-[var(--r-sm)] p-3 text-sm">
             <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
             {cur(f.curId).name} لە قاسەی گشتیدا هەڵناگیرێت — دەبێت تەرەفێک هەڵبژێریت
           </div>
         )}
         {f.type === "sell" && av === null && amtR > 0 && (
-          <div className="flex items-start gap-2 text-[var(--txt-2)] bg-[var(--line-soft)] border border-[var(--line)] rounded-xl p-3 text-sm">
-            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-[var(--amber)]" />
+          <div className="flex items-start gap-2 text-[var(--txt-2)] bg-[var(--line)] border border-[var(--line)] rounded-[var(--r-sm)] p-3 text-sm">
+            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-[var(--warn)]" />
             هیچ کڕینێکی پێشووی ئەم دراوە نییە بەرامبەر {cur(f.againstId).code} — بۆیە خێری ئەم فرۆشتنە ناژمێردرێت.
           </div>
         )}
         {feeRate > 0 && f.type === "buy" && +f.amount > 0 && (
-          <div className="text-sm bg-[var(--line-soft)] border border-[var(--line)] rounded-xl p-3 text-[var(--txt-2)]">
+          <div className="text-sm bg-[var(--line)] border border-[var(--line)] rounded-[var(--r-sm)] p-3 text-[var(--txt-2)]">
             عمولەی {usr(f.partnerId).name} ({feeRate}٪): <b style={num}>{fmt(Math.round(amtR * feeRate / 100), 0)}</b> {cur(f.curId).code} — دەستبەجێ کەم دەکرێتەوە، باڵانسی دوایی: <b style={num}>{fmt(amtR - Math.round(amtR * feeRate / 100), 0)}</b>
           </div>
         )}
         {willBeNeg && (
-          <div className="flex items-start gap-2 text-[var(--amber)] bg-[color-mix(in_srgb,var(--amber)_11%,transparent)] border border-[color-mix(in_srgb,var(--amber)_26%,transparent)] rounded-xl p-3 text-sm">
+          <div className="flex items-start gap-2 text-[var(--warn)] bg-[color-mix(in_srgb,var(--warn)_11%,transparent)] border border-[color-mix(in_srgb,var(--warn)_26%,transparent)] rounded-[var(--r-sm)] p-3 text-sm">
             <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" /> {tr("دوای ئەم فرۆشتنە باڵانسەکە دەبێتە سالب — قەرزار دەبیت و لە تێکردنی داهاتوودا ئۆتۆماتیکی دەبڕدرێتەوە.")}
           </div>
         )}
@@ -2394,12 +2456,12 @@ function TxFilterBar({ data, f, setF, count, total }) {
       <div className="flex gap-2 items-center">
         <Inp value={f.q} onChange={(e) => setF({ ...f, q: e.target.value })} placeholder={tr("گەڕان بە کۆد، ناو، دراو...")} className="flex-1" />
         <button onClick={() => setOpen(!open)}
-          className={`shrink-0 px-3 py-2.5 rounded-xl border text-sm font-semibold flex items-center gap-1.5 transition ${active ? "bg-[var(--jade)] text-white border-emerald-700" : "bg-[var(--card)] border-[var(--line)] text-[var(--txt-2)]"}`}>
+          className={`shrink-0 px-3 py-2.5 rounded-[var(--r-sm)] border text-sm font-semibold flex items-center gap-1.5 transition ${active ? "bg-[var(--pos)] text-white border-emerald-700" : "bg-[var(--surf)] border-[var(--line)] text-[var(--txt-2)]"}`}>
           <SlidersHorizontal className="w-4 h-4" /> {tr("فلتەر")}
         </button>
       </div>
       {open && (
-        <div className="mt-3 pt-3 border-t border-[var(--line-soft)] space-y-3">
+        <div className="mt-3 pt-3 border-t border-[var(--line)] space-y-3">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
             <div><Lbl>{tr("جۆر")}</Lbl><Sel value={f.type} onChange={(e) => setF({ ...f, type: e.target.value })}>
               <option value="all">{tr("هەمووی")}</option><option value="buy">{tr("کڕین")}</option><option value="sell">{tr("فرۆشتن")}</option></Sel></div>
@@ -2415,13 +2477,13 @@ function TxFilterBar({ data, f, setF, count, total }) {
           </div>
           <div className="flex gap-1.5 flex-wrap">
             {[["ئەمڕۆ", 0], ["٧ ڕۆژ", 7], ["٣٠ ڕۆژ", 30], ["٩٠ ڕۆژ", 90]].map(([t, d]) => (
-              <button key={t} onClick={() => quick(d)} className="px-3 py-1.5 rounded-lg bg-[var(--line-soft)] hover:bg-[var(--line)] text-xs font-semibold text-[var(--txt-2)]">{t}</button>
+              <button key={t} onClick={() => quick(d)} className="px-3 py-1.5 rounded-lg bg-[var(--line)] hover:bg-[var(--line)] text-xs font-semibold text-[var(--txt-2)]">{t}</button>
             ))}
           </div>
         </div>
       )}
       {(count != null) && (
-        <div className="mt-2.5 pt-2.5 border-t border-[var(--line-soft)] flex gap-4 flex-wrap text-xs text-[var(--txt-2)]">
+        <div className="mt-2.5 pt-2.5 border-t border-[var(--line)] flex gap-4 flex-wrap text-xs text-[var(--txt-2)]">
           <span><b style={num}>{count}</b>{tr("مامەڵە")}</span>
           {total && Object.entries(total).map(([c, v]) => <span key={c}>{c}: <b style={num}>{fmt(v, 0)}</b></span>)}
         </div>
@@ -2455,7 +2517,7 @@ function TxRow({ t, cur, usr, onEdit, onDel, flip, lite, settle, unsettle }) {
     ? (t.type === "buy" ? "چاوەڕوانی وەرگرتنی پارە" : "چاوەڕوانی پارەدان")
     : (t.type === "buy" ? "پارە نەدراوە" : "پارە وەرنەگیراوە");
   return (
-    <Card className={`p-3.5 ${pend ? "border-[color-mix(in_srgb,var(--amber)_34%,transparent)] bg-[color-mix(in_srgb,var(--amber)_9%,transparent)]" : ""}`}>
+    <Card className={`p-3.5 ${pend ? "border-[color-mix(in_srgb,var(--warn)_34%,transparent)] bg-[color-mix(in_srgb,var(--warn)_9%,transparent)]" : ""}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5 flex-wrap">
@@ -2472,9 +2534,9 @@ function TxRow({ t, cur, usr, onEdit, onDel, flip, lite, settle, unsettle }) {
             {t.code && <span className="font-bold text-[var(--txt-3)]" style={num}>#{t.code}</span>}
             {!lite && name && <span className="text-[var(--txt)] font-semibold">{name}</span>}
 <span style={num}>ڕەیت {t.rate ? fmt(1 / t.rate, 3) : "—"}</span>
-            {!lite && t.partnerId && <span className="text-[var(--amber)]">لای {usr(t.partnerId).name}</span>}
+            {!lite && t.partnerId && <span className="text-[var(--warn)]">لای {usr(t.partnerId).name}</span>}
             {!lite && t.direct && t.buyRate && <span style={num} className="text-[var(--txt-2)]">کڕی {fmt(1 / t.buyRate, 3)}</span>}
-            {!lite && t.profit != null && <span>{tr("خێر")}<b className="text-[var(--jade)]" style={num}>{fmt(t.profit, 0)}</b></span>}
+            {!lite && t.profit != null && <span>{tr("خێر")}<b className="text-[var(--pos)]" style={num}>{fmt(t.profit, 0)}</b></span>}
             {!lite && t.edited && <span className="text-[var(--txt-3)]">{tr("(ئیدیت)")}</span>}
             <span className="text-[var(--txt-3)]" style={num}>{new Date(t.date).toLocaleDateString("en-GB")}</span>
           </div>
@@ -2482,21 +2544,21 @@ function TxRow({ t, cur, usr, onEdit, onDel, flip, lite, settle, unsettle }) {
         </div>
         {(onEdit || onDel) && (
           <div className="flex flex-col gap-1 shrink-0">
-            {onEdit && <button onClick={() => onEdit(t)} className="p-2 rounded-lg text-[var(--txt-3)] hover:text-[var(--jade)] hover:bg-[color-mix(in_srgb,var(--jade)_10%,transparent)]"><Pencil className="w-4 h-4" /></button>}
-            {onDel && <button onClick={() => onDel(t)} className="p-2 rounded-lg text-[var(--txt-3)] hover:text-[var(--verm)] hover:bg-[color-mix(in_srgb,var(--verm)_10%,transparent)]"><Trash2 className="w-4 h-4" /></button>}
+            {onEdit && <button onClick={() => onEdit(t)} className="p-2 rounded-lg text-[var(--txt-3)] hover:text-[var(--pos)] hover:bg-[color-mix(in_srgb,var(--pos)_10%,transparent)]"><Pencil className="w-4 h-4" /></button>}
+            {onDel && <button onClick={() => onDel(t)} className="p-2 rounded-lg text-[var(--txt-3)] hover:text-[var(--neg)] hover:bg-[color-mix(in_srgb,var(--neg)_10%,transparent)]"><Trash2 className="w-4 h-4" /></button>}
           </div>
         )}
       </div>
       {pend && settle && (
-        <div className="mt-2.5 pt-2.5 border-t border-[color-mix(in_srgb,var(--amber)_26%,transparent)]/70">
-          <button onClick={() => settle(t)} className="flex items-center gap-1.5 text-sm font-semibold text-[var(--jade)] hover:text-[var(--jade)]">
+        <div className="mt-2.5 pt-2.5 border-t border-[color-mix(in_srgb,var(--warn)_26%,transparent)]/70">
+          <button onClick={() => settle(t)} className="flex items-center gap-1.5 text-sm font-semibold text-[var(--pos)] hover:text-[var(--pos)]">
             <CheckCircle2 className="w-4 h-4" /> {t.type === "buy" ? "پارەکەم دا" : "پارەکەم وەرگرت"}
           </button>
         </div>
       )}
       {!pend && t.paidAt && unsettle && (
-        <div className="mt-2.5 pt-2.5 border-t border-[var(--line-soft)]">
-          <button onClick={() => unsettle(t)} className="flex items-center gap-1.5 text-xs text-[var(--txt-3)] hover:text-[var(--amber)]">
+        <div className="mt-2.5 pt-2.5 border-t border-[var(--line)]">
+          <button onClick={() => unsettle(t)} className="flex items-center gap-1.5 text-xs text-[var(--txt-3)] hover:text-[var(--warn)]">
             <RotateCcw className="w-3.5 h-3.5" /> {tr("هەڵوەشاندنەوەی پارەدان")}
           </button>
         </div>
@@ -2525,13 +2587,13 @@ const normRef = (r) => String(r || "").replace(/[\s\-_.]/g, "").toUpperCase();
 const DIR_KU = { in: "پارە هاتووە", out: "پارە نێردراوە" };
 const PLATFORMS = {
   Alipay:   { ku: "ئەلی پەی", cls: "bg-blue-50 text-blue-800 border-blue-200" },
-  WeChat:   { ku: "وی چات",  cls: "bg-[color-mix(in_srgb,var(--jade)_10%,transparent)] text-[var(--jade)] border-[color-mix(in_srgb,var(--jade)_26%,transparent)]" },
+  WeChat:   { ku: "وی چات",  cls: "bg-[color-mix(in_srgb,var(--pos)_10%,transparent)] text-[var(--pos)] border-[color-mix(in_srgb,var(--pos)_26%,transparent)]" },
   Bank:     { ku: "بانک",     cls: "bg-slate-50 text-[var(--txt)] border-slate-200" },
   FIB:      { ku: "FIB",      cls: "bg-violet-50 text-violet-800 border-violet-200" },
-  FastPay:  { ku: "FastPay",  cls: "bg-[color-mix(in_srgb,var(--amber)_11%,transparent)] text-[var(--amber)] border-[color-mix(in_srgb,var(--amber)_26%,transparent)]" },
-  ZainCash: { ku: "Zain Cash", cls: "bg-[color-mix(in_srgb,var(--verm)_10%,transparent)] text-[var(--verm)] border-[color-mix(in_srgb,var(--verm)_26%,transparent)]" },
+  FastPay:  { ku: "FastPay",  cls: "bg-[color-mix(in_srgb,var(--warn)_11%,transparent)] text-[var(--warn)] border-[color-mix(in_srgb,var(--warn)_26%,transparent)]" },
+  ZainCash: { ku: "Zain Cash", cls: "bg-[color-mix(in_srgb,var(--neg)_10%,transparent)] text-[var(--neg)] border-[color-mix(in_srgb,var(--neg)_26%,transparent)]" },
 };
-const platMeta = (p) => PLATFORMS[p] || { ku: p || "نەزانراو", cls: "bg-[var(--line-soft)] text-[var(--txt-2)] border-[var(--line)]" };
+const platMeta = (p) => PLATFORMS[p] || { ku: p || "نەزانراو", cls: "bg-[var(--line)] text-[var(--txt-2)] border-[var(--line)]" };
 const detectPlatform = (bank) => {
   const b = String(bank || "").toLowerCase();
   if (/alipay|支付宝/.test(b)) return "Alipay";
@@ -2604,7 +2666,7 @@ function ReceiptTotals({ rows, data, title, compact }) {
             const cc = (data?.currencies || []).find((x) => x.code === c);
             const mid = cc && cc.id !== "usd" ? (cc.buyRate && cc.sellRate ? (cc.buyRate + cc.sellRate) / 2 : (cc.buyRate || cc.sellRate)) : null;
             return (
-              <div key={c} className="bg-[var(--line-soft)] border border-[var(--line)] rounded-2xl p-4 mb-2.5 last:mb-0">
+              <div key={c} className="bg-[var(--line)] border border-[var(--line)] rounded-[var(--r)] p-4 mb-2.5 last:mb-0">
                 <div className="flex items-center gap-2 mb-3">
                   {cc && <CurBadge c={cc} size="sm" />}
                   <span className="text-xs font-bold text-[var(--txt-2)]">{cc?.name || c}</span>
@@ -2616,14 +2678,14 @@ function ReceiptTotals({ rows, data, title, compact }) {
                 </div>
                 <div className="flex justify-between py-1.5 text-sm">
                   <span className="text-[var(--txt-2)]">{tr("فی")}</span>
-                  <span className={`font-bold ${fees[c] ? "text-[var(--verm)]" : "text-[var(--txt-3)]"}`} style={num}>
+                  <span className={`font-bold ${fees[c] ? "text-[var(--neg)]" : "text-[var(--txt-3)]"}`} style={num}>
                     {fees[c] ? `− ${fmt(fees[c], 0)}` : "0"}
                   </span>
                 </div>
                 <div className="flex justify-between pt-3 mt-1.5 border-t-2 border-[var(--line)] items-baseline">
                   <span className="text-sm font-bold text-[var(--txt)]">{tr("گەیشتوو (بێ فی)")}</span>
                   <div className="text-left">
-                    <div className="text-2xl font-bold text-[var(--jade)]"><CountUp v={net[c]} /></div>
+                    <div className="text-2xl font-bold text-[var(--pos)]"><CountUp v={net[c]} /></div>
                     {u(net[c], c) != null && <div className="text-[11px]"><UsdHint v={u(net[c], c)} /></div>}
                   </div>
                 </div>
@@ -2632,7 +2694,7 @@ function ReceiptTotals({ rows, data, title, compact }) {
           })}
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs mt-2">
           <span className="text-[var(--txt-2)]" style={num}>{counted.length} فیش هەژمار کراوە</span>
-          {rejected.length > 0 && <span className="text-[var(--verm)] font-semibold" style={num}>{rejected.length} فیش ڕەت کراوەتەوە (هەژمار نەکراون)</span>}
+          {rejected.length > 0 && <span className="text-[var(--neg)] font-semibold" style={num}>{rejected.length} فیش ڕەت کراوەتەوە (هەژمار نەکراون)</span>}
         </div>
       </Card>
 
@@ -2642,7 +2704,7 @@ function ReceiptTotals({ rows, data, title, compact }) {
           {Object.entries(byPlat).sort((a, b) => b[1].n - a[1].n).map(([pl, v]) => {
             const m = platMeta(pl);
             return (
-              <div key={pl} className="flex items-center justify-between py-2.5 border-b border-[var(--line-soft)] last:border-0">
+              <div key={pl} className="flex items-center justify-between py-2.5 border-b border-[var(--line)] last:border-0">
                 <span className={`px-2.5 py-1 rounded-lg text-xs font-bold border ${m.cls}`}>{m.ku}</span>
                 <div className="text-left">
                   {Object.entries(v.cur).map(([c, a]) => (
@@ -2662,7 +2724,7 @@ function ReceiptTotals({ rows, data, title, compact }) {
         <Card className="p-5">
           <SecLbl>{tr("وردەکاری بەپێی ناو")}</SecLbl>
           {whoList.map(([name, v]) => (
-            <div key={name} className="flex items-center justify-between py-2.5 border-b border-[var(--line-soft)] last:border-0">
+            <div key={name} className="flex items-center justify-between py-2.5 border-b border-[var(--line)] last:border-0">
               <div>
                 <div className="font-semibold text-[var(--txt)]">{name}</div>
                 <div className="text-xs text-[var(--txt-3)]" style={num}>{v.n} فیش</div>
@@ -2694,14 +2756,14 @@ function RejectedReceipts({ rows, title = "فیشە ڕەتکراوەکان" }) {
   bad.forEach((r) => { const k = r.reject_code || r.rejectCode || "other"; byCode[k] = (byCode[k] || 0) + 1; });
 
   return (
-    <Card className="p-5 border-[color-mix(in_srgb,var(--verm)_34%,transparent)] bg-[color-mix(in_srgb,var(--verm)_8%,transparent)]">
+    <Card className="p-5 border-[color-mix(in_srgb,var(--neg)_34%,transparent)] bg-[color-mix(in_srgb,var(--neg)_8%,transparent)]">
       <button onClick={() => setOpen(!open)} className="w-full text-right">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <div className="flex items-center gap-2 font-bold text-[var(--verm)]">
+            <div className="flex items-center gap-2 font-bold text-[var(--neg)]">
               <AlertTriangle className="w-4 h-4" /> {title}
             </div>
-            <div className="text-xs text-[var(--verm)]/80 mt-1.5" style={num}>
+            <div className="text-xs text-[var(--neg)]/80 mt-1.5" style={num}>
               {bad.length} فیش هەژمار نەکراون
             </div>
             <div className="flex gap-1.5 mt-2 flex-wrap">
@@ -2715,15 +2777,15 @@ function RejectedReceipts({ rows, title = "فیشە ڕەتکراوەکان" }) {
       </button>
 
       {open && (
-        <div className="mt-4 pt-4 border-t border-[color-mix(in_srgb,var(--verm)_26%,transparent)] space-y-2.5">
+        <div className="mt-4 pt-4 border-t border-[color-mix(in_srgb,var(--neg)_26%,transparent)] space-y-2.5">
           {bad.map((r) => (
-            <div key={r.id} className="bg-[var(--card)] rounded-xl border border-[color-mix(in_srgb,var(--verm)_26%,transparent)] p-3">
+            <div key={r.id} className="bg-[var(--surf)] rounded-[var(--r-sm)] border border-[color-mix(in_srgb,var(--neg)_26%,transparent)] p-3">
               <div className="flex gap-3">
                 {r.image_path
                   ? <ReceiptImg path={r.image_path} className="w-16 h-16 object-cover rounded-lg border border-[var(--line)] shrink-0 opacity-70" />
                   : r.url
                     ? <img src={r.url} alt="" className="w-16 h-16 object-cover rounded-lg border border-[var(--line)] shrink-0 opacity-70" />
-                    : <div className="w-16 h-16 bg-[var(--line-soft)] rounded-lg shrink-0" />}
+                    : <div className="w-16 h-16 bg-[var(--line)] rounded-lg shrink-0" />}
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline gap-2 flex-wrap">
                     <span className="text-base font-bold text-[var(--txt-3)] line-through" style={num}>
@@ -2732,7 +2794,7 @@ function RejectedReceipts({ rows, title = "فیشە ڕەتکراوەکان" }) {
                     <span className="text-xs text-[var(--txt-3)]">{r.currency || ""}</span>
                     <Pill tone="red">{tr("هەژمار نەکراوە")}</Pill>
                   </div>
-                  <div className="mt-1.5 text-xs text-[var(--verm)] bg-[color-mix(in_srgb,var(--verm)_10%,transparent)] rounded-lg px-2.5 py-1.5 leading-relaxed">
+                  <div className="mt-1.5 text-xs text-[var(--neg)] bg-[color-mix(in_srgb,var(--neg)_10%,transparent)] rounded-lg px-2.5 py-1.5 leading-relaxed">
                     <b>{tr("هۆکار:")}</b> {r.reject_reason || r.rejectReason || r.note || "نەزانراو"}
                   </div>
                   <div className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-0.5 text-[11px] text-[var(--txt-2)]">
@@ -2744,7 +2806,7 @@ function RejectedReceipts({ rows, title = "فیشە ڕەتکراوەکان" }) {
                     {r.created_at && <div style={num}>{tr("کاتی ناردن:")} <b>{new Date(r.created_at).toLocaleString("en-GB")}</b></div>}
                   </div>
                   {(r.dup_of_date || r.dupOfDate) && (
-                    <div className="mt-1.5 text-[11px] text-[var(--txt-2)] bg-[var(--line-soft)] rounded-lg px-2.5 py-1.5">
+                    <div className="mt-1.5 text-[11px] text-[var(--txt-2)] bg-[var(--line)] rounded-lg px-2.5 py-1.5">
                       {tr("فیشە ڕەسەنەکە:")} <b style={num}>{new Date(r.dup_of_date || r.dupOfDate).toLocaleString("en-GB")}</b>
                       {(r.dup_of_who || r.dupOfWho) && <> · لەلایەن <b>{r.dup_of_who || r.dupOfWho}</b></>}
                     </div>
@@ -2768,17 +2830,17 @@ function ReceiptList({ rows, showFrom }) {
   if (!rows.length) return <Card><Empty t={tr("هەموو فیشەکان ڕەت کراونەتەوە")} /></Card>;
   return (
     <div className="space-y-3">
-      <div className="flex gap-1 rounded-2xl p-1" style={{ background: "var(--card)", border: "1px solid var(--line)", boxShadow: "var(--shadow-1)" }}>
+      <div className="flex gap-1 rounded-[var(--r)] p-1" style={{ background: "var(--surf)", border: "1px solid var(--line)", boxShadow: "var(--sh-1)" }}>
         {[["list", tr("وردەکاری")], ["gallery", tr("وێنەکان")]].map(([k, lbl]) => (
           <button key={k} onClick={() => setView(k)}
-            className={`flex-1 py-2.5 rounded-lg text-sm ${view === k ? "bg-[var(--jade)] text-white font-semibold" : "text-[var(--txt-2)]"}`}>{lbl}</button>
+            className={`flex-1 py-2.5 rounded-lg text-sm ${view === k ? "bg-[var(--pos)] text-white font-semibold" : "text-[var(--txt-2)]"}`}>{lbl}</button>
         ))}
       </div>
       {view === "gallery" ? (
         <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
           {rows.filter((r) => r.image_path).map((r) => (
-            <div key={r.id} className="relative fade-up">
-              <ReceiptImg path={r.image_path} className="w-full aspect-square object-cover rounded-xl border border-[var(--line)]" />
+            <div key={r.id} className="relative rise">
+              <ReceiptImg path={r.image_path} className="w-full aspect-square object-cover rounded-[var(--r-sm)] border border-[var(--line)]" />
               <div className="absolute bottom-1 right-1 left-1 bg-slate-900/80 text-white text-[10px] rounded-lg px-1.5 py-0.5 text-center" style={num}>
                 {fmt(r.net_amount ?? r.amount, 0)}
               </div>
@@ -2787,17 +2849,17 @@ function ReceiptList({ rows, showFrom }) {
           {rows.filter((r) => r.image_path).length === 0 && <div className="col-span-full"><Empty t={tr("هیچ وێنەیەک نییە")} /></div>}
         </div>
       ) : rows.map((r) => (
-        <Card key={r.id} className={`p-3 ${r.status === "dup" ? "bg-[color-mix(in_srgb,var(--verm)_9%,transparent)] border-[color-mix(in_srgb,var(--verm)_26%,transparent)]" : ""}`}>
+        <Card key={r.id} className={`p-3 ${r.status === "dup" ? "bg-[color-mix(in_srgb,var(--neg)_9%,transparent)] border-[color-mix(in_srgb,var(--neg)_26%,transparent)]" : ""}`}>
           <div className="flex gap-3">
             {r.image_path
-              ? <ReceiptImg path={r.image_path} className="w-16 h-16 object-cover rounded-xl border border-[var(--line)] shrink-0" />
-              : <div className="w-16 h-16 bg-[var(--line-soft)] rounded-xl shrink-0" />}
+              ? <ReceiptImg path={r.image_path} className="w-16 h-16 object-cover rounded-[var(--r-sm)] border border-[var(--line)] shrink-0" />
+              : <div className="w-16 h-16 bg-[var(--line)] rounded-[var(--r-sm)] shrink-0" />}
             <div className="min-w-0 flex-1 text-sm">
               <div className="flex items-baseline gap-2 flex-wrap">
                 <span className="text-lg font-bold text-[var(--txt)]" style={num}>{fmt(r.net_amount ?? r.amount, 0)}</span>
                 <span className="text-xs text-[var(--txt-2)]">{r.currency}</span>
                 {r.fee > 0 && <span className="text-[11px] text-[var(--txt-3)]" style={num}>بە فی {fmt(r.amount, 0)}</span>}
-                {r.fee_discount > 0 && <span className="text-[10px] text-[var(--jade)] font-semibold" style={num}>داشکاندنی فی {fmt(r.fee_discount, 0)}</span>}
+                {r.fee_discount > 0 && <span className="text-[10px] text-[var(--pos)] font-semibold" style={num}>داشکاندنی فی {fmt(r.fee_discount, 0)}</span>}
                 {r.status === "dup" && <Pill tone="red">{tr("دووبارە")}</Pill>}
                 {r.status === "suspect" && <Pill tone="amber">{tr("گومان")}</Pill>}
                 {r.direction === "out" && <Pill tone="amber">{tr("نێردراو")}</Pill>}
@@ -2813,7 +2875,7 @@ function ReceiptList({ rows, showFrom }) {
               <div className="text-[11px] text-[var(--txt-3)] mt-0.5" style={num}>
                 ژمارە {r.ref_no || "—"} · {r.tx_time || new Date(r.created_at).toLocaleString("en-GB")}
               </div>
-              {r.note && <div className="text-[11px] text-[var(--amber)] mt-0.5">{r.note}</div>}
+              {r.note && <div className="text-[11px] text-[var(--warn)] mt-0.5">{r.note}</div>}
             </div>
           </div>
         </Card>
@@ -3001,14 +3063,14 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
           <div className="flex gap-2">
             {[["in", tr("پارە هاتووە (کڕین)")], ["out", tr("پارە نێردراوە (فرۆشتن)")]].map(([k, t]) => (
               <button key={k} onClick={() => setDir(k)}
-                className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition press ${dir === k ? (k === "in" ? "bg-[var(--jade)] text-white" : "bg-rose-700 text-white") : "bg-[var(--line-soft)] text-[var(--txt-2)]"}`}>{t}</button>
+                className={`flex-1 py-2.5 rounded-[var(--r-sm)] text-sm font-semibold transition tap ${dir === k ? (k === "in" ? "bg-[var(--pos)] text-white" : "bg-rose-700 text-white") : "bg-[var(--line)] text-[var(--txt-2)]"}`}>{t}</button>
             ))}
           </div>
         </Card>
       )}
 
       <Card className="p-5">
-        <label className={`block border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition ${working ? "border-[var(--line)] bg-[var(--line-soft)]" : "border-[var(--line)] hover:border-[var(--jade)] hover:bg-[color-mix(in_srgb,var(--jade)_10%,transparent)]/30"}`}>
+        <label className={`block border-2 border-dashed rounded-[var(--r)] p-8 text-center cursor-pointer transition ${working ? "border-[var(--line)] bg-[var(--line)]" : "border-[var(--line)] hover:border-[var(--pos)] hover:bg-[color-mix(in_srgb,var(--pos)_10%,transparent)]/30"}`}>
           <input type="file" accept="image/*" multiple className="hidden" disabled={working}
             onChange={(e) => { onFiles(e.target.files); e.target.value = ""; }} />
           <Upload className="w-8 h-8 mx-auto text-[var(--txt-3)] mb-2" />
@@ -3020,15 +3082,15 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
       {rows.length > 0 && (
         <>
           {dupN > 0 && (
-            <Card className="p-4 border-[color-mix(in_srgb,var(--verm)_34%,transparent)] bg-[color-mix(in_srgb,var(--verm)_9%,transparent)]">
-              <div className="flex items-center gap-2 text-sm text-[var(--verm)] font-semibold">
+            <Card className="p-4 border-[color-mix(in_srgb,var(--neg)_34%,transparent)] bg-[color-mix(in_srgb,var(--neg)_9%,transparent)]">
+              <div className="flex items-center gap-2 text-sm text-[var(--neg)] font-semibold">
                 <AlertTriangle className="w-4 h-4" /> {dupN} فیشی دووبارە — ناژمێردرێن
               </div>
             </Card>
           )}
           {errN > 0 && (
-            <Card className="p-4 border-[color-mix(in_srgb,var(--amber)_34%,transparent)] bg-[color-mix(in_srgb,var(--amber)_10%,transparent)]">
-              <div className="text-sm text-[var(--amber)]">
+            <Card className="p-4 border-[color-mix(in_srgb,var(--warn)_34%,transparent)] bg-[color-mix(in_srgb,var(--warn)_10%,transparent)]">
+              <div className="text-sm text-[var(--warn)]">
                 <div className="font-semibold mb-1">{errN} فیش نەخوێندرایەوە:</div>
                 {[...new Set(rows.filter((r) => r.status === "error").map((r) => r.note))].map((n, i) => <div key={i} className="text-xs">• {n}</div>)}
               </div>
@@ -3037,14 +3099,14 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
 
           <Card className="p-4 space-y-2">
             {rows.map((r, i) => (
-              <div key={r.id} className={`flex items-center gap-3 p-2.5 rounded-xl ${r.status === "dup" ? "bg-[color-mix(in_srgb,var(--verm)_10%,transparent)]" : r.status === "suspect" ? "bg-[color-mix(in_srgb,var(--amber)_11%,transparent)]" : "bg-[var(--line-soft)]"}`}>
+              <div key={r.id} className={`flex items-center gap-3 p-2.5 rounded-[var(--r-sm)] ${r.status === "dup" ? "bg-[color-mix(in_srgb,var(--neg)_10%,transparent)]" : r.status === "suspect" ? "bg-[color-mix(in_srgb,var(--warn)_11%,transparent)]" : "bg-[var(--line)]"}`}>
                 <span className="text-xs text-[var(--txt-3)] w-5" style={num}>{i + 1}</span>
                 {r.url ? <img src={r.url} alt="" className="w-11 h-11 object-cover rounded-lg border border-[var(--line)]" /> : <div className="w-11 h-11 bg-[var(--line)] rounded-lg" />}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-baseline gap-1.5">
                     <span className="font-bold text-[var(--txt)]" style={num}>{r.amount ? fmt(r.amount, 0) : "—"}</span>
                     <span className="text-xs text-[var(--txt-2)]">{r.currency || ""}</span>
-                    {r.fee > 0 && <span className="text-[11px] text-[var(--verm)]" style={num}>فی {fmt(r.fee, 0)} → {fmt(r.net, 0)}</span>}
+                    {r.fee > 0 && <span className="text-[11px] text-[var(--neg)]" style={num}>فی {fmt(r.fee, 0)} → {fmt(r.net, 0)}</span>}
                   </div>
                   <div className="text-[11px] text-[var(--txt-2)] truncate">
                     {r.receiver && <>{tr("بۆ")}<b>{r.receiver}</b> · </>}
@@ -3054,7 +3116,7 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
                   <Pill tone={ST[r.status].tone}>{ST[r.status].t}</Pill>
-                  <button onClick={() => setRows(rows.filter((x) => x.id !== r.id))} className="p-1 text-[var(--txt-3)] hover:text-[var(--verm)]"><Trash2 className="w-3.5 h-3.5" /></button>
+                  <button onClick={() => setRows(rows.filter((x) => x.id !== r.id))} className="p-1 text-[var(--txt-3)] hover:text-[var(--neg)]"><Trash2 className="w-3.5 h-3.5" /></button>
                 </div>
               </div>
             ))}
@@ -3104,18 +3166,18 @@ function ReceiptsHub({ data, usr, batches, reloadBatches, flash, onMakeTx, profi
     <div className="space-y-4">
       <H sub="فیشەکانی کڕیاران و هاوبەشان — پشکنین، کۆکردنەوە، و بەستنەوە بە مامەڵەوە">{tr("فیشەکان")}</H>
 
-      <div className="flex gap-1 rounded-2xl p-1 overflow-x-auto" style={{ background: "var(--card)", border: "1px solid var(--line)", boxShadow: "var(--shadow-1)" }}>
+      <div className="flex gap-1 rounded-[var(--r)] p-1 overflow-x-auto" style={{ background: "var(--surf)", border: "1px solid var(--line)", boxShadow: "var(--sh-1)" }}>
         {TABS.map(([k, t]) => (
           <button key={k} onClick={() => setTab(k)}
-            style={tab === k ? { background: "linear-gradient(180deg, var(--jade-lt), var(--jade))", color: "#fff", boxShadow: "0 2px 8px -2px rgba(14,122,107,.4)" } : { color: "var(--txt-2)" }}
-            className={`flex-1 whitespace-nowrap px-3 py-2.5 rounded-xl text-sm transition-all press ${tab === k ? "font-bold" : "font-medium hover:bg-[var(--line-soft)]"}`}>{t}</button>
+            style={tab === k ? { background: "linear-gradient(180deg, var(--ac), var(--pos))", color: "#fff", boxShadow: "0 2px 8px -2px rgba(14,122,107,.4)" } : { color: "var(--txt-2)" }}
+            className={`flex-1 whitespace-nowrap px-3 py-2.5 rounded-[var(--r-sm)] text-sm transition-all tap ${tab === k ? "font-bold" : "font-medium hover:bg-[var(--line)]"}`}>{t}</button>
         ))}
       </div>
 
       {(tab === "inbox" || tab === "done") && (
         inbox.length === 0 ? <Card><Empty t={tab === "inbox" ? "هیچ کۆمەڵەیەکی نوێ نییە" : "هیچ نییە"} /></Card> :
           inbox.map((b, i) => (
-            <Card key={b.id} className="p-4 fade-up" style={{ animationDelay: `${i * 40}ms` }} onClick={() => setSel(b.id)}>
+            <Card key={b.id} className="p-4 rise" style={{ animationDelay: `${i * 40}ms` }} onClick={() => setSel(b.id)}>
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="font-semibold text-[var(--txt)]">{b.customer_name || (b.partner_id ? usr(b.partner_id).name : "—")}</div>
@@ -3133,7 +3195,7 @@ function ReceiptsHub({ data, usr, batches, reloadBatches, flash, onMakeTx, profi
                   </div>
                 </div>
                 <div className="text-left shrink-0">
-                  <div className="text-xl font-bold text-[var(--jade)]" style={num}>{fmt(b.total_net, 0)}</div>
+                  <div className="text-xl font-bold text-[var(--pos)]" style={num}>{fmt(b.total_net, 0)}</div>
                   <div className="text-[11px] text-[var(--txt-3)]">{b.currency} بێ فی</div>
                   {u(b.total_net, b.currency) != null && <div className="text-[11px] text-[var(--txt-2)]" style={num}>≈ {fmt(u(b.total_net, b.currency), 0)} $</div>}
                   {b.total_fee > 0 && <div className="text-[10px] text-[var(--txt-3)]" style={num}>بە فی {fmt(b.total_gross, 0)}</div>}
@@ -3145,12 +3207,12 @@ function ReceiptsHub({ data, usr, batches, reloadBatches, flash, onMakeTx, profi
 
       {tab === "loc" && (
         <>
-          <div className="flex gap-1 rounded-2xl p-1 overflow-x-auto" style={{ background: "var(--card)", border: "1px solid var(--line)", boxShadow: "var(--shadow-1)" }}>
+          <div className="flex gap-1 rounded-[var(--r)] p-1 overflow-x-auto" style={{ background: "var(--surf)", border: "1px solid var(--line)", boxShadow: "var(--sh-1)" }}>
             <button onClick={() => setLoc("me")}
               className={`whitespace-nowrap px-4 py-2 rounded-lg text-sm ${loc === "me" ? "bg-slate-900 text-white font-semibold" : "text-[var(--txt-2)]"}`}>{tr("لای خۆم")}</button>
             {partners.map((p) => (
               <button key={p.id} onClick={() => setLoc(p.id)}
-                className={`whitespace-nowrap px-4 py-2 rounded-lg text-sm ${loc === p.id ? "bg-[var(--jade)] text-white font-semibold" : "text-[var(--txt-2)]"}`}>{p.name}</button>
+                className={`whitespace-nowrap px-4 py-2 rounded-lg text-sm ${loc === p.id ? "bg-[var(--pos)] text-white font-semibold" : "text-[var(--txt-2)]"}`}>{p.name}</button>
             ))}
           </div>
           <LocationReceipts partnerId={loc === "me" ? null : loc} data={data} flash={flash}
@@ -3319,22 +3381,22 @@ function ShareTable({ rows, data, who, title, onClose, flash }) {
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-end md:items-center justify-center md:p-6" onClick={onClose}>
-      <div className="w-full max-w-lg rounded-t-[28px] md:rounded-[24px] max-h-[90vh] overflow-y-auto sheet-in" style={{ background: "var(--card)", boxShadow: "var(--shadow-3)" }} onClick={(e) => e.stopPropagation()}>
-        <div className="sticky top-0 z-10 px-5 py-4 flex items-center justify-between backdrop-blur-xl" style={{ background: "color-mix(in srgb, var(--card) 92%, transparent)", borderBottom: "1px solid var(--line-soft)" }}>
+      <div className="w-full max-w-lg rounded-t-[28px] md:rounded-[24px] max-h-[90vh] overflow-y-auto sheet" style={{ background: "var(--surf)", boxShadow: "var(--sh-3)" }} onClick={(e) => e.stopPropagation()}>
+        <div className="sticky top-0 z-10 px-5 py-4 flex items-center justify-between backdrop-blur-xl" style={{ background: "color-mix(in srgb, var(--surf) 92%, transparent)", borderBottom: "1px solid var(--line)" }}>
           <div className="font-bold text-[var(--txt)]">{tr("ناردنی خشتە")}</div>
           <button onClick={onClose} className="p-1.5 text-[var(--txt-3)]"><X className="w-5 h-5" /></button>
         </div>
 
         <div className="p-5 space-y-4">
-          <div className="flex gap-1 bg-[var(--line-soft)] rounded-xl p-1">
+          <div className="flex gap-1 bg-[var(--line)] rounded-[var(--r-sm)] p-1">
             {[["full", tr("خشتەی تەواو")], ["short", tr("تەنها کۆکان")], ["rej", tr("تەنها ڕەتکراوەکان")]].map(([k, t]) => (
               <button key={k} onClick={() => setMode(k)}
-                className={`flex-1 py-2 rounded-lg text-sm ${mode === k ? "bg-[var(--card)] text-[var(--jade)] font-bold shadow-sm" : "text-[var(--txt-2)]"}`}>{t}</button>
+                className={`flex-1 py-2 rounded-lg text-sm ${mode === k ? "bg-[var(--surf)] text-[var(--pos)] font-bold shadow-sm" : "text-[var(--txt-2)]"}`}>{t}</button>
             ))}
           </div>
 
           {/* پێشبینین */}
-          <div className="border border-[var(--line)] rounded-2xl overflow-hidden">
+          <div className="border border-[var(--line)] rounded-[var(--r)] overflow-hidden">
             <div className="bg-slate-900 text-white px-4 py-3">
               <div className="font-bold">{title || "وردەکاری فیشەکان"}</div>
               <div className="text-xs text-[var(--txt-3)] mt-0.5">{who ? `${who} · ` : ""}<span style={num}>{today}</span></div>
@@ -3354,10 +3416,10 @@ function ShareTable({ rows, data, who, title, onClose, flash }) {
                     </thead>
                     <tbody>
                       {counted.map((r, i) => (
-                        <tr key={r.id || i} className="border-b border-[var(--line-soft)]">
+                        <tr key={r.id || i} className="border-b border-[var(--line)]">
                           <td className="py-1.5 text-[var(--txt-3)]" style={num}>{i + 1}</td>
                           <td style={num}>{fmt(r.amount, 0)}</td>
-                          <td style={num} className={r.fee ? "text-[var(--verm)]" : "text-[var(--txt-3)]"}>{r.fee ? fmt(r.fee, 0) : "—"}</td>
+                          <td style={num} className={r.fee ? "text-[var(--neg)]" : "text-[var(--txt-3)]"}>{r.fee ? fmt(r.fee, 0) : "—"}</td>
                           <td style={num} className="font-bold">{fmt(r.net ?? r.net_amount ?? r.amount, 0)}</td>
                           <td className="text-[var(--txt-2)] truncate max-w-[80px]">{r.receiver || "—"}</td>
                         </tr>
@@ -3390,14 +3452,14 @@ function ShareTable({ rows, data, who, title, onClose, flash }) {
               </div>
 
               {curs.map((c) => (
-                <div key={c} className="bg-[var(--line-soft)] rounded-xl p-3">
+                <div key={c} className="bg-[var(--line)] rounded-[var(--r-sm)] p-3">
                   <div className="text-[10px] font-bold text-[var(--txt-3)] mb-1">{c}</div>
                   <div className="flex justify-between text-xs py-0.5"><span className="text-[var(--txt-2)]">{tr("بە فییەوە")}</span><span style={num}>{fmt(gross[c], 0)}</span></div>
-                  {fees[c] > 0 && <div className="flex justify-between text-xs py-0.5"><span className="text-[var(--txt-2)]">{tr("فی")}</span><span style={num} className="text-[var(--verm)]">−{fmt(fees[c], 0)}</span></div>}
+                  {fees[c] > 0 && <div className="flex justify-between text-xs py-0.5"><span className="text-[var(--txt-2)]">{tr("فی")}</span><span style={num} className="text-[var(--neg)]">−{fmt(fees[c], 0)}</span></div>}
                   <div className="flex justify-between pt-1.5 mt-1 border-t border-[var(--line)] items-baseline">
                     <span className="text-xs font-bold">{tr("گەیشتوو")}</span>
                     <div className="text-left">
-                      <div className="text-lg font-bold text-[var(--jade)]" style={num}>{fmt(net[c], 0)}</div>
+                      <div className="text-lg font-bold text-[var(--pos)]" style={num}>{fmt(net[c], 0)}</div>
                       {u(net[c], c) != null && <div className="text-[10px] text-[var(--txt-3)]" style={num}>≈ {fmt(u(net[c], c), 0)} $</div>}
                     </div>
                   </div>
@@ -3407,14 +3469,14 @@ function ShareTable({ rows, data, who, title, onClose, flash }) {
               <div className="text-[11px] text-[var(--txt-3)]" style={num}>{counted.length} فیش هەژمار کراوە</div>
 
               {rejected.length > 0 && (
-                <div className="border border-[color-mix(in_srgb,var(--verm)_26%,transparent)] bg-[color-mix(in_srgb,var(--verm)_9%,transparent)] rounded-xl p-3 mt-2">
-                  <div className="flex items-center gap-1.5 text-xs font-bold text-[var(--verm)] mb-2">
+                <div className="border border-[color-mix(in_srgb,var(--neg)_26%,transparent)] bg-[color-mix(in_srgb,var(--neg)_9%,transparent)] rounded-[var(--r-sm)] p-3 mt-2">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-[var(--neg)] mb-2">
                     <AlertTriangle className="w-3.5 h-3.5" />
                     {rejected.length} فیش ڕەت کراوەتەوە — هەژمار نەکراون
                   </div>
                   <div className="space-y-2">
                     {rejected.map((r, i) => (
-                      <div key={r.id || i} className="bg-[var(--card)] rounded-lg p-2.5">
+                      <div key={r.id || i} className="bg-[var(--surf)] rounded-lg p-2.5">
                         <div className="flex items-baseline gap-2">
                           <span className="text-[10px] text-[var(--txt-3)]" style={num}>{i + 1}.</span>
                           <span className="text-sm font-bold text-[var(--txt-3)] line-through" style={num}>
@@ -3422,7 +3484,7 @@ function ShareTable({ rows, data, who, title, onClose, flash }) {
                           </span>
                           <span className="text-[10px] text-[var(--txt-3)]">{r.currency || ""}</span>
                         </div>
-                        <div className="text-[11px] text-[var(--verm)] mt-1 leading-snug">
+                        <div className="text-[11px] text-[var(--neg)] mt-1 leading-snug">
                           ❌ {r.reject_reason || r.rejectReason || r.note || REJECT_KU[r.reject_code || r.rejectCode] || "نەزانراو"}
                         </div>
                         <div className="text-[10px] text-[var(--txt-3)] mt-0.5 flex flex-wrap gap-x-2" style={num}>
@@ -3431,7 +3493,7 @@ function ShareTable({ rows, data, who, title, onClose, flash }) {
                           {r.receiver && <span>· {r.receiver}</span>}
                         </div>
                         {(r.dup_of_date || r.dupOfDate) && (
-                          <div className="text-[10px] text-[var(--txt-2)] mt-1 bg-[var(--line-soft)] rounded px-1.5 py-1" style={num}>
+                          <div className="text-[10px] text-[var(--txt-2)] mt-1 bg-[var(--line)] rounded px-1.5 py-1" style={num}>
                             ↩️ ڕەسەنەکەی: {new Date(r.dup_of_date || r.dupOfDate).toLocaleString("en-GB")}
                             {(r.dup_of_who || r.dupOfWho) && ` — ${r.dup_of_who || r.dupOfWho}`}
                           </div>
@@ -3470,7 +3532,7 @@ function WhatsAppInfo({ batches, waN }) {
   const todayN = wa.filter((b) => (b.created_at || "").slice(0, 10) === today).length;
   return (
     <div className="space-y-4">
-      <Card className="p-5 bg-emerald-600 border-[var(--jade)] text-white">
+      <Card className="p-5 bg-emerald-600 border-[var(--pos)] text-white">
         <div className="flex items-center gap-2.5 mb-3">
           <MessageCircle className="w-6 h-6" />
           <div className="font-bold">{tr("وەرگرتنی فیش لە واتساپەوە")}</div>
@@ -3495,25 +3557,25 @@ function WhatsAppInfo({ batches, waN }) {
         <SecLbl>{tr("چۆن کار دەکات")}</SecLbl>
         <div className="space-y-3 text-sm text-[var(--txt-2)] leading-relaxed">
           <div className="flex gap-3">
-            <span className="w-6 h-6 rounded-full bg-[var(--jade)] text-white flex items-center justify-center text-xs font-bold shrink-0">{tr("١")}</span>
+            <span className="w-6 h-6 rounded-full bg-[var(--pos)] text-white flex items-center justify-center text-xs font-bold shrink-0">{tr("١")}</span>
             <span>{tr("کڕیار فیشەکان لە واتساپەوە")} <b>فۆرۆرد</b> {tr("دەکات بۆ ژمارەی کۆمپانیاکە")}</span>
           </div>
           <div className="flex gap-3">
-            <span className="w-6 h-6 rounded-full bg-[var(--jade)] text-white flex items-center justify-center text-xs font-bold shrink-0">{tr("٢")}</span>
+            <span className="w-6 h-6 rounded-full bg-[var(--pos)] text-white flex items-center justify-center text-xs font-bold shrink-0">{tr("٢")}</span>
             <span>{tr("سیستەمەکە خۆکار وێنەکان دەخوێنێتەوە و دووبارەکان دەدۆزێتەوە")}</span>
           </div>
           <div className="flex gap-3">
-            <span className="w-6 h-6 rounded-full bg-[var(--jade)] text-white flex items-center justify-center text-xs font-bold shrink-0">{tr("٣")}</span>
+            <span className="w-6 h-6 rounded-full bg-[var(--pos)] text-white flex items-center justify-center text-xs font-bold shrink-0">{tr("٣")}</span>
             <span>{tr("کۆمەڵەیەکی نوێ لە")} <b>{tr("ئینباکس")}</b> {tr("دەردەکەوێت — تۆ تەنها مامەڵەکەی لێ درووست دەکەیت")}</span>
           </div>
         </div>
-        <div className="mt-4 pt-4 border-t border-[var(--line-soft)] text-xs text-[var(--txt-2)] leading-relaxed">
+        <div className="mt-4 pt-4 border-t border-[var(--line)] text-xs text-[var(--txt-2)] leading-relaxed">
           <b className="text-[var(--txt)]">{tr("تێبینی:")}</b> فیشەکان کە بە ماوەی ١٥ خولەک بنێردرێن، هەموویان لە یەک کۆمەڵەدا کۆدەبنەوە.
           کڕیارەکە بە ژمارەی مۆبایلەکەی دەناسرێتەوە — بۆیە دڵنیابە ژمارەکەی لە ئەکاونتەکەیدا دروستە.
         </div>
       </Card>
 
-      <Card className="p-4 bg-[var(--line-soft)]">
+      <Card className="p-4 bg-[var(--line)]">
         <div className="text-xs text-[var(--txt-2)] leading-relaxed">
           <b className="text-[var(--txt)]">{tr("نرخ:")}</b> وەرگرتنی نامە لە کڕیارەکانەوە <b>{tr("بەخۆڕاییە")}</b> — تەنها ئەگەر تۆ وەڵامیان بدەیتەوە پارەی لەسەرە.
           سیستەمەکە بە شێوەی بنەڕەت وەڵام نادات.
@@ -3573,13 +3635,13 @@ function LocationReceipts({ partnerId, data, title, flash }) {
   return (
     <div className="space-y-3">
       {title && <div className="font-bold text-[var(--txt)]">{title}</div>}
-      <div className="flex gap-1 rounded-2xl p-1 overflow-x-auto" style={{ background: "var(--card)", border: "1px solid var(--line)", boxShadow: "var(--shadow-1)" }}>
+      <div className="flex gap-1 rounded-[var(--r)] p-1 overflow-x-auto" style={{ background: "var(--surf)", border: "1px solid var(--line)", boxShadow: "var(--sh-1)" }}>
         {[["day", tr("ئەمڕۆ")], ["week", tr("هەفتە")], ["month", tr("مانگ")], ["year", tr("ساڵ")], ["all", tr("هەمووی")]].map(([k, lbl]) => (
           <button key={k} onClick={() => setMode(k)}
-            className={`flex-1 whitespace-nowrap py-2.5 px-3 rounded-lg text-sm ${mode === k ? "bg-[var(--jade)] text-white font-semibold" : "text-[var(--txt-2)]"}`}>{lbl}</button>
+            className={`flex-1 whitespace-nowrap py-2.5 px-3 rounded-lg text-sm ${mode === k ? "bg-[var(--pos)] text-white font-semibold" : "text-[var(--txt-2)]"}`}>{lbl}</button>
         ))}
       </div>
-      <div className="flex gap-1 rounded-2xl p-1" style={{ background: "var(--card)", border: "1px solid var(--line)", boxShadow: "var(--shadow-1)" }}>
+      <div className="flex gap-1 rounded-[var(--r)] p-1" style={{ background: "var(--surf)", border: "1px solid var(--line)", boxShadow: "var(--sh-1)" }}>
         {[["all", tr("هەمووی")], ["in", tr("هاتوو")], ["out", tr("نێردراو")]].map(([k, lbl]) => (
           <button key={k} onClick={() => setDir(k)}
             className={`flex-1 py-2 rounded-lg text-sm ${dir === k ? "bg-slate-900 text-white font-semibold" : "text-[var(--txt-2)]"}`}>{lbl}</button>
@@ -3683,7 +3745,7 @@ function BatchDetail({ id, back, usr, data, onMakeTx, flash, reloadBatches }) {
         <Card className="p-5">
           <div className="flex items-center justify-between mb-3">
             <SecLbl>{tr("دابەشکردن بەسەر هاوبەشەکان")}</SecLbl>
-            <button onClick={() => setSplit(!split)} className="text-xs font-semibold text-[var(--jade)]">
+            <button onClick={() => setSplit(!split)} className="text-xs font-semibold text-[var(--pos)]">
               {split ? "داخستن" : "دەستکاری"}
             </button>
           </div>
@@ -3698,7 +3760,7 @@ function BatchDetail({ id, back, usr, data, onMakeTx, flash, reloadBatches }) {
                   const tot = {};
                   g.rows.forEach((r) => { const c = r.currency || "?"; tot[c] = (tot[c] || 0) + (+(r.net_amount ?? r.amount) || 0); });
                   return (
-                    <div key={k || "none"} className="flex items-center justify-between py-2.5 border-b border-[var(--line-soft)] last:border-0">
+                    <div key={k || "none"} className="flex items-center justify-between py-2.5 border-b border-[var(--line)] last:border-0">
                       <div>
                         <div className="font-semibold text-[var(--txt)]">{k ? usr(k).name : "قاسەی گشتی (لای خۆم)"}</div>
                         <div className="text-xs text-[var(--txt-3)]" style={num}>{g.n} فیش</div>
@@ -3717,13 +3779,13 @@ function BatchDetail({ id, back, usr, data, onMakeTx, flash, reloadBatches }) {
             <div className="space-y-2.5">
               <div className="flex gap-1.5 flex-wrap mb-2">
                 <span className="text-xs text-[var(--txt-2)] self-center">{tr("هەمووی بۆ:")}</span>
-                <button onClick={() => setAll("")} className="px-2.5 py-1 rounded-lg bg-[var(--line-soft)] hover:bg-[var(--line)] text-xs font-semibold">{tr("قاسەی گشتی")}</button>
+                <button onClick={() => setAll("")} className="px-2.5 py-1 rounded-lg bg-[var(--line)] hover:bg-[var(--line)] text-xs font-semibold">{tr("قاسەی گشتی")}</button>
                 {partners.map((p) => (
-                  <button key={p.id} onClick={() => setAll(p.id)} className="px-2.5 py-1 rounded-lg bg-[var(--line-soft)] hover:bg-[var(--jade)] hover:text-white text-xs font-semibold transition">{p.name}</button>
+                  <button key={p.id} onClick={() => setAll(p.id)} className="px-2.5 py-1 rounded-lg bg-[var(--line)] hover:bg-[var(--pos)] hover:text-white text-xs font-semibold transition">{p.name}</button>
                 ))}
               </div>
               {good.map((r, i) => (
-                <div key={r.id} className="flex items-center gap-2.5 p-2.5 bg-[var(--line-soft)] rounded-xl">
+                <div key={r.id} className="flex items-center gap-2.5 p-2.5 bg-[var(--line)] rounded-[var(--r-sm)]">
                   <span className="text-xs text-[var(--txt-3)] w-5" style={num}>{i + 1}</span>
                   {r.image_path && <ReceiptImg path={r.image_path} className="w-10 h-10 object-cover rounded-lg border border-[var(--line)] shrink-0" />}
                   <div className="min-w-0 flex-1">
@@ -3731,7 +3793,7 @@ function BatchDetail({ id, back, usr, data, onMakeTx, flash, reloadBatches }) {
                     <div className="text-[11px] text-[var(--txt-3)] truncate">{r.receiver || "—"}</div>
                   </div>
                   <select value={pick[r.id] ?? ""} onChange={(e) => setPick({ ...pick, [r.id]: e.target.value })}
-                    className="border border-[var(--line)] rounded-lg px-2 py-1.5 text-xs bg-[var(--card)] shrink-0 max-w-[130px]">
+                    className="border border-[var(--line)] rounded-lg px-2 py-1.5 text-xs bg-[var(--surf)] shrink-0 max-w-[130px]">
                     <option value="">{tr("قاسەی گشتی")}</option>
                     {partners.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                   </select>
@@ -3744,7 +3806,7 @@ function BatchDetail({ id, back, usr, data, onMakeTx, flash, reloadBatches }) {
       )}
 
       {b.status === "new" && (
-        <Card className={`p-5 ${isOut ? "border-[color-mix(in_srgb,var(--verm)_34%,transparent)] bg-[color-mix(in_srgb,var(--verm)_8%,transparent)]" : "border-[color-mix(in_srgb,var(--jade)_34%,transparent)] bg-[color-mix(in_srgb,var(--jade)_8%,transparent)]"}`}>
+        <Card className={`p-5 ${isOut ? "border-[color-mix(in_srgb,var(--neg)_34%,transparent)] bg-[color-mix(in_srgb,var(--neg)_8%,transparent)]" : "border-[color-mix(in_srgb,var(--pos)_34%,transparent)] bg-[color-mix(in_srgb,var(--pos)_8%,transparent)]"}`}>
           {groupKeys.length > 1 ? (
             <>
               <div className="text-sm text-[var(--txt)] mb-3">
@@ -3767,7 +3829,7 @@ function BatchDetail({ id, back, usr, data, onMakeTx, flash, reloadBatches }) {
             </>
           ) : (
             <>
-              <div className={`text-sm mb-3 ${isOut ? "text-[var(--verm)]" : "text-[var(--jade)]"}`}>
+              <div className={`text-sm mb-3 ${isOut ? "text-[var(--neg)]" : "text-[var(--pos)]"}`}>
                 {isOut
                   ? <>ئەم بڕە نێردراوە: <b style={num}>{fmt(b.total_net, 0)} {b.currency}</b> {tr("— فرۆشتنێکی لێ درووست بکە")}</>
                   : <>ئەم کەسە ئەم بڕەی ناردووە: <b style={num}>{fmt(b.total_net, 0)} {b.currency}</b> {tr("— کڕینێکی لێ درووست بکە")}</>}
@@ -3880,19 +3942,19 @@ function Statement({ u, txs, c, cur, onClose, flash }) {
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-end md:items-center justify-center md:p-6" onClick={onClose}>
-      <div className="w-full max-w-lg rounded-t-[28px] md:rounded-[24px] max-h-[88vh] overflow-y-auto sheet-in" style={{ background: "var(--card)", boxShadow: "var(--shadow-3)" }} onClick={(ev) => ev.stopPropagation()}>
-        <div className="sticky top-0 z-10 px-5 py-4 flex items-center justify-between backdrop-blur-xl" style={{ background: "color-mix(in srgb, var(--card) 92%, transparent)", borderBottom: "1px solid var(--line-soft)" }}>
+      <div className="w-full max-w-lg rounded-t-[28px] md:rounded-[24px] max-h-[88vh] overflow-y-auto sheet" style={{ background: "var(--surf)", boxShadow: "var(--sh-3)" }} onClick={(ev) => ev.stopPropagation()}>
+        <div className="sticky top-0 z-10 px-5 py-4 flex items-center justify-between backdrop-blur-xl" style={{ background: "color-mix(in srgb, var(--surf) 92%, transparent)", borderBottom: "1px solid var(--line)" }}>
           <div className="font-bold text-[var(--txt)]">{tr("کەشف حساب")}</div>
           <button onClick={onClose} className="p-1.5 text-[var(--txt-3)]"><X className="w-5 h-5" /></button>
         </div>
         <div className="p-5">
-          <div className="flex gap-1 bg-[var(--line-soft)] rounded-xl p-1 mb-4">
+          <div className="flex gap-1 bg-[var(--line)] rounded-[var(--r-sm)] p-1 mb-4">
             {[["all", tr("هەمووی")], ["buy", tr("کڕینی ئەو")], ["sell", tr("فرۆشتنی ئەو")]].map(([k, t]) => (
               <button key={k} onClick={() => setMode(k)}
-                className={`flex-1 py-2 rounded-lg text-sm ${mode === k ? "bg-[var(--card)] text-[var(--jade)] font-bold shadow-sm" : "text-[var(--txt-2)]"}`}>{t}</button>
+                className={`flex-1 py-2 rounded-lg text-sm ${mode === k ? "bg-[var(--surf)] text-[var(--pos)] font-bold shadow-sm" : "text-[var(--txt-2)]"}`}>{t}</button>
             ))}
           </div>
-          <div className="border border-[var(--line)] rounded-2xl overflow-hidden">
+          <div className="border border-[var(--line)] rounded-[var(--r)] overflow-hidden">
             <div className="bg-slate-900 text-white px-4 py-3">
               <div className="font-bold">{u.name}</div>
               <div className="text-xs text-[var(--txt-3)] mt-0.5" style={num}>{today} · {MODE_KU[mode]}</div>
@@ -3900,16 +3962,16 @@ function Statement({ u, txs, c, cur, onClose, flash }) {
             <div className="p-4">
               {(sums.sold || sums.bought) && (
                 <div className="grid grid-cols-2 gap-2 mb-3">
-                  <div className="bg-[color-mix(in_srgb,var(--jade)_10%,transparent)] rounded-xl p-2.5">
-                    <div className="text-[10px] text-[var(--jade)]/70">{tr("فرۆشتوویەتی بە من")}</div>
+                  <div className="bg-[color-mix(in_srgb,var(--pos)_10%,transparent)] rounded-[var(--r-sm)] p-2.5">
+                    <div className="text-[10px] text-[var(--pos)]/70">{tr("فرۆشتوویەتی بە من")}</div>
                     {sums.sold ? Object.entries(sums.sold).map(([cid, v]) => (
-                      <div key={cid} className="text-sm font-bold text-[var(--jade)]" style={num}>{fmt(v, 0)} {cur(cid).code}</div>
+                      <div key={cid} className="text-sm font-bold text-[var(--pos)]" style={num}>{fmt(v, 0)} {cur(cid).code}</div>
                     )) : <div className="text-sm text-[var(--txt-3)]">—</div>}
                   </div>
-                  <div className="bg-[color-mix(in_srgb,var(--verm)_10%,transparent)] rounded-xl p-2.5">
-                    <div className="text-[10px] text-[var(--verm)]/70">{tr("کڕیویەتی لە من")}</div>
+                  <div className="bg-[color-mix(in_srgb,var(--neg)_10%,transparent)] rounded-[var(--r-sm)] p-2.5">
+                    <div className="text-[10px] text-[var(--neg)]/70">{tr("کڕیویەتی لە من")}</div>
                     {sums.bought ? Object.entries(sums.bought).map(([cid, v]) => (
-                      <div key={cid} className="text-sm font-bold text-[var(--verm)]" style={num}>{fmt(v, 0)} {cur(cid).code}</div>
+                      <div key={cid} className="text-sm font-bold text-[var(--neg)]" style={num}>{fmt(v, 0)} {cur(cid).code}</div>
                     )) : <div className="text-sm text-[var(--txt-3)]">—</div>}
                   </div>
                 </div>
@@ -3917,7 +3979,7 @@ function Statement({ u, txs, c, cur, onClose, flash }) {
               <div className="text-[11px] font-bold text-[var(--txt-3)] uppercase mb-2">{tr("دوا مامەڵەکان")}</div>
               {last.length === 0 ? <div className="text-sm text-[var(--txt-3)]">{tr("هیچ")}</div> :
                 last.map((t) => (
-                  <div key={t.id} className="flex justify-between items-center py-1.5 border-b border-[var(--line-soft)] last:border-0 text-sm">
+                  <div key={t.id} className="flex justify-between items-center py-1.5 border-b border-[var(--line)] last:border-0 text-sm">
                     <span className="text-[var(--txt-2)]">
                       <span style={num} className="text-xs text-[var(--txt-3)]">{new Date(t.date).toLocaleDateString("en-GB")}</span>
                       <span className="mr-2">{t.type === "buy" ? "فرۆشتنت" : "کڕینت"}</span>
@@ -3930,16 +3992,16 @@ function Statement({ u, txs, c, cur, onClose, flash }) {
                 {owe.map(([cid, v]) => (
                   <div key={cid} className="flex justify-between text-sm">
                     <span className="text-[var(--txt-2)]">{tr("پارەی تۆ لای من")}</span>
-                    <span className="font-bold text-[var(--verm)]" style={num}>{fmt(v, 0)} {cur(cid).code}</span>
+                    <span className="font-bold text-[var(--neg)]" style={num}>{fmt(v, 0)} {cur(cid).code}</span>
                   </div>
                 ))}
                 {due.map(([cid, v]) => (
                   <div key={cid} className="flex justify-between text-sm">
                     <span className="text-[var(--txt-2)]">{tr("قەرزی تۆ")}</span>
-                    <span className="font-bold text-[var(--jade)]" style={num}>{fmt(v, 0)} {cur(cid).code}</span>
+                    <span className="font-bold text-[var(--pos)]" style={num}>{fmt(v, 0)} {cur(cid).code}</span>
                   </div>
                 ))}
-                {!owe.length && !due.length && <div className="text-sm text-[var(--jade)] font-semibold text-center py-1">{tr("حیساب پاکە ✅")}</div>}
+                {!owe.length && !due.length && <div className="text-sm text-[var(--pos)] font-semibold text-center py-1">{tr("حیساب پاکە ✅")}</div>}
               </div>
             </div>
           </div>
@@ -3960,10 +4022,10 @@ function PeopleHub(p) {
     ["money", "پارە و گواستنەوە", ArrowLeftRight], ["office", tr("نووسینگە"), Building2], ["manage", "بەڕێوەبردن", UserCog]];
   return (
     <div className="space-y-4">
-      <div className="flex gap-1 flex-wrap bg-[var(--card)] border border-[var(--line)] rounded-2xl p-1.5">
+      <div className="flex gap-1 flex-wrap bg-[var(--surf)] border border-[var(--line)] rounded-[var(--r)] p-1.5">
         {TABS.map(([id, t, Ic]) => (
           <button key={id} onClick={() => { setTab(id); p.setDetailId(null); }}
-            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm whitespace-nowrap transition ${tab === id ? "bg-[var(--jade)] text-white font-semibold shadow-sm" : "text-[var(--txt-2)] hover:bg-[var(--line-soft)]"}`}>
+            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-[var(--r-sm)] text-sm whitespace-nowrap transition ${tab === id ? "bg-[var(--pos)] text-white font-semibold shadow-sm" : "text-[var(--txt-2)] hover:bg-[var(--line)]"}`}>
             <Ic className="w-4 h-4" /> {t}
           </button>
         ))}
@@ -4005,10 +4067,10 @@ function AccountMoney({ data, cur, usr, accountMove, accountTransfer, flash }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-1 rounded-2xl p-1" style={{ background: "var(--card)", border: "1px solid var(--line)", boxShadow: "var(--shadow-1)" }}>
+      <div className="flex gap-1 rounded-[var(--r)] p-1" style={{ background: "var(--surf)", border: "1px solid var(--line)", boxShadow: "var(--sh-1)" }}>
         {[["move", tr("پارە دانان / دەرهێنان")], ["transfer", tr("گواستنەوەی حساب")]].map(([k, t]) => (
           <button key={k} onClick={() => setMode(k)}
-            className={`flex-1 py-2.5 rounded-lg text-sm ${mode === k ? "bg-[var(--jade)] text-white font-semibold" : "text-[var(--txt-2)] hover:bg-[var(--line-soft)]"}`}>{t}</button>
+            className={`flex-1 py-2.5 rounded-lg text-sm ${mode === k ? "bg-[var(--pos)] text-white font-semibold" : "text-[var(--txt-2)] hover:bg-[var(--line)]"}`}>{t}</button>
         ))}
       </div>
 
@@ -4038,7 +4100,7 @@ function AccountMoney({ data, cur, usr, accountMove, accountTransfer, flash }) {
             </div>
           </div>
           {mv.userId && (
-            <div className="text-xs text-[var(--txt-2)] mt-3 bg-[var(--line-soft)] rounded-xl p-3">
+            <div className="text-xs text-[var(--txt-2)] mt-3 bg-[var(--line)] rounded-[var(--r-sm)] p-3">
               {usr(mv.userId).role === "investor" && "سەرمایەی وەبەرهێنەرەکە زیاد/کەم دەکرێت"}
               {usr(mv.userId).role === "partner" && "باڵانسی هاوبەشەکە زیاد/کەم دەکرێت"}
               {usr(mv.userId).role === "customer" && "پارە لە قاسەی گشتی دەچێت یان دێت"}
@@ -4072,7 +4134,7 @@ function AccountMoney({ data, cur, usr, accountMove, accountTransfer, flash }) {
             </div>
           </div>
           {xfer.fromId && xfer.toId && +xfer.amount > 0 && (
-            <div className="text-sm text-[var(--txt)] mt-3 bg-[color-mix(in_srgb,var(--jade)_10%,transparent)] border border-[color-mix(in_srgb,var(--jade)_26%,transparent)] rounded-xl p-3">
+            <div className="text-sm text-[var(--txt)] mt-3 bg-[color-mix(in_srgb,var(--pos)_10%,transparent)] border border-[color-mix(in_srgb,var(--pos)_26%,transparent)] rounded-[var(--r-sm)] p-3">
               <b style={num}>{fmt(+xfer.amount, 0)} {cur(xfer.curId).code}</b>{tr("لە")}<b>{usr(xfer.fromId).name}</b> {tr("دەبڕدرێت و دەچێتە حسابی")} <b>{usr(xfer.toId).name}</b>
             </div>
           )}
@@ -4083,7 +4145,7 @@ function AccountMoney({ data, cur, usr, accountMove, accountTransfer, flash }) {
       {hist === null ? <Card><Empty t={tr("بارکردن...")} /></Card> :
         hist.length === 0 ? (
           <Card className="p-4">
-            <div className="text-sm text-[var(--amber)] bg-[color-mix(in_srgb,var(--amber)_11%,transparent)] border border-[color-mix(in_srgb,var(--amber)_26%,transparent)] rounded-xl p-3">
+            <div className="text-sm text-[var(--warn)] bg-[color-mix(in_srgb,var(--warn)_11%,transparent)] border border-[color-mix(in_srgb,var(--warn)_26%,transparent)] rounded-[var(--r-sm)] p-3">
               {tr("هێشتا هیچ نییە — ئایا خشتەکانی")} <b>account_moves</b> {tr("و")} <b>account_transfers</b> {tr("درووست کراون؟")}
             </div>
           </Card>
@@ -4120,11 +4182,11 @@ function AccountSafe({ userId, data, calc, cur, usr, accountMove, accountTransfe
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-1 rounded-2xl p-1 overflow-x-auto" style={{ background: "var(--card)", border: "1px solid var(--line)", boxShadow: "var(--shadow-1)" }}>
+      <div className="flex gap-1 rounded-[var(--r)] p-1 overflow-x-auto" style={{ background: "var(--surf)", border: "1px solid var(--line)", boxShadow: "var(--sh-1)" }}>
         {(readOnly ? [["balance", tr("قاسە")], ["hist", tr("مێژوو")]] : [["balance", tr("قاسە")], ["move", tr("زیادکردن / کەمکردن")], ["transfer", tr("گواستنەوە")], ["hist", tr("مێژوو")]]).map(([k, t]) => (
           <button key={k} onClick={() => setTab(k)}
-            style={tab === k ? { background: "linear-gradient(180deg, var(--jade-lt), var(--jade))", color: "#fff", boxShadow: "0 2px 8px -2px rgba(14,122,107,.4)" } : { color: "var(--txt-2)" }}
-            className={`flex-1 whitespace-nowrap px-3 py-2.5 rounded-xl text-sm transition-all press ${tab === k ? "font-bold" : "font-medium hover:bg-[var(--line-soft)]"}`}>{t}</button>
+            style={tab === k ? { background: "linear-gradient(180deg, var(--ac), var(--pos))", color: "#fff", boxShadow: "0 2px 8px -2px rgba(14,122,107,.4)" } : { color: "var(--txt-2)" }}
+            className={`flex-1 whitespace-nowrap px-3 py-2.5 rounded-[var(--r-sm)] text-sm transition-all tap ${tab === k ? "font-bold" : "font-medium hover:bg-[var(--line)]"}`}>{t}</button>
         ))}
       </div>
 
@@ -4134,7 +4196,7 @@ function AccountSafe({ userId, data, calc, cur, usr, accountMove, accountTransfe
             <SecLbl>{tr("قاسە — پارەی لای من")}</SecLbl>
             {rows.length === 0 ? <Empty t={tr("بەتاڵە")} /> :
               rows.map(({ c, v }) => (
-                <div key={c.id} className="flex items-center justify-between py-2.5 border-b border-[var(--line-soft)] last:border-0">
+                <div key={c.id} className="flex items-center justify-between py-2.5 border-b border-[var(--line)] last:border-0">
                   <span className="text-sm text-[var(--txt-2)] flex items-center gap-2"><CurBadge c={c} size="sm" /> {c.name}</span>
                   <Money v={v} dec={0} />
                 </div>
@@ -4150,11 +4212,11 @@ function AccountSafe({ userId, data, calc, cur, usr, accountMove, accountTransfe
               data.currencies.filter((c) => debt[c.id]).map((c) => {
                 const v = debt[c.id];
                 return (
-                  <div key={c.id} className="flex items-center justify-between py-2.5 border-b border-[var(--line-soft)] last:border-0">
+                  <div key={c.id} className="flex items-center justify-between py-2.5 border-b border-[var(--line)] last:border-0">
                     <span className="text-sm text-[var(--txt-2)] flex items-center gap-2"><CurBadge c={c} size="sm" /> {c.name}</span>
                     <div className="text-left">
                       <Money v={Math.abs(v)} dec={0} />
-                      <div className={`text-[10px] font-semibold ${v > 0 ? "text-[var(--verm)]" : "text-[var(--jade)]"}`}>
+                      <div className={`text-[10px] font-semibold ${v > 0 ? "text-[var(--neg)]" : "text-[var(--pos)]"}`}>
                         {v > 0 ? "قەرزاری ئەوم" : "ئەو قەرزارە"}
                       </div>
                     </div>
@@ -4182,10 +4244,10 @@ function AccountSafe({ userId, data, calc, cur, usr, accountMove, accountTransfe
             <div><Lbl>{tr("تێبینی")}</Lbl><Inp value={mv.note} onChange={(e) => setMv({ ...mv, note: e.target.value })} /></div>
           </div>
           {+mv.amount > 0 && (
-            <div className="mt-3 text-sm bg-[var(--line-soft)] border border-[var(--line)] rounded-xl p-3">
+            <div className="mt-3 text-sm bg-[var(--line)] border border-[var(--line)] rounded-[var(--r-sm)] p-3">
               {tr("باڵانسی ئێستا")} <b style={num}>{fmt(bal[mv.curId] || 0, 0)}</b>
               <span className="mx-2 text-[var(--txt-3)]">←</span>
-              {tr("دوای ئەمە")} <b style={num} className={mv.dir === "in" ? "text-[var(--jade)]" : "text-[var(--verm)]"}>
+              {tr("دوای ئەمە")} <b style={num} className={mv.dir === "in" ? "text-[var(--pos)]" : "text-[var(--neg)]"}>
                 {fmt((bal[mv.curId] || 0) + (mv.dir === "in" ? 1 : -1) * Math.round(+mv.amount), 0)}
               </b> {cur(mv.curId).code}
             </div>
@@ -4203,7 +4265,7 @@ function AccountSafe({ userId, data, calc, cur, usr, accountMove, accountTransfe
           <div className="max-h-40 overflow-y-auto mb-3 space-y-1">
             {all.filter((x) => !q || (x.name || "").includes(q) || (x.phone || "").includes(q)).map((x) => (
               <button key={x.id} onClick={() => setXfer({ ...xfer, toId: x.id })}
-                className={`w-full text-right px-3 py-2 rounded-lg transition ${xfer.toId === x.id ? "bg-[var(--jade)] text-white" : "hover:bg-[var(--line-soft)]"}`}>
+                className={`w-full text-right px-3 py-2 rounded-lg transition ${xfer.toId === x.id ? "bg-[var(--pos)] text-white" : "hover:bg-[var(--line)]"}`}>
                 <div className="text-sm font-semibold">{x.name}</div>
                 <div className={`text-[10px] ${xfer.toId === x.id ? "text-emerald-100" : "text-[var(--txt-3)]"}`}>{ROLE_KU[x.role]}</div>
               </button>
@@ -4214,7 +4276,7 @@ function AccountSafe({ userId, data, calc, cur, usr, accountMove, accountTransfe
             <div><Lbl>{tr("بڕ")}</Lbl><Inp type="number" value={xfer.amount} onChange={(e) => setXfer({ ...xfer, amount: e.target.value })} placeholder="0" /></div>
           </div>
           {xfer.toId && +xfer.amount > 0 && (
-            <div className="mt-3 text-sm bg-[color-mix(in_srgb,var(--jade)_10%,transparent)] border border-[color-mix(in_srgb,var(--jade)_26%,transparent)] rounded-xl p-3">
+            <div className="mt-3 text-sm bg-[color-mix(in_srgb,var(--pos)_10%,transparent)] border border-[color-mix(in_srgb,var(--pos)_26%,transparent)] rounded-[var(--r-sm)] p-3">
               <b style={num}>{fmt(+xfer.amount, 0)} {cur(xfer.curId).code}</b>{tr("لە")}<b>{u.name}</b> {tr("دەبڕدرێت و دەچێتە حسابی")} <b>{usr(xfer.toId).name}</b>
             </div>
           )}
@@ -4263,8 +4325,8 @@ function Customers({ data, calc, cur, usr, detailId, setDetailId, onSave, settle
                   <div className="text-xs text-[var(--txt-2)] mt-0.5">{cnt} مامەڵە{u.phone && <span style={num}> · {u.phone}</span>}</div>
                 </div>
                 <div className="text-left shrink-0 space-y-0.5">
-                  {owe.map(([cid, v]) => <div key={cid} className="text-xs text-[var(--verm)] font-semibold">{tr("قەرزاری ئەوم:")} <span style={num}>{fmt(v, 0)}</span> {cur(cid).code}</div>)}
-                  {due.map(([cid, v]) => <div key={cid} className="text-xs text-[var(--jade)] font-semibold">{tr("لای ئەو:")} <span style={num}>{fmt(v, 0)}</span> {cur(cid).code}</div>)}
+                  {owe.map(([cid, v]) => <div key={cid} className="text-xs text-[var(--neg)] font-semibold">{tr("قەرزاری ئەوم:")} <span style={num}>{fmt(v, 0)}</span> {cur(cid).code}</div>)}
+                  {due.map(([cid, v]) => <div key={cid} className="text-xs text-[var(--pos)] font-semibold">{tr("لای ئەو:")} <span style={num}>{fmt(v, 0)}</span> {cur(cid).code}</div>)}
                   {!owe.length && !due.length && <div className="text-xs text-[var(--txt-3)]">{tr("حیساب پاکە")}</div>}
                 </div>
               </div>
@@ -4298,32 +4360,32 @@ function CustomerDetail({ id, back, data, calc, cur, usr, onSave, settle, flash,
       {stmt && <Statement u={u} txs={base} c={c} cur={cur} flash={flash} onClose={() => setStmt(false)} />}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <Card className="p-4 border-[color-mix(in_srgb,var(--verm)_26%,transparent)] bg-[color-mix(in_srgb,var(--verm)_8%,transparent)]">
-          <div className="text-xs font-semibold text-[var(--verm)] mb-2">{tr("پارەی ئەو لای من (قەرزاری ئەوم)")}</div>
+        <Card className="p-4 border-[color-mix(in_srgb,var(--neg)_26%,transparent)] bg-[color-mix(in_srgb,var(--neg)_8%,transparent)]">
+          <div className="text-xs font-semibold text-[var(--neg)] mb-2">{tr("پارەی ئەو لای من (قەرزاری ئەوم)")}</div>
           {Object.entries(c.owe).filter(([, v]) => v).length === 0 ? <div className="text-sm text-[var(--txt-3)]">{tr("هیچ")}</div> :
             Object.entries(c.owe).filter(([, v]) => v).map(([cid, v]) => (
               <div key={cid} className="flex justify-between py-1">
                 <span className="text-sm text-[var(--txt-2)]">{cur(cid).name}</span>
-                <span className="text-lg font-bold text-[var(--verm)]" style={num}>{fmt(v, 0)}</span>
+                <span className="text-lg font-bold text-[var(--neg)]" style={num}>{fmt(v, 0)}</span>
               </div>
             ))}
         </Card>
-        <Card className="p-4 border-[color-mix(in_srgb,var(--jade)_26%,transparent)] bg-[color-mix(in_srgb,var(--jade)_8%,transparent)]">
-          <div className="text-xs font-semibold text-[var(--jade)] mb-2">{tr("پارەی من لای ئەو (قەرزارمە)")}</div>
+        <Card className="p-4 border-[color-mix(in_srgb,var(--pos)_26%,transparent)] bg-[color-mix(in_srgb,var(--pos)_8%,transparent)]">
+          <div className="text-xs font-semibold text-[var(--pos)] mb-2">{tr("پارەی من لای ئەو (قەرزارمە)")}</div>
           {Object.entries(c.due).filter(([, v]) => v).length === 0 ? <div className="text-sm text-[var(--txt-3)]">{tr("هیچ")}</div> :
             Object.entries(c.due).filter(([, v]) => v).map(([cid, v]) => (
               <div key={cid} className="flex justify-between py-1">
                 <span className="text-sm text-[var(--txt-2)]">{cur(cid).name}</span>
-                <span className="text-lg font-bold text-[var(--jade)]" style={num}>{fmt(v, 0)}</span>
+                <span className="text-lg font-bold text-[var(--pos)]" style={num}>{fmt(v, 0)}</span>
               </div>
             ))}
         </Card>
       </div>
 
-      <div className="flex gap-1 rounded-2xl p-1 overflow-x-auto" style={{ background: "var(--card)", border: "1px solid var(--line)", boxShadow: "var(--shadow-1)" }}>
+      <div className="flex gap-1 rounded-[var(--r)] p-1 overflow-x-auto" style={{ background: "var(--surf)", border: "1px solid var(--line)", boxShadow: "var(--sh-1)" }}>
         {[["history", tr("مێژوو")], ["safe", tr("قاسە")], ["receipts", tr("فیشەکان")], ["new", tr("مامەڵەی نوێ")]].map(([k, t]) => (
           <button key={k} onClick={() => setTab(k)}
-            className={`flex-1 px-4 py-2.5 rounded-lg text-sm ${tab === k ? "bg-[var(--jade)] text-white font-semibold" : "text-[var(--txt-2)] hover:bg-[var(--line-soft)]"}`}>{t}</button>
+            className={`flex-1 px-4 py-2.5 rounded-lg text-sm ${tab === k ? "bg-[var(--pos)] text-white font-semibold" : "text-[var(--txt-2)] hover:bg-[var(--line)]"}`}>{t}</button>
         ))}
       </div>
 
@@ -4366,7 +4428,7 @@ function Partners({ data, calc, cur, usr, transfer, detailId, setDetailId }) {
           <div className="flex items-end"><Btn kind="gold" className="w-full" onClick={() => { transfer(tf); setTf({ ...tf, amount: "" }); }}>{tr("گواستنەوە")}</Btn></div>
         </div>
         {tf.dir === "to" && fr > 0 && +tf.amount > 0 && (
-          <div className="mt-3 text-sm text-[var(--txt-2)] bg-[var(--line-soft)] border border-[var(--line)] rounded-xl p-3">
+          <div className="mt-3 text-sm text-[var(--txt-2)] bg-[var(--line)] border border-[var(--line)] rounded-[var(--r-sm)] p-3">
             عمولەی {fr}٪ = <b style={num}>{fmt(Math.round(Math.round(+tf.amount) * fr / 100), 0)}</b> {tr("— باڵانسی دوایی:")} <b style={num}>{fmt(Math.round(+tf.amount) - Math.round(Math.round(+tf.amount) * fr / 100), 0)}</b>
           </div>
         )}
@@ -4380,7 +4442,7 @@ function Partners({ data, calc, cur, usr, transfer, detailId, setDetailId }) {
               <div className="font-semibold text-[var(--txt)]">{p.name} <span className="text-xs text-[var(--txt-3)] font-normal">· عمولە {p.rate}٪</span></div>
               <div className="text-xs text-[var(--txt-2)] mt-0.5">
                 {Object.entries(bal).filter(([, v]) => v).map(([cid, v]) => `${fmt(v, cur(cid).dec)} ${cur(cid).code}`).join(" · ") || "بەتاڵ"}
-                {hasDebt && <span className="text-[var(--verm)] font-bold"> {tr("· قەرز")}</span>}
+                {hasDebt && <span className="text-[var(--neg)] font-bold"> {tr("· قەرز")}</span>}
               </div>
             </div>
             <ChevronLeft className="w-5 h-5 text-[var(--txt-3)]" />
@@ -4405,7 +4467,7 @@ function PartnerDetail({ p, data, calc, cur }) {
           <SecLbl>{tr("باڵانس (سالب = قەرز لەسەر تۆ)")}</SecLbl>
           {Object.keys(bal).length === 0 ? <Empty t={tr("بەتاڵە")} /> :
             Object.entries(bal).map(([cid, v]) => (
-              <div key={cid} className="flex justify-between py-2 border-b border-[var(--line-soft)] last:border-0">
+              <div key={cid} className="flex justify-between py-2 border-b border-[var(--line)] last:border-0">
                 <span className="text-sm text-[var(--txt-2)]">{cur(cid).name}</span><Money v={v} dec={cur(cid).dec} />
               </div>
             ))}
@@ -4414,7 +4476,7 @@ function PartnerDetail({ p, data, calc, cur }) {
           <SecLbl>عمولەی وەرگیراو ({p.rate}٪)</SecLbl>
           {Object.keys(fees).length === 0 ? <Empty t={tr("هێشتا هیچ")} /> :
             Object.entries(fees).map(([cid, v]) => (
-              <div key={cid} className="flex justify-between py-2 border-b border-[var(--line-soft)] last:border-0">
+              <div key={cid} className="flex justify-between py-2 border-b border-[var(--line)] last:border-0">
                 <span className="text-sm text-[var(--txt-2)]">{cur(cid).name}</span><Money v={v} dec={cur(cid).dec} pos />
               </div>
             ))}
@@ -4498,7 +4560,7 @@ function InvestorDetail({ u, data, calc, cur, invUnpaid, mine }) {
           <SecLbl>{mine ? "سەرمایەکەم" : "سەرمایە"}</SecLbl>
           {rows.filter((r) => r.capV).length === 0 ? <Empty t={tr("سەرمایە دانەنراوە")} /> :
             rows.filter((r) => r.capV).map((r) => (
-              <div key={r.c.id} className="flex justify-between py-2 border-b border-[var(--line-soft)] last:border-0">
+              <div key={r.c.id} className="flex justify-between py-2 border-b border-[var(--line)] last:border-0">
                 <span className="text-sm text-[var(--txt-2)]">{r.c.name}</span><Money v={r.capV} dec={0} />
               </div>
             ))}
@@ -4507,7 +4569,7 @@ function InvestorDetail({ u, data, calc, cur, invUnpaid, mine }) {
           <SecLbl>{tr("خێری نەدراو")}</SecLbl>
           {rows.filter((r) => r.up).length === 0 ? <Empty t={tr("هێشتا هیچ")} /> :
             rows.filter((r) => r.up).map((r) => (
-              <div key={r.c.id} className="flex justify-between py-2 border-b border-[var(--line-soft)] last:border-0">
+              <div key={r.c.id} className="flex justify-between py-2 border-b border-[var(--line)] last:border-0">
                 <span className="text-sm text-[var(--txt-2)]">{r.c.name}</span><Money v={r.up} dec={0} pos />
               </div>
             ))}
@@ -4579,11 +4641,11 @@ function Office({ data, cur, usr, officePay, calc, accountMove, accountTransfer,
         <S title={tr("ئەم مانگە")} m={sums((t) => new Date(t.paidAt) >= m0)} />
       </div>
 
-      <div className="flex gap-1 rounded-2xl p-1 overflow-x-auto" style={{ background: "var(--card)", border: "1px solid var(--line)", boxShadow: "var(--shadow-1)" }}>
+      <div className="flex gap-1 rounded-[var(--r)] p-1 overflow-x-auto" style={{ background: "var(--surf)", border: "1px solid var(--line)", boxShadow: "var(--sh-1)" }}>
         {TABS.map(([k, t]) => (
           <button key={k} onClick={() => setTab(k)}
-            style={tab === k ? { background: "linear-gradient(180deg, var(--jade-lt), var(--jade))", color: "#fff", boxShadow: "0 2px 8px -2px rgba(14,122,107,.4)" } : { color: "var(--txt-2)" }}
-            className={`flex-1 whitespace-nowrap px-3 py-2.5 rounded-xl text-sm transition-all press ${tab === k ? "font-bold" : "font-medium hover:bg-[var(--line-soft)]"}`}>{t}</button>
+            style={tab === k ? { background: "linear-gradient(180deg, var(--ac), var(--pos))", color: "#fff", boxShadow: "0 2px 8px -2px rgba(14,122,107,.4)" } : { color: "var(--txt-2)" }}
+            className={`flex-1 whitespace-nowrap px-3 py-2.5 rounded-[var(--r-sm)] text-sm transition-all tap ${tab === k ? "font-bold" : "font-medium hover:bg-[var(--line)]"}`}>{t}</button>
         ))}
       </div>
 
@@ -4591,7 +4653,7 @@ function Office({ data, cur, usr, officePay, calc, accountMove, accountTransfer,
         pending.length === 0 ? <Card><Empty t={tr("هیچ مامەڵەیەکی چاوەڕوان نییە ✓")} /></Card> :
           pending.map((t) => (
             <Card key={t.id} className="p-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
-              {t.code && <span className="text-[11px] font-bold text-[var(--txt-3)] bg-[var(--line-soft)] px-2 py-0.5 rounded" style={num}>#{t.code}</span>}
+              {t.code && <span className="text-[11px] font-bold text-[var(--txt-3)] bg-[var(--line)] px-2 py-0.5 rounded" style={num}>#{t.code}</span>}
               <span className="font-semibold text-[var(--txt)]">{t.cpId ? usr(t.cpId).name : t.cpName}</span>
               <span>{tr("بدرێتێ:")} <Money v={t.total} dec={0} /> {cur(t.againstId).code}</span>
               <span className="text-[11px] text-[var(--txt-3)]" style={num}>{new Date(t.date).toLocaleString("en-GB")}</span>
@@ -4615,12 +4677,12 @@ function Office({ data, cur, usr, officePay, calc, accountMove, accountTransfer,
                 <button key={lbl} onClick={() => {
                   const x = new Date(); x.setDate(x.getDate() - dd);
                   setFrom(x.toISOString().slice(0, 10)); setTo(new Date().toISOString().slice(0, 10));
-                }} className="px-3 py-1.5 rounded-lg bg-[var(--line-soft)] hover:bg-[var(--line)] text-xs font-semibold text-[var(--txt-2)]">{lbl}</button>
+                }} className="px-3 py-1.5 rounded-lg bg-[var(--line)] hover:bg-[var(--line)] text-xs font-semibold text-[var(--txt-2)]">{lbl}</button>
               ))}
               <button onClick={() => { setQ(""); setFrom(""); setTo(""); }}
-                className="px-3 py-1.5 rounded-lg bg-[var(--line-soft)] hover:bg-[var(--line)] text-xs font-semibold text-[var(--txt-2)]">{tr("سڕینەوە")}</button>
+                className="px-3 py-1.5 rounded-lg bg-[var(--line)] hover:bg-[var(--line)] text-xs font-semibold text-[var(--txt-2)]">{tr("سڕینەوە")}</button>
             </div>
-            <div className="flex gap-4 flex-wrap text-xs text-[var(--txt-2)] pt-2 border-t border-[var(--line-soft)]">
+            <div className="flex gap-4 flex-wrap text-xs text-[var(--txt-2)] pt-2 border-t border-[var(--line)]">
               <span><b style={num}>{hist.length}</b>{tr("پارەدان")}</span>
               {Object.entries(histTot).map(([cid, v]) => <span key={cid}>{cur(cid).code}: <b style={num}>{fmt(v, 0)}</b></span>)}
             </div>
@@ -4666,7 +4728,7 @@ function UsersAdmin({ data, cur, createUser, deleteUser, setUserRate, flash }) {
               <Lbl>{tr("لە کام دراوەکاندا شەریکە؟")}</Lbl>
               <div className="flex gap-1.5 flex-wrap">
                 <button onClick={() => setF({ ...f, scope: [] })}
-                  className={`px-3 py-2 rounded-xl text-xs font-semibold border transition ${!f.scope?.length ? "bg-[var(--jade)] text-white border-emerald-700" : "bg-[var(--card)] border-[var(--line)] text-[var(--txt-2)]"}`}>
+                  className={`px-3 py-2 rounded-[var(--r-sm)] text-xs font-semibold border transition ${!f.scope?.length ? "bg-[var(--pos)] text-white border-emerald-700" : "bg-[var(--surf)] border-[var(--line)] text-[var(--txt-2)]"}`}>
                   هەموو دراوەکان
                 </button>
                 {data.currencies.map((c) => {
@@ -4676,7 +4738,7 @@ function UsersAdmin({ data, cur, createUser, deleteUser, setUserRate, flash }) {
                       const sc = new Set(f.scope || []);
                       on ? sc.delete(c.id) : sc.add(c.id);
                       setF({ ...f, scope: [...sc] });
-                    }} className={`px-3 py-2 rounded-xl text-xs font-semibold border transition flex items-center gap-1.5 ${on ? "bg-[var(--jade)] text-white border-emerald-700" : "bg-[var(--card)] border-[var(--line)] text-[var(--txt-2)]"}`}>
+                    }} className={`px-3 py-2 rounded-[var(--r-sm)] text-xs font-semibold border transition flex items-center gap-1.5 ${on ? "bg-[var(--pos)] text-white border-emerald-700" : "bg-[var(--surf)] border-[var(--line)] text-[var(--txt-2)]"}`}>
                       <CurBadge c={c} size="sm" /> {c.name}
                     </button>
                   );
@@ -4709,7 +4771,7 @@ function UsersAdmin({ data, cur, createUser, deleteUser, setUserRate, flash }) {
               {ROLE_KU[u.role]}{u.phone && <span style={num}> · {u.phone}</span>}{u.address && ` · ${u.address}`}
             </div>
             {u.role === "investor" && (
-              <div className="text-[11px] text-[var(--jade)] mt-0.5">
+              <div className="text-[11px] text-[var(--pos)] mt-0.5">
                 {(u.scope || []).length === 0 ? "لە هەموو دراوەکاندا" : `تەنها: ${(u.scope || []).map((x) => cur(x).code).join("، ")}`}
               </div>
             )}
@@ -4723,7 +4785,7 @@ function UsersAdmin({ data, cur, createUser, deleteUser, setUserRate, flash }) {
               <span className="text-xs">{tr("٪")}</span>
             </div>
           )}
-          <button onClick={() => deleteUser(u)} className="text-[var(--txt-3)] hover:text-[var(--verm)]"><Trash2 className="w-4 h-4" /></button>
+          <button onClick={() => deleteUser(u)} className="text-[var(--txt-3)] hover:text-[var(--neg)]"><Trash2 className="w-4 h-4" /></button>
         </Card>
       ))}
     </div>
@@ -4793,12 +4855,12 @@ function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare, s
   };
 
   const Row = ({ label, m, tone, bold }) => (
-    <div className={`flex items-center justify-between py-2.5 border-b border-[var(--line-soft)] last:border-0 ${bold ? "font-bold" : ""}`}>
+    <div className={`flex items-center justify-between py-2.5 border-b border-[var(--line)] last:border-0 ${bold ? "font-bold" : ""}`}>
       <span className={`text-sm ${bold ? "text-[var(--txt)]" : "text-[var(--txt-2)]"}`}>{label}</span>
       <div className="text-left space-y-0.5">
         {Object.keys(m).length === 0 ? <span className="text-[var(--txt-3)] text-sm">0</span> :
           Object.entries(m).map(([cid, v]) => (
-            <div key={cid} className={`text-sm ${tone === "pos" ? "text-[var(--jade)]" : tone === "neg" ? "text-[var(--verm)]" : "text-[var(--txt)]"}`}>
+            <div key={cid} className={`text-sm ${tone === "pos" ? "text-[var(--pos)]" : tone === "neg" ? "text-[var(--neg)]" : "text-[var(--txt)]"}`}>
               <span style={num} className="font-bold">{tone === "neg" ? "−" : ""}{fmt(Math.abs(v), 0)}</span>
               <span className="text-xs text-[var(--txt-3)] mr-1">{cur(cid).code}</span>
             </div>
@@ -4819,7 +4881,7 @@ function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare, s
       <Card className="p-4 space-y-3">
         <div className="flex gap-1.5 flex-wrap">
           {[["today", tr("ئەمڕۆ")], ["week", tr("ئەم هەفتەیە")], ["month", tr("ئەم مانگە")], ["prev", tr("مانگی ڕابردوو")], ["year", tr("ئەمساڵ")]].map(([k, t]) => (
-            <button key={k} onClick={() => preset(k)} className="px-3 py-1.5 rounded-lg bg-[var(--line-soft)] hover:bg-[var(--jade)] hover:text-white text-xs font-semibold text-[var(--txt-2)] transition">{t}</button>
+            <button key={k} onClick={() => preset(k)} className="px-3 py-1.5 rounded-lg bg-[var(--line)] hover:bg-[var(--pos)] hover:text-white text-xs font-semibold text-[var(--txt-2)] transition">{t}</button>
           ))}
         </div>
         <div className="grid grid-cols-2 gap-2.5">
@@ -4831,19 +4893,19 @@ function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare, s
       {/* پوختەی سەرەکی */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Card className="p-4"><div className="text-xs text-[var(--txt-2)]">{tr("مامەڵە")}</div><div className="text-2xl font-bold" style={num}>{txs.length}</div></Card>
-        <Card className="p-4"><div className="text-xs text-[var(--txt-2)]">{tr("کڕین")}</div><div className="text-2xl font-bold text-[var(--jade)]" style={num}>{txs.filter((t) => t.type === "buy").length}</div></Card>
-        <Card className="p-4"><div className="text-xs text-[var(--txt-2)]">{tr("فرۆشتن")}</div><div className="text-2xl font-bold text-[var(--verm)]" style={num}>{txs.filter((t) => t.type === "sell").length}</div></Card>
+        <Card className="p-4"><div className="text-xs text-[var(--txt-2)]">{tr("کڕین")}</div><div className="text-2xl font-bold text-[var(--pos)]" style={num}>{txs.filter((t) => t.type === "buy").length}</div></Card>
+        <Card className="p-4"><div className="text-xs text-[var(--txt-2)]">{tr("فرۆشتن")}</div><div className="text-2xl font-bold text-[var(--neg)]" style={num}>{txs.filter((t) => t.type === "sell").length}</div></Card>
         <Card accent className="p-4">
           <div className="text-xs text-emerald-100">نەتی خۆم {ratesReady ? "(دۆلار)" : ""}</div>
           <div className="text-2xl font-bold" style={num}>{ratesReady ? fmt(sumUsd(net), 0) : Object.values(net).length ? fmt(Object.values(net)[0], 0) : 0}</div>
         </Card>
       </div>
 
-      <div className="flex gap-1 rounded-2xl p-1 overflow-x-auto" style={{ background: "var(--card)", border: "1px solid var(--line)", boxShadow: "var(--shadow-1)" }}>
+      <div className="flex gap-1 rounded-[var(--r)] p-1 overflow-x-auto" style={{ background: "var(--surf)", border: "1px solid var(--line)", boxShadow: "var(--sh-1)" }}>
         {TABS.map(([k, t]) => (
           <button key={k} onClick={() => setTab(k)}
-            style={tab === k ? { background: "linear-gradient(180deg, var(--jade-lt), var(--jade))", color: "#fff", boxShadow: "0 2px 8px -2px rgba(14,122,107,.4)" } : { color: "var(--txt-2)" }}
-            className={`flex-1 whitespace-nowrap px-3 py-2.5 rounded-xl text-sm transition-all press ${tab === k ? "font-bold" : "font-medium hover:bg-[var(--line-soft)]"}`}>{t}</button>
+            style={tab === k ? { background: "linear-gradient(180deg, var(--ac), var(--pos))", color: "#fff", boxShadow: "0 2px 8px -2px rgba(14,122,107,.4)" } : { color: "var(--txt-2)" }}
+            className={`flex-1 whitespace-nowrap px-3 py-2.5 rounded-[var(--r-sm)] text-sm transition-all tap ${tab === k ? "font-bold" : "font-medium hover:bg-[var(--line)]"}`}>{t}</button>
         ))}
       </div>
 
@@ -4860,9 +4922,9 @@ function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare, s
               <Row label="نەتیجەی کۆتایی (بۆ خۆم)" m={net} tone="pos" bold />
             </div>
             {ratesReady && (
-              <div className="mt-3 bg-[color-mix(in_srgb,var(--jade)_10%,transparent)] rounded-xl p-3 flex justify-between items-center">
-                <span className="text-sm text-[var(--jade)] font-semibold">{tr("کۆی نەت بە دۆلار")}</span>
-                <span className="text-xl font-bold text-[var(--jade)]" style={num}>{fmt(sumUsd(net), 0)} $</span>
+              <div className="mt-3 bg-[color-mix(in_srgb,var(--pos)_10%,transparent)] rounded-[var(--r-sm)] p-3 flex justify-between items-center">
+                <span className="text-sm text-[var(--pos)] font-semibold">{tr("کۆی نەت بە دۆلار")}</span>
+                <span className="text-xl font-bold text-[var(--pos)]" style={num}>{fmt(sumUsd(net), 0)} $</span>
               </div>
             )}
           </>}
@@ -4875,18 +4937,18 @@ function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare, s
             <SecLbl>{tr("هاتوو و تێچووی قاسە")}</SecLbl>
             {Object.keys(flow).length === 0 ? <Empty t={tr("هیچ")} /> :
               Object.entries(flow).map(([cid, fl]) => (
-                <div key={cid} className="py-3 border-b border-[var(--line-soft)] last:border-0">
+                <div key={cid} className="py-3 border-b border-[var(--line)] last:border-0">
                   <div className="font-semibold text-[var(--txt)] mb-2">{cur(cid).name}</div>
                   <div className="grid grid-cols-3 gap-2 text-center">
-                    <div className="bg-[color-mix(in_srgb,var(--jade)_10%,transparent)] rounded-lg py-2">
-                      <div className="text-[10px] text-[var(--jade)]/70">{tr("هاتوو")}</div>
-                      <div className="text-sm font-bold text-[var(--jade)]" style={num}>{fmt(fl.inn, 0)}</div>
+                    <div className="bg-[color-mix(in_srgb,var(--pos)_10%,transparent)] rounded-lg py-2">
+                      <div className="text-[10px] text-[var(--pos)]/70">{tr("هاتوو")}</div>
+                      <div className="text-sm font-bold text-[var(--pos)]" style={num}>{fmt(fl.inn, 0)}</div>
                     </div>
-                    <div className="bg-[color-mix(in_srgb,var(--verm)_10%,transparent)] rounded-lg py-2">
-                      <div className="text-[10px] text-[var(--verm)]/70">{tr("تێچوو")}</div>
-                      <div className="text-sm font-bold text-[var(--verm)]" style={num}>{fmt(fl.out, 0)}</div>
+                    <div className="bg-[color-mix(in_srgb,var(--neg)_10%,transparent)] rounded-lg py-2">
+                      <div className="text-[10px] text-[var(--neg)]/70">{tr("تێچوو")}</div>
+                      <div className="text-sm font-bold text-[var(--neg)]" style={num}>{fmt(fl.out, 0)}</div>
                     </div>
-                    <div className="bg-[var(--line-soft)] rounded-lg py-2">
+                    <div className="bg-[var(--line)] rounded-lg py-2">
                       <div className="text-[10px] text-[var(--txt-2)]">{tr("جیاوازی")}</div>
                       <div className="text-sm font-bold text-[var(--txt)]" style={num}>{fmt(fl.inn - fl.out, 0)}</div>
                     </div>
@@ -4898,14 +4960,14 @@ function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare, s
             <SecLbl>{tr("قەبارەی مامەڵەکان")}</SecLbl>
             {Object.keys(vol).length === 0 ? <Empty t={tr("هیچ")} /> :
               Object.entries(vol).map(([cid, v]) => (
-                <div key={cid} className="flex items-center justify-between py-2.5 border-b border-[var(--line-soft)] last:border-0">
+                <div key={cid} className="flex items-center justify-between py-2.5 border-b border-[var(--line)] last:border-0">
                   <div>
                     <div className="text-sm font-semibold text-[var(--txt)]">{cur(cid).name}</div>
                     <div className="text-xs text-[var(--txt-3)]" style={num}>{v.n} مامەڵە</div>
                   </div>
                   <div className="text-left text-sm">
-                    <div className="text-[var(--jade)]">{tr("کڕدراو")}<b style={num}>{fmt(v.buy, 0)}</b></div>
-                    <div className="text-[var(--verm)]">{tr("فرۆشراو")}<b style={num}>{fmt(v.sell, 0)}</b></div>
+                    <div className="text-[var(--pos)]">{tr("کڕدراو")}<b style={num}>{fmt(v.buy, 0)}</b></div>
+                    <div className="text-[var(--neg)]">{tr("فرۆشراو")}<b style={num}>{fmt(v.sell, 0)}</b></div>
                   </div>
                 </div>
               ))}
@@ -4926,7 +4988,7 @@ function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare, s
               }).filter(Boolean);
               if (!rows.length) return null;
               return (
-                <div key={u.id} className="py-3 border-b border-[var(--line-soft)] last:border-0">
+                <div key={u.id} className="py-3 border-b border-[var(--line)] last:border-0">
                   <div className="flex justify-between items-center mb-2">
                     <div className="font-semibold text-[var(--txt)]">{u.name}</div>
                     <Pill>ڕێژە {u.rate}٪</Pill>
@@ -4936,7 +4998,7 @@ function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare, s
                       <span className="text-[var(--txt-2)]">
                         {cur(r.cid).name} · سەرمایە <span style={num}>{fmt(r.cap, 0)}</span> ({(r.share * 100).toFixed(1)}٪)
                       </span>
-                      <span className="font-bold text-[var(--jade)]" style={num}>{fmt(r.amt, 0)}</span>
+                      <span className="font-bold text-[var(--pos)]" style={num}>{fmt(r.amt, 0)}</span>
                     </div>
                   ))}
                 </div>
@@ -5002,20 +5064,20 @@ function Backup({ data, calc, cur, saveBackup, downloadBackup, flash, sumUsd, my
     <div className="space-y-4">
       <H sub="داتاکەت لە سێرڤەری Supabase پارێزراوە — لێرەش وێنەی زاپاسی لێ دەگیرێت">{tr("پاراستنی داتا")}</H>
 
-      <Card className={`p-4 ${okAll ? "border-[color-mix(in_srgb,var(--jade)_34%,transparent)] bg-[color-mix(in_srgb,var(--jade)_8%,transparent)]" : "border-[color-mix(in_srgb,var(--amber)_34%,transparent)] bg-[color-mix(in_srgb,var(--amber)_9%,transparent)]"}`}>
+      <Card className={`p-4 ${okAll ? "border-[color-mix(in_srgb,var(--pos)_34%,transparent)] bg-[color-mix(in_srgb,var(--pos)_8%,transparent)]" : "border-[color-mix(in_srgb,var(--warn)_34%,transparent)] bg-[color-mix(in_srgb,var(--warn)_9%,transparent)]"}`}>
         <div className="flex items-center gap-2 mb-3">
-          {okAll ? <CheckCircle2 className="w-5 h-5 text-[var(--jade)]" /> : <AlertTriangle className="w-5 h-5 text-[var(--amber)]" />}
-          <span className={`font-bold ${okAll ? "text-[var(--jade)]" : "text-[var(--amber)]"}`}>
+          {okAll ? <CheckCircle2 className="w-5 h-5 text-[var(--pos)]" /> : <AlertTriangle className="w-5 h-5 text-[var(--warn)]" />}
+          <span className={`font-bold ${okAll ? "text-[var(--pos)]" : "text-[var(--warn)]"}`}>
             {okAll ? "هەموو حیسابەکان ڕێکن" : "چەند خاڵێک پێویستی بە سەیرکردن هەیە"}
           </span>
         </div>
         {checks.map((c, i) => (
           <div key={i} className="flex items-center justify-between py-1.5 text-sm border-b border-white/60 last:border-0">
             <span className="flex items-center gap-1.5 text-[var(--txt)]">
-              {c.ok ? <CheckCircle2 className="w-3.5 h-3.5 text-[var(--jade)]" /> : <AlertTriangle className="w-3.5 h-3.5 text-[var(--amber)]" />}
+              {c.ok ? <CheckCircle2 className="w-3.5 h-3.5 text-[var(--pos)]" /> : <AlertTriangle className="w-3.5 h-3.5 text-[var(--warn)]" />}
               {c.t}
             </span>
-            <span className={`text-xs ${c.ok ? "text-[var(--txt-3)]" : "text-[var(--amber)] font-semibold"}`}>{c.d}</span>
+            <span className={`text-xs ${c.ok ? "text-[var(--txt-3)]" : "text-[var(--warn)] font-semibold"}`}>{c.d}</span>
           </div>
         ))}
       </Card>
@@ -5043,11 +5105,11 @@ function Backup({ data, calc, cur, saveBackup, downloadBackup, flash, sumUsd, my
         <SecLbl>{tr("باکئەپە هەڵگیراوەکان")}</SecLbl>
         {list === null ? <Empty t={tr("بارکردن...")} /> :
           list.length === 0 ? (
-            <div className="text-sm text-[var(--amber)] bg-[color-mix(in_srgb,var(--amber)_11%,transparent)] border border-[color-mix(in_srgb,var(--amber)_26%,transparent)] rounded-xl p-3">
+            <div className="text-sm text-[var(--warn)] bg-[color-mix(in_srgb,var(--warn)_11%,transparent)] border border-[color-mix(in_srgb,var(--warn)_26%,transparent)] rounded-[var(--r-sm)] p-3">
               {tr("هێشتا هیچ باکئەپێک نییە — ئایا خشتەی")} <b>backups</b> {tr("لە Supabase درووست کراوە؟")}
             </div>
           ) : list.map((b) => (
-            <div key={b.id} className="flex items-center justify-between py-2.5 border-b border-[var(--line-soft)] last:border-0">
+            <div key={b.id} className="flex items-center justify-between py-2.5 border-b border-[var(--line)] last:border-0">
               <div>
                 <div className="text-sm text-[var(--txt)]" style={num}>{new Date(b.created_at).toLocaleString("en-GB")}</div>
                 <div className="text-[11px] text-[var(--txt-3)]">
@@ -5059,7 +5121,7 @@ function Backup({ data, calc, cur, saveBackup, downloadBackup, flash, sumUsd, my
           ))}
       </Card>
 
-      <Card className="p-4 bg-[var(--line-soft)]">
+      <Card className="p-4 bg-[var(--line)]">
         <div className="text-xs text-[var(--txt-2)] leading-relaxed">
           <b className="text-[var(--txt)]">{tr("ئامۆژگاری:")}</b> بۆ کۆمپانیایەک کە ملیۆنان دۆلار ئاڵووگۆڕ دەکات، پێشنیار دەکەم پلانی <b>Supabase Pro</b> {tr("وەربگریت ($25/مانگ) — باکئەپی خۆکاری ڕۆژانەی هەیە لەگەڵ توانای گەڕاندنەوەی هەر خولەکێک، و پڕۆژەکەشت هەرگیز ناوەستێت. هەروەها مانگی جارێک فایلێکی باکئەپ دابەزێنە و لە شوێنێکی جیا هەڵیبگرە.")}
         </div>
@@ -5088,7 +5150,7 @@ function WorldRates({ data, cur }) {
     <Card className="p-5">
       <div className="flex items-center justify-between mb-1">
         <SecLbl>{tr("نرخی جیهانی")}</SecLbl>
-        <button onClick={load} className="text-[11px] font-semibold" style={{ color: "var(--brass)" }}>{tr("نوێکردنەوە")}</button>
+        <button onClick={load} className="text-[11px] font-semibold" style={{ color: "var(--ac)" }}>{tr("نوێکردنەوە")}</button>
       </div>
       <div className="text-[11px] mb-3 leading-relaxed" style={{ color: "var(--txt-3)" }}>
         {tr("نرخی بازاڕی جیهانی — تەنها بۆ زانیاری. نرخی مامەڵەکانت لە «نرخی ئەمڕۆ»وە دێت.")}
@@ -5096,8 +5158,8 @@ function WorldRates({ data, cur }) {
 
       {rates === null ? <Empty t={tr("بارکردن...")} /> :
         Object.keys(rates).length === 0 ? (
-          <div className="text-sm rounded-xl p-3"
-            style={{ background: "color-mix(in srgb, var(--amber) 11%, transparent)", color: "var(--amber)" }}>
+          <div className="text-sm rounded-[var(--r-sm)] p-3"
+            style={{ background: "color-mix(in srgb, var(--warn) 11%, transparent)", color: "var(--warn)" }}>
             {tr("نەتوانرا نرخەکان وەربگیرێن")}
           </div>
         ) : (
@@ -5108,14 +5170,14 @@ function WorldRates({ data, cur }) {
               const own = c.buyRate && c.sellRate ? (c.buyRate + c.sellRate) / 2 : (c.buyRate || c.sellRate);
               const diff = own ? ((own - w) / w) * 100 : null;
               return (
-                <div key={c.id} className="flex items-center justify-between py-2.5 border-b last:border-0" style={{ borderColor: "var(--line-soft)" }}>
+                <div key={c.id} className="flex items-center justify-between py-2.5 border-b last:border-0" style={{ borderColor: "var(--line)" }}>
                   <span className="text-sm flex items-center gap-2.5" style={{ color: "var(--txt-2)" }}>
                     <CurBadge c={c} size="sm" /> {c.name}
                   </span>
                   <div className="text-left">
                     <div className="font-bold" style={{ ...num, color: "var(--txt)" }}>{fmt(w, 3)}</div>
                     {diff !== null && Math.abs(diff) > .05 && (
-                      <div className="text-[10px]" style={{ ...num, color: diff > 0 ? "var(--jade)" : "var(--verm)" }}>
+                      <div className="text-[10px]" style={{ ...num, color: diff > 0 ? "var(--pos)" : "var(--neg)" }}>
                         نرخی تۆ {diff > 0 ? "+" : ""}{diff.toFixed(1)}٪
                       </div>
                     )}
@@ -5171,8 +5233,8 @@ function Insights({ data, calc, cur, usr, profitIn, ownProfitIn, sumUsd, ratesRe
   const from = days[0];
   const inRange = data.txs.filter((t) => !t.deleted && dOnly(t.date) >= from);
   const buySell = [
-    { k: "کڕین", v: inRange.filter((t) => t.type === "buy").length, color: "var(--jade)" },
-    { k: "فرۆشتن", v: inRange.filter((t) => t.type === "sell").length, color: "var(--verm)" },
+    { k: "کڕین", v: inRange.filter((t) => t.type === "buy").length, color: "var(--pos)" },
+    { k: "فرۆشتن", v: inRange.filter((t) => t.type === "sell").length, color: "var(--neg)" },
   ].filter((r) => r.v);
 
   /* ── دابەشکردنی قاسە ── */
@@ -5195,7 +5257,7 @@ function Insights({ data, calc, cur, usr, profitIn, ownProfitIn, sumUsd, ratesRe
         v: +r[key],
       })),
     });
-    return [mk("buy_rate", tr("کڕین"), "var(--jade)"), mk("sell_rate", tr("فرۆشتن"), "var(--verm)")].filter((s2) => s2.pts.length);
+    return [mk("buy_rate", tr("کڕین"), "var(--pos)"), mk("sell_rate", tr("فرۆشتن"), "var(--neg)")].filter((s2) => s2.pts.length);
   })();
 
   /* ── هێڵی کاتی چالاکی ── */
@@ -5277,12 +5339,12 @@ function Insights({ data, calc, cur, usr, profitIn, ownProfitIn, sumUsd, ratesRe
     <div className="space-y-4">
       <H sub="ڕەوتی خێر، مێژووی نرخەکان، و کورتەی ڕۆژ">{tr("ڕەوت و شیکاری")}</H>
 
-      <div className="flex gap-1 rounded-2xl p-1 overflow-x-auto"
-        style={{ background: "var(--card)", border: "1px solid var(--line)", boxShadow: "var(--shadow-1)" }}>
+      <div className="flex gap-1 rounded-[var(--r)] p-1 overflow-x-auto"
+        style={{ background: "var(--surf)", border: "1px solid var(--line)", boxShadow: "var(--sh-1)" }}>
         {TABS.map(([k, t]) => (
           <button key={k} onClick={() => setTab(k)}
-            style={tab === k ? { background: "linear-gradient(180deg, var(--jade-lt), var(--jade))", color: "#fff", boxShadow: "0 2px 8px -2px rgba(14,122,107,.4)" } : { color: "var(--txt-2)" }}
-            className={`flex-1 whitespace-nowrap px-3 py-2.5 rounded-xl text-sm transition-all press ${tab === k ? "font-bold" : "font-medium"}`}>{t}</button>
+            style={tab === k ? { background: "linear-gradient(180deg, var(--ac), var(--pos))", color: "#fff", boxShadow: "0 2px 8px -2px rgba(14,122,107,.4)" } : { color: "var(--txt-2)" }}
+            className={`flex-1 whitespace-nowrap px-3 py-2.5 rounded-[var(--r-sm)] text-sm transition-all tap ${tab === k ? "font-bold" : "font-medium"}`}>{t}</button>
         ))}
       </div>
 
@@ -5291,23 +5353,23 @@ function Insights({ data, calc, cur, usr, profitIn, ownProfitIn, sumUsd, ratesRe
           <div className="flex gap-1.5 flex-wrap">
             {[[7, tr("٧ ڕۆژ")], [14, tr("١٤ ڕۆژ")], [30, tr("٣٠ ڕۆژ")]].map(([d, l]) => (
               <button key={d} onClick={() => setSpan(d)}
-                style={span === d ? { background: "var(--brass)", color: "#fff" } : { background: "var(--line-soft)", color: "var(--txt-2)" }}
-                className="px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all press">{l}</button>
+                style={span === d ? { background: "var(--ac)", color: "#fff" } : { background: "var(--line)", color: "var(--txt-2)" }}
+                className="px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all tap">{l}</button>
             ))}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <Card className="p-4 fade-up">
+            <Card className="p-4 rise">
               <div className="text-[11px]" style={{ color: "var(--txt-2)" }}>خێری {span} ڕۆژ</div>
-              <div className="text-2xl font-bold mt-0.5" style={{ ...num, color: totProfit >= 0 ? "var(--jade)" : "var(--verm)" }}>
+              <div className="text-2xl font-bold mt-0.5" style={{ ...num, color: totProfit >= 0 ? "var(--pos)" : "var(--neg)" }}>
                 {fmt(totProfit, 0)}{ratesReady && <span className="text-xs mr-1" style={{ color: "var(--txt-3)" }}>$</span>}
               </div>
               <div className="mt-1.5"><Spark data={dayProfit.map((d) => d.v)} w={110} h={26} /></div>
             </Card>
-            <Card className="p-4 fade-up" style={{ animationDelay: "60ms" }}>
+            <Card className="p-4 rise" style={{ animationDelay: "60ms" }}>
               <div className="text-[11px]" style={{ color: "var(--txt-2)" }}>{tr("مامەڵەکان")}</div>
               <div className="text-2xl font-bold mt-0.5" style={{ ...num, color: "var(--txt)" }}>{totTx}</div>
-              <div className="mt-1.5"><Spark data={dayVol.map((d) => d.v)} w={110} h={26} color="var(--brass)" /></div>
+              <div className="mt-1.5"><Spark data={dayVol.map((d) => d.v)} w={110} h={26} color="var(--ac)" /></div>
             </Card>
           </div>
 
@@ -5315,8 +5377,8 @@ function Insights({ data, calc, cur, usr, profitIn, ownProfitIn, sumUsd, ratesRe
             <SecLbl>خێری ڕۆژانە{ratesReady ? " (دۆلار)" : ""}</SecLbl>
             <Bars rows={dayProfit} />
             {best?.v > 0 && (
-              <div className="text-[11px] mt-3 pt-3" style={{ color: "var(--txt-3)", borderTop: "1px solid var(--line-soft)" }}>
-                {tr("باشترین ڕۆژ:")} <b style={{ ...num, color: "var(--jade)" }}>{fmt(best.v, 0)}</b> لە {best.k}
+              <div className="text-[11px] mt-3 pt-3" style={{ color: "var(--txt-3)", borderTop: "1px solid var(--line)" }}>
+                {tr("باشترین ڕۆژ:")} <b style={{ ...num, color: "var(--pos)" }}>{fmt(best.v, 0)}</b> لە {best.k}
               </div>
             )}
           </Card>
@@ -5350,7 +5412,7 @@ function Insights({ data, calc, cur, usr, profitIn, ownProfitIn, sumUsd, ratesRe
               </span>
             </div>
             <div className="flex items-center gap-1.5 mt-2 text-sm">
-              <span style={{ color: fc.slope >= 0 ? "var(--jade-lt)" : "var(--verm-lt)" }} className="font-bold">
+              <span style={{ color: fc.slope >= 0 ? "var(--ac)" : "var(--neg)" }} className="font-bold">
                 {fc.slope > 0 ? "▲" : fc.slope < 0 ? "▼" : "■"} {fmt(Math.abs(fc.slope), 1)}
               </span>
               <span style={{ color: "rgba(255,255,255,.5)" }}>
@@ -5361,9 +5423,9 @@ function Insights({ data, calc, cur, usr, profitIn, ownProfitIn, sumUsd, ratesRe
 
           <div className="grid grid-cols-3 gap-3">
             {[["سبەی", fc.day], ["٧ ڕۆژ", fc.week], ["٣٠ ڕۆژ", fc.month]].map(([l, v], i) => (
-              <Card key={l} className="p-4 fade-up" style={{ animationDelay: `${i * 60}ms` }}>
+              <Card key={l} className="p-4 rise" style={{ animationDelay: `${i * 60}ms` }}>
                 <div className="text-[11px]" style={{ color: "var(--txt-2)" }}>{l}</div>
-                <div className="text-xl font-bold mt-0.5" style={{ ...num, color: v >= 0 ? "var(--jade)" : "var(--verm)" }}>
+                <div className="text-xl font-bold mt-0.5" style={{ ...num, color: v >= 0 ? "var(--pos)" : "var(--neg)" }}>
                   {fmt(v, 0)}
                 </div>
               </Card>
@@ -5381,16 +5443,16 @@ function Insights({ data, calc, cur, usr, profitIn, ownProfitIn, sumUsd, ratesRe
           <Card className="p-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-semibold" style={{ color: "var(--txt-2)" }}>{tr("دڵنیایی پێشبینین")}</span>
-              <span className="text-sm font-bold" style={{ ...num, color: fc.fit > .6 ? "var(--jade)" : fc.fit > .3 ? "var(--amber)" : "var(--verm)" }}>
+              <span className="text-sm font-bold" style={{ ...num, color: fc.fit > .6 ? "var(--pos)" : fc.fit > .3 ? "var(--warn)" : "var(--neg)" }}>
                 {(fc.fit * 100).toFixed(0)}٪
               </span>
             </div>
-            <div className="h-2 rounded-full overflow-hidden" style={{ background: "var(--line-soft)" }}>
+            <div className="h-2 rounded-full overflow-hidden" style={{ background: "var(--line)" }}>
               <div className="h-full rounded-full transition-all duration-700"
                 style={{ width: `${Math.max(3, fc.fit * 100)}%`,
-                  background: fc.fit > .6 ? "linear-gradient(90deg, var(--jade-lt), var(--jade))"
-                    : fc.fit > .3 ? "linear-gradient(90deg, var(--brass-lt), var(--brass))"
-                    : "linear-gradient(90deg, var(--verm-lt), var(--verm))" }} />
+                  background: fc.fit > .6 ? "linear-gradient(90deg, var(--ac), var(--pos))"
+                    : fc.fit > .3 ? "linear-gradient(90deg, var(--ac), var(--ac))"
+                    : "linear-gradient(90deg, var(--neg), var(--neg))" }} />
             </div>
             <div className="text-[11px] mt-2.5 leading-relaxed" style={{ color: "var(--txt-3)" }}>
               {fc.fit > .6 ? "ڕەوتەکە جێگیرە — پێشبینینەکە بەهێزە"
@@ -5409,9 +5471,9 @@ function Insights({ data, calc, cur, usr, profitIn, ownProfitIn, sumUsd, ratesRe
             {rateCurs.map((c) => (
               <button key={c.id} onClick={() => setRateCur(c.id)}
                 style={activeCur === c.id
-                  ? { background: "var(--brass)", color: "#fff", boxShadow: "0 2px 8px -2px rgba(184,134,59,.45)" }
-                  : { background: "var(--line-soft)", color: "var(--txt-2)" }}
-                className="px-3.5 py-2 rounded-xl text-xs font-bold transition-all press flex items-center gap-2">
+                  ? { background: "var(--ac)", color: "#fff", boxShadow: "0 2px 8px -2px rgba(184,134,59,.45)" }
+                  : { background: "var(--line)", color: "var(--txt-2)" }}
+                className="px-3.5 py-2 rounded-[var(--r-sm)] text-xs font-bold transition-all tap flex items-center gap-2">
                 <CurBadge c={c} size="sm" /> {c.name}
               </button>
             ))}
@@ -5420,13 +5482,13 @@ function Insights({ data, calc, cur, usr, profitIn, ownProfitIn, sumUsd, ratesRe
             <SecLbl>مێژووی نرخی {cur(activeCur).name} — ١ دۆلار بە چەند</SecLbl>
             {hist === null ? <Empty t={tr("بارکردن...")} /> :
               rateSeries.length === 0 ? (
-                <div className="text-sm rounded-xl p-3.5"
-                  style={{ background: "color-mix(in srgb, var(--amber) 11%, transparent)", color: "var(--amber)" }}>
+                <div className="text-sm rounded-[var(--r-sm)] p-3.5"
+                  style={{ background: "color-mix(in srgb, var(--warn) 11%, transparent)", color: "var(--warn)" }}>
                   {tr("هێشتا مێژوویەک نییە — هەر جارێک نرخ بگۆڕیت، لێرە تۆمار دەبێت")}
                 </div>
               ) : <>
                 <LineChart series={rateSeries} />
-                <div className="flex gap-4 mt-3 pt-3 text-xs" style={{ borderTop: "1px solid var(--line-soft)" }}>
+                <div className="flex gap-4 mt-3 pt-3 text-xs" style={{ borderTop: "1px solid var(--line)" }}>
                   {rateSeries.map((s2, i) => {
                     const last = s2.pts[s2.pts.length - 1]?.v, first = s2.pts[0]?.v;
                     const ch = last - first;
@@ -5435,7 +5497,7 @@ function Insights({ data, calc, cur, usr, profitIn, ownProfitIn, sumUsd, ratesRe
                         <span className="w-2.5 h-2.5 rounded-full" style={{ background: s2.color }} />
                         {s2.name}: <b style={num}>{fmt(last, 3)}</b>
                         {Math.abs(ch) > 1e-9 && (
-                          <b style={{ ...num, color: ch > 0 ? "var(--jade)" : "var(--verm)" }}>
+                          <b style={{ ...num, color: ch > 0 ? "var(--pos)" : "var(--neg)" }}>
                             {ch > 0 ? "▲" : "▼"} {fmt(Math.abs(ch), 3)}
                           </b>
                         )}
@@ -5463,7 +5525,7 @@ function Insights({ data, calc, cur, usr, profitIn, ownProfitIn, sumUsd, ratesRe
             </div>
             <div className="grid grid-cols-3 gap-2">
               {[["کڕین", rep.t.filter((x) => x.type === "buy").length], ["فرۆشتن", rep.t.filter((x) => x.type === "sell").length], ["چاوەڕوان", rep.pend]].map(([l, v], i) => (
-                <div key={i} className="rounded-xl p-2.5 text-center" style={{ background: "rgba(255,255,255,.06)" }}>
+                <div key={i} className="rounded-[var(--r-sm)] p-2.5 text-center" style={{ background: "rgba(255,255,255,.06)" }}>
                   <div className="text-[10px]" style={{ color: "rgba(255,255,255,.5)" }}>{l}</div>
                   <div className="text-lg font-bold" style={num}>{v}</div>
                 </div>
@@ -5475,7 +5537,7 @@ function Insights({ data, calc, cur, usr, profitIn, ownProfitIn, sumUsd, ratesRe
             <SecLbl>{tr("خێری ئەمڕۆ")}</SecLbl>
             {Object.keys(rep.prof).length === 0 ? <Empty t={tr("هێشتا هیچ خێرێک نییە")} /> :
               Object.entries(rep.prof).map(([cid, v]) => (
-                <div key={cid} className="flex items-center justify-between py-2.5 border-b last:border-0" style={{ borderColor: "var(--line-soft)" }}>
+                <div key={cid} className="flex items-center justify-between py-2.5 border-b last:border-0" style={{ borderColor: "var(--line)" }}>
                   <span className="text-sm flex items-center gap-2" style={{ color: "var(--txt-2)" }}><CurBadge c={cur(cid)} size="sm" /> {cur(cid).name}</span>
                   <Money v={v} dec={0} pos />
                 </div>
@@ -5486,11 +5548,11 @@ function Insights({ data, calc, cur, usr, profitIn, ownProfitIn, sumUsd, ratesRe
             <Card className="p-5">
               <SecLbl>{tr("قەبارەی ئەمڕۆ")}</SecLbl>
               {Object.entries(rep.vol).map(([cid, v]) => (
-                <div key={cid} className="flex items-center justify-between py-2.5 border-b last:border-0" style={{ borderColor: "var(--line-soft)" }}>
+                <div key={cid} className="flex items-center justify-between py-2.5 border-b last:border-0" style={{ borderColor: "var(--line)" }}>
                   <span className="text-sm flex items-center gap-2" style={{ color: "var(--txt-2)" }}><CurBadge c={cur(cid)} size="sm" /> {cur(cid).name}</span>
                   <div className="text-left text-sm">
-                    {v.buy > 0 && <div style={{ ...num, color: "var(--jade)" }}>کڕین {fmt(v.buy, 0)}</div>}
-                    {v.sell > 0 && <div style={{ ...num, color: "var(--verm)" }}>فرۆشتن {fmt(v.sell, 0)}</div>}
+                    {v.buy > 0 && <div style={{ ...num, color: "var(--pos)" }}>کڕین {fmt(v.buy, 0)}</div>}
+                    {v.sell > 0 && <div style={{ ...num, color: "var(--neg)" }}>فرۆشتن {fmt(v.sell, 0)}</div>}
                   </div>
                 </div>
               ))}
@@ -5514,18 +5576,18 @@ function Insights({ data, calc, cur, usr, profitIn, ownProfitIn, sumUsd, ratesRe
             <div key={day}>
               <div className="flex items-center gap-2.5 mb-2.5 mt-4 first:mt-0">
                 <span className="px-2.5 py-1 rounded-lg text-[11px] font-bold"
-                  style={{ background: "var(--line-soft)", color: "var(--txt-2)", ...num }}>
+                  style={{ background: "var(--line)", color: "var(--txt-2)", ...num }}>
                   {new Date(day).toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short" })}
                 </span>
-                <span className="flex-1 h-px" style={{ background: "var(--line-soft)" }} />
+                <span className="flex-1 h-px" style={{ background: "var(--line)" }} />
                 <span className="text-[11px]" style={{ color: "var(--txt-3)" }}>{items.length} کردار</span>
               </div>
               <div className="relative pr-4">
                 <span className="absolute top-1 bottom-1 right-[5px] w-px" style={{ background: "var(--line)" }} />
                 {items.map((a, i) => (
-                  <div key={a.id || i} className="relative pb-3 last:pb-0 fade-up" style={{ animationDelay: `${Math.min(i, 8) * 30}ms` }}>
+                  <div key={a.id || i} className="relative pb-3 last:pb-0 rise" style={{ animationDelay: `${Math.min(i, 8) * 30}ms` }}>
                     <span className="absolute right-[-14px] top-1.5 w-2.5 h-2.5 rounded-full ring-4"
-                      style={{ background: "var(--brass)", ringColor: "var(--paper)", boxShadow: "0 0 0 4px var(--paper)" }} />
+                      style={{ background: "var(--ac)", ringColor: "var(--bg)", boxShadow: "0 0 0 4px var(--bg)" }} />
                     <div className="text-sm font-semibold" style={{ color: "var(--txt)" }}>{a.action}</div>
                     {a.detail && <div className="text-xs mt-0.5" style={{ color: "var(--txt-2)" }}>{a.detail}</div>}
                     <div className="text-[10px] mt-0.5" style={{ ...num, color: "var(--txt-3)" }}>
@@ -5578,8 +5640,8 @@ function DayClose({ data, calc, cur, usr, closeDay, sumUsd }) {
       <H sub="لە کۆتایی ڕۆژدا پارەی ڕاستەقینە بژمێرە و بەراوردی بکە لەگەڵ حیسابی سیستەم">{tr("بەستنی ڕۆژ")}</H>
 
       {closedToday && (
-        <Card className="p-4 border-[color-mix(in_srgb,var(--jade)_34%,transparent)] bg-[color-mix(in_srgb,var(--jade)_9%,transparent)]">
-          <div className="flex items-center gap-2 text-sm text-[var(--jade)] font-semibold">
+        <Card className="p-4 border-[color-mix(in_srgb,var(--pos)_34%,transparent)] bg-[color-mix(in_srgb,var(--pos)_9%,transparent)]">
+          <div className="flex items-center gap-2 text-sm text-[var(--pos)] font-semibold">
             <CheckCircle2 className="w-4 h-4" /> {tr("ئەمڕۆ بەسترابووەتەوە — دەتوانیت دووبارە بیکەیتەوە")}
           </div>
         </Card>
@@ -5593,7 +5655,7 @@ function DayClose({ data, calc, cur, usr, closeDay, sumUsd }) {
               {tr("تەنها ئەو پارەیە کە لای خۆتە — ئەوەی لای هاوبەشەکانە لێرە نایەت")}
             </div>
             {lines.map((l) => (
-              <div key={l.cur} className="py-3 border-b border-[var(--line-soft)] last:border-0">
+              <div key={l.cur} className="py-3 border-b border-[var(--line)] last:border-0">
                 <div className="flex items-center gap-2.5 mb-2">
                   <CurBadge c={l.c} size="sm" />
                   <span className="text-sm font-semibold text-[var(--txt)]">{l.name}</span>
@@ -5604,11 +5666,11 @@ function DayClose({ data, calc, cur, usr, closeDay, sumUsd }) {
                 <div className="flex items-center gap-2">
                   <Inp type="number" dir="ltr" placeholder={tr("ژماردنی ڕاستەقینە...")}
                     value={counts[l.cur] ?? ""} onChange={(e) => setCounts({ ...counts, [l.cur]: e.target.value })}
-                    className={`flex-1 ${l.counted !== null && l.diff !== 0 ? "border-[var(--brass)] bg-[color-mix(in_srgb,var(--amber)_11%,transparent)]" : l.counted !== null ? "border-[var(--jade)] bg-[color-mix(in_srgb,var(--jade)_10%,transparent)]" : ""}`} />
+                    className={`flex-1 ${l.counted !== null && l.diff !== 0 ? "border-[var(--ac)] bg-[color-mix(in_srgb,var(--warn)_11%,transparent)]" : l.counted !== null ? "border-[var(--pos)] bg-[color-mix(in_srgb,var(--pos)_10%,transparent)]" : ""}`} />
                   <div className="w-28 text-left shrink-0">
                     {l.counted === null ? <span className="text-xs text-[var(--txt-3)]">—</span> :
-                      l.diff === 0 ? <span className="text-sm font-bold text-[var(--jade)]">{tr("✓ ڕێکە")}</span> :
-                        <span className={`text-sm font-bold ${l.diff > 0 ? "text-[var(--jade)]" : "text-[var(--verm)]"}`} style={num}>
+                      l.diff === 0 ? <span className="text-sm font-bold text-[var(--pos)]">{tr("✓ ڕێکە")}</span> :
+                        <span className={`text-sm font-bold ${l.diff > 0 ? "text-[var(--pos)]" : "text-[var(--neg)]"}`} style={num}>
                           {l.diff > 0 ? "+" : ""}{fmt(l.diff, 0)}
                         </span>}
                   </div>
@@ -5618,23 +5680,23 @@ function DayClose({ data, calc, cur, usr, closeDay, sumUsd }) {
           </Card>
 
           {entered.length > 0 && (
-            <Card className={`p-5 ${diffs.length ? "border-[color-mix(in_srgb,var(--amber)_34%,transparent)] bg-[color-mix(in_srgb,var(--amber)_10%,transparent)]" : "border-[color-mix(in_srgb,var(--jade)_34%,transparent)] bg-[color-mix(in_srgb,var(--jade)_9%,transparent)]"}`}>
+            <Card className={`p-5 ${diffs.length ? "border-[color-mix(in_srgb,var(--warn)_34%,transparent)] bg-[color-mix(in_srgb,var(--warn)_10%,transparent)]" : "border-[color-mix(in_srgb,var(--pos)_34%,transparent)] bg-[color-mix(in_srgb,var(--pos)_9%,transparent)]"}`}>
               <div className="flex items-center gap-2 mb-2">
-                {diffs.length ? <AlertTriangle className="w-5 h-5 text-[var(--amber)]" /> : <CheckCircle2 className="w-5 h-5 text-[var(--jade)]" />}
-                <span className={`font-bold ${diffs.length ? "text-[var(--amber)]" : "text-[var(--jade)]"}`}>
+                {diffs.length ? <AlertTriangle className="w-5 h-5 text-[var(--warn)]" /> : <CheckCircle2 className="w-5 h-5 text-[var(--pos)]" />}
+                <span className={`font-bold ${diffs.length ? "text-[var(--warn)]" : "text-[var(--pos)]"}`}>
                   {diffs.length ? `${diffs.length} دراو جیاوازی هەیە` : "هەموو شتێک ڕێکە"}
                 </span>
               </div>
               {diffs.map((l) => (
                 <div key={l.cur} className="flex justify-between text-sm py-1">
                   <span className="text-[var(--txt-2)]">{l.name}</span>
-                  <span className={`font-bold ${l.diff > 0 ? "text-[var(--jade)]" : "text-[var(--verm)]"}`} style={num}>
+                  <span className={`font-bold ${l.diff > 0 ? "text-[var(--pos)]" : "text-[var(--neg)]"}`} style={num}>
                     {l.diff > 0 ? "زیادە " : "کەمە "}{fmt(Math.abs(l.diff), 0)}
                   </span>
                 </div>
               ))}
               {diffs.length > 0 && (
-                <div className="text-xs text-[var(--txt-2)] mt-2 pt-2 border-t border-[color-mix(in_srgb,var(--amber)_26%,transparent)]" style={num}>
+                <div className="text-xs text-[var(--txt-2)] mt-2 pt-2 border-t border-[color-mix(in_srgb,var(--warn)_26%,transparent)]" style={num}>
                   کۆی جیاوازی بە دۆلار ≈ {fmt(totalDiffUsd, 0)} $
                 </div>
               )}
@@ -5645,7 +5707,7 @@ function DayClose({ data, calc, cur, usr, closeDay, sumUsd }) {
             <div><Lbl>{tr("تێبینی (بۆچی جیاوازی هەیە؟)")}</Lbl><Inp value={note} onChange={(e) => setNote(e.target.value)} placeholder={tr("نموونە: خەرجی تۆمار نەکراو...")} /></div>
             {diffs.length > 0 && (
               <label className="flex items-start gap-2.5 mt-4 cursor-pointer">
-                <input type="checkbox" checked={adjust} onChange={(e) => setAdjust(e.target.checked)} className="mt-0.5 w-4 h-4 accent-[var(--jade)]" />
+                <input type="checkbox" checked={adjust} onChange={(e) => setAdjust(e.target.checked)} className="mt-0.5 w-4 h-4 accent-[var(--pos)]" />
                 <span className="text-sm text-[var(--txt)]">
                   <b>{tr("قاسەکە ڕاست بکەرەوە")}</b>
                   <div className="text-xs text-[var(--txt-2)] mt-0.5">{tr("تۆمارێکی ڕاستکردنەوە زیاد دەکرێت تا حیسابی سیستەم بگونجێت لەگەڵ پارەی ڕاستەقینە")}</div>
@@ -5662,19 +5724,19 @@ function DayClose({ data, calc, cur, usr, closeDay, sumUsd }) {
           <SecLbl>{tr("دڵنیابوونەوە")}</SecLbl>
           <div className="space-y-1.5 mb-4">
             {entered.map((l) => (
-              <div key={l.cur} className="flex justify-between items-center py-2 border-b border-[var(--line-soft)] text-sm">
+              <div key={l.cur} className="flex justify-between items-center py-2 border-b border-[var(--line)] text-sm">
                 <span className="text-[var(--txt-2)]">{l.name}</span>
                 <span style={num}>
                   <span className="text-[var(--txt-3)]">{fmt(l.expected, 0)}</span>
                   <span className="mx-1.5 text-[var(--txt-3)]">→</span>
                   <b className="text-[var(--txt)]">{fmt(l.counted, 0)}</b>
-                  {l.diff !== 0 && <span className={`mr-2 font-bold ${l.diff > 0 ? "text-[var(--jade)]" : "text-[var(--verm)]"}`}>({l.diff > 0 ? "+" : ""}{fmt(l.diff, 0)})</span>}
+                  {l.diff !== 0 && <span className={`mr-2 font-bold ${l.diff > 0 ? "text-[var(--pos)]" : "text-[var(--neg)]"}`}>({l.diff > 0 ? "+" : ""}{fmt(l.diff, 0)})</span>}
                 </span>
               </div>
             ))}
           </div>
           {diffs.length > 0 && adjust && (
-            <div className="text-xs text-[var(--amber)] bg-[color-mix(in_srgb,var(--amber)_11%,transparent)] border border-[color-mix(in_srgb,var(--amber)_26%,transparent)] rounded-xl p-3 mb-4">
+            <div className="text-xs text-[var(--warn)] bg-[color-mix(in_srgb,var(--warn)_11%,transparent)] border border-[color-mix(in_srgb,var(--warn)_26%,transparent)] rounded-[var(--r-sm)] p-3 mb-4">
               {tr("تۆمارێکی ڕاستکردنەوە زیاد دەکرێت بۆ گونجاندنی قاسە لەگەڵ ژماردنەکەت")}
             </div>
           )}
@@ -5689,7 +5751,7 @@ function DayClose({ data, calc, cur, usr, closeDay, sumUsd }) {
       {hist === null ? <Card><Empty t={tr("بارکردن...")} /></Card> :
         hist.length === 0 ? (
           <Card className="p-4">
-            <div className="text-sm text-[var(--amber)] bg-[color-mix(in_srgb,var(--amber)_11%,transparent)] border border-[color-mix(in_srgb,var(--amber)_26%,transparent)] rounded-xl p-3">
+            <div className="text-sm text-[var(--warn)] bg-[color-mix(in_srgb,var(--warn)_11%,transparent)] border border-[color-mix(in_srgb,var(--warn)_26%,transparent)] rounded-[var(--r-sm)] p-3">
               {tr("هێشتا هیچ بەستنێک نییە — ئایا خشتەی")} <b>day_closes</b> {tr("لە Supabase درووست کراوە؟")}
             </div>
           </Card>
@@ -5711,11 +5773,11 @@ function DayClose({ data, calc, cur, usr, closeDay, sumUsd }) {
               </div>
             </div>
             {h.has_diff && Array.isArray(h.lines) && (
-              <div className="mt-2.5 pt-2.5 border-t border-[var(--line-soft)] space-y-1">
+              <div className="mt-2.5 pt-2.5 border-t border-[var(--line)] space-y-1">
                 {h.lines.filter((l) => l.diff).map((l, i) => (
                   <div key={i} className="flex justify-between text-xs">
                     <span className="text-[var(--txt-2)]">{l.code}</span>
-                    <span className={`font-bold ${l.diff > 0 ? "text-[var(--jade)]" : "text-[var(--verm)]"}`} style={num}>
+                    <span className={`font-bold ${l.diff > 0 ? "text-[var(--pos)]" : "text-[var(--neg)]"}`} style={num}>
                       {l.diff > 0 ? "+" : ""}{fmt(l.diff, 0)}
                     </span>
                   </div>
@@ -5758,17 +5820,17 @@ function CustomerPortal({ user, c, base, data, cur, usr, flash, reloadBatches })
     <div className="space-y-4">
       <H sub={`بەخێربێیت، ${user.name}`}>{tr("ئەکاونتی من")}</H>
 
-      <div className="flex gap-1 rounded-2xl p-1" style={{ background: "var(--card)", border: "1px solid var(--line)", boxShadow: "var(--shadow-1)" }}>
+      <div className="flex gap-1 rounded-[var(--r)] p-1" style={{ background: "var(--surf)", border: "1px solid var(--line)", boxShadow: "var(--sh-1)" }}>
         {TABS.map(([k, t]) => (
           <button key={k} onClick={() => setTab(k)}
-            style={tab === k ? { background: "linear-gradient(180deg, var(--jade-lt), var(--jade))", color: "#fff", boxShadow: "0 2px 8px -2px rgba(14,122,107,.4)" } : { color: "var(--txt-2)" }}
-            className={`flex-1 py-2.5 rounded-xl text-sm transition-all press ${tab === k ? "font-bold" : "font-medium hover:bg-[var(--line-soft)]"}`}>{t}</button>
+            style={tab === k ? { background: "linear-gradient(180deg, var(--ac), var(--pos))", color: "#fff", boxShadow: "0 2px 8px -2px rgba(14,122,107,.4)" } : { color: "var(--txt-2)" }}
+            className={`flex-1 py-2.5 rounded-[var(--r-sm)] text-sm transition-all tap ${tab === k ? "font-bold" : "font-medium hover:bg-[var(--line)]"}`}>{t}</button>
         ))}
       </div>
 
       {tab === "send" && (
         <>
-          <Card className="p-4 bg-[var(--line-soft)]">
+          <Card className="p-4 bg-[var(--line)]">
             <div className="text-sm text-[var(--txt-2)] leading-relaxed">
               {tr("سکرینشۆتی ئەو فیشانە هەڵبژێرە کە پارەت پێ ناردووە. سیستەمەکە خۆی دەیانخوێنێتەوە، کۆیان دەکاتەوە، و دووبارەکان دەدۆزێتەوە.")}
             </div>
@@ -5782,23 +5844,23 @@ function CustomerPortal({ user, c, base, data, cur, usr, flash, reloadBatches })
 
       {tab === "account" && (<>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <Card className="p-4 border-[color-mix(in_srgb,var(--jade)_26%,transparent)] bg-[color-mix(in_srgb,var(--jade)_8%,transparent)]">
-          <div className="text-xs font-semibold text-[var(--jade)] mb-2">{tr("پارەی من لای ئەوان")}</div>
+        <Card className="p-4 border-[color-mix(in_srgb,var(--pos)_26%,transparent)] bg-[color-mix(in_srgb,var(--pos)_8%,transparent)]">
+          <div className="text-xs font-semibold text-[var(--pos)] mb-2">{tr("پارەی من لای ئەوان")}</div>
           {owe.length === 0 ? <div className="text-sm text-[var(--txt-3)]">{tr("هیچ")}</div> :
             owe.map(([cid, v]) => (
               <div key={cid} className="flex justify-between py-1">
                 <span className="text-sm text-[var(--txt-2)]">{cur(cid).name}</span>
-                <span className="text-lg font-bold text-[var(--jade)]" style={num}>{fmt(v, 0)}</span>
+                <span className="text-lg font-bold text-[var(--pos)]" style={num}>{fmt(v, 0)}</span>
               </div>
             ))}
         </Card>
-        <Card className="p-4 border-[color-mix(in_srgb,var(--verm)_26%,transparent)] bg-[color-mix(in_srgb,var(--verm)_8%,transparent)]">
-          <div className="text-xs font-semibold text-[var(--verm)] mb-2">{tr("قەرزی من")}</div>
+        <Card className="p-4 border-[color-mix(in_srgb,var(--neg)_26%,transparent)] bg-[color-mix(in_srgb,var(--neg)_8%,transparent)]">
+          <div className="text-xs font-semibold text-[var(--neg)] mb-2">{tr("قەرزی من")}</div>
           {due.length === 0 ? <div className="text-sm text-[var(--txt-3)]">{tr("هیچ")}</div> :
             due.map(([cid, v]) => (
               <div key={cid} className="flex justify-between py-1">
                 <span className="text-sm text-[var(--txt-2)]">{cur(cid).name}</span>
-                <span className="text-lg font-bold text-[var(--verm)]" style={num}>{fmt(v, 0)}</span>
+                <span className="text-lg font-bold text-[var(--neg)]" style={num}>{fmt(v, 0)}</span>
               </div>
             ))}
         </Card>
@@ -5822,11 +5884,11 @@ function PartnerPortal({ user, data, calc, cur, usr, flash, reloadBatches, accou
   return (
     <div className="space-y-4">
       <H sub={`بەخێربێیت، ${user.name}`}>{tr("ئەکاونتی من")}</H>
-      <div className="flex gap-1 rounded-2xl p-1" style={{ background: "var(--card)", border: "1px solid var(--line)", boxShadow: "var(--shadow-1)" }}>
+      <div className="flex gap-1 rounded-[var(--r)] p-1" style={{ background: "var(--surf)", border: "1px solid var(--line)", boxShadow: "var(--sh-1)" }}>
         {[["balance", tr("باڵانس")], ["safe", tr("قاسە")], ["receipts", tr("فیشەکان")], ["send", tr("ناردنی فیش")], ["history", tr("مێژوو")]].map(([k, t]) => (
           <button key={k} onClick={() => setTab(k)}
-            style={tab === k ? { background: "linear-gradient(180deg, var(--jade-lt), var(--jade))", color: "#fff", boxShadow: "0 2px 8px -2px rgba(14,122,107,.4)" } : { color: "var(--txt-2)" }}
-            className={`flex-1 whitespace-nowrap px-2 py-2.5 rounded-xl text-sm transition-all press ${tab === k ? "font-bold" : "font-medium hover:bg-[var(--line-soft)]"}`}>{t}</button>
+            style={tab === k ? { background: "linear-gradient(180deg, var(--ac), var(--pos))", color: "#fff", boxShadow: "0 2px 8px -2px rgba(14,122,107,.4)" } : { color: "var(--txt-2)" }}
+            className={`flex-1 whitespace-nowrap px-2 py-2.5 rounded-[var(--r-sm)] text-sm transition-all tap ${tab === k ? "font-bold" : "font-medium hover:bg-[var(--line)]"}`}>{t}</button>
         ))}
       </div>
 
@@ -5836,7 +5898,7 @@ function PartnerPortal({ user, data, calc, cur, usr, flash, reloadBatches, accou
             <SecLbl>{tr("باڵانسی لای من")}</SecLbl>
             {Object.keys(bal).length === 0 ? <Empty t={tr("بەتاڵە")} /> :
               Object.entries(bal).map(([cid, v]) => (
-                <div key={cid} className="flex justify-between py-2 border-b border-[var(--line-soft)] last:border-0">
+                <div key={cid} className="flex justify-between py-2 border-b border-[var(--line)] last:border-0">
                   <span className="text-sm text-[var(--txt-2)]">{cur(cid).name}</span><Money v={v} dec={0} />
                 </div>
               ))}
@@ -5845,7 +5907,7 @@ function PartnerPortal({ user, data, calc, cur, usr, flash, reloadBatches, accou
             <SecLbl>عمولەی وەرگیراو ({user.rate}٪)</SecLbl>
             {Object.keys(fees).length === 0 ? <Empty t={tr("هێشتا هیچ")} /> :
               Object.entries(fees).map(([cid, v]) => (
-                <div key={cid} className="flex justify-between py-2 border-b border-[var(--line-soft)] last:border-0">
+                <div key={cid} className="flex justify-between py-2 border-b border-[var(--line)] last:border-0">
                   <span className="text-sm text-[var(--txt-2)]">{cur(cid).name}</span><Money v={v} dec={0} pos />
                 </div>
               ))}
@@ -5858,7 +5920,7 @@ function PartnerPortal({ user, data, calc, cur, usr, flash, reloadBatches, accou
 
       {tab === "send" && (
         <>
-          <Card className="p-4 bg-[var(--line-soft)]">
+          <Card className="p-4 bg-[var(--line)]">
             <div className="text-sm text-[var(--txt-2)] leading-relaxed">
               {tr("فیشی ئەو پارەیە بنێرە کە لە ئەکاونتی تۆوە نێردراوە یان بۆ تۆ هاتووە. سیستەمەکە خۆی دەیخوێنێتەوە و دووبارەکان دەدۆزێتەوە.")}
             </div>
@@ -5909,7 +5971,7 @@ function Portal({ user, data, calc, cur, usr, officePay, settle, invUnpaid, flas
             <SecLbl>{tr("باڵانسی لای من")}</SecLbl>
             {Object.keys(bal).length === 0 ? <Empty t={tr("بەتاڵە")} /> :
               Object.entries(bal).map(([cid, v]) => (
-                <div key={cid} className="flex justify-between py-2 border-b border-[var(--line-soft)] last:border-0">
+                <div key={cid} className="flex justify-between py-2 border-b border-[var(--line)] last:border-0">
                   <span className="text-sm text-[var(--txt-2)]">{cur(cid).name}</span><Money v={v} dec={cur(cid).dec} />
                 </div>
               ))}
@@ -5918,7 +5980,7 @@ function Portal({ user, data, calc, cur, usr, officePay, settle, invUnpaid, flas
             <SecLbl>عمولەی وەرگیراو ({user.rate}٪)</SecLbl>
             {Object.keys(fees).length === 0 ? <Empty t={tr("هێشتا هیچ")} /> :
               Object.entries(fees).map(([cid, v]) => (
-                <div key={cid} className="flex justify-between py-2 border-b border-[var(--line-soft)] last:border-0">
+                <div key={cid} className="flex justify-between py-2 border-b border-[var(--line)] last:border-0">
                   <span className="text-sm text-[var(--txt-2)]">{cur(cid).name}</span><Money v={v} dec={cur(cid).dec} pos />
                 </div>
               ))}

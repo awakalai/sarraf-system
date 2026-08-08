@@ -66,6 +66,18 @@ const usdConv = (data) => (amount, code) => {
 const UsdHint = ({ v, className = "" }) =>
   v == null ? null : <span className={className} style={{ ...num, color: "var(--txt-3)" }}>≈ {fmt(v, 0)} $</span>;
 
+/* ══════════════════ زمانەکان ══════════════════ */
+const LANGS = { ku: { name: "کوردی", dir: "rtl", flag: "KU" },
+                en: { name: "English", dir: "ltr", flag: "EN" },
+                ar: { name: "العربية", dir: "rtl", flag: "AR" } };
+
+const DICT = { en: {"دراو":"Currency","بڕ":"Amount","کڕین":"Buy","فرۆشتن":"Sell","نەزانراو":"Unknown","بارکردن...":"Loading…","هیچ":"None","تێبینی":"Note","هەمووی":"All","ئەمڕۆ":"Today","گواستنەوە":"Transfer","هیچ نییە":"Nothing here","قاسەی گشتی":"Main safe","جۆر":"Type","چاوەڕوان":"Pending","لە":"From","مێژوو":"History","هێشتا هیچ":"Nothing yet","تەواو":"Done","کۆی گشتی":"Total","بۆ":"To","فیشەکان":"Receipts","هەڵبژێرە...":"Select…","ئەکاونتی من":"My account","خێری وەبەرهێنەر":"Investor profit","٧ ڕۆژ":"7 days","٣٠ ڕۆژ":"30 days","١٤ ڕۆژ":"14 days","وردەکاری فیشەکان":"Receipt details","قاسە":"Safe","بەتاڵە":"Empty","(قەرز)":"(debt)","تۆمارکردن":"Save","خێر":"Profit","مامەڵە":"Transaction","مامەڵەکان":"Transactions","فی":"Fee","کۆپیکردن":"Copy","بەستنی ڕۆژ":"Day close","عمولە":"Commission","مامەڵەی نوێ":"New transaction","گەڕانەوە بۆ داشبۆرد":"Back to dashboard","ئەم هەفتەیە":"This week","ئەم مانگە":"This month","ناردنی فیش":"Send receipts","هاتنە ژوورەوە":"Money in","چوونە دەرەوە":"Money out","سیستەمی دراو":"Currency System","داشبۆرد":"Dashboard","خێری ئەمڕۆ":"Today's profit","نرخی ئەمڕۆ":"Today's rates","خێری وەبەرهێنەران":"Investors' profit","دەرهێنان":"Withdraw","هی خۆم":"Mine","وەبەرهێنەر":"Investor","کۆد":"Code","مامەڵەی ڕاستەوخۆ":"Direct trade","پارەم داوە":"I paid","چاوەڕوانی پارەدان":"Payment pending","پارەم وەرگرتووە":"I received","چاوەڕوانی وەرگرتنی پارە":"Awaiting payment","لایەنی بەرامبەر":"Counterparty","دۆخ":"Status","لە بەرواری":"From date","بۆ بەرواری":"To date","بەپێی پلاتفۆرم":"By platform","دووبارە":"Duplicate","نێردراو":"Sent","بەستراوە":"Linked","گەیشتوو":"Received","حیساب پاکە":"Account settled","ڕاپۆرت":"Reports","خێر و زەرەر":"Profit & loss","هاتوو":"In","پاراستنی داتا":"Data protection","باکئەپ":"Backup","ڕەوت و شیکاری":"Trends","گەڕانەوە":"Back","باڵانسی لای من":"Balance with me","نووسینگە":"Office","خەرجی":"Expenses","گواستنەوەی حساب":"Account transfer","وەبەرهێنەران":"Investors","دەستی":"Manual","بەشەکانی تر":"More","دەرچوون":"Sign out","وشەی نهێنی":"Password","ماڵی خۆم":"My equity","لای خۆم":"With me","خێری خۆم":"My profit","زیادکردن":"Add","ناو":"Name","هێما":"Symbol","ڕێژە":"Rate %","ناونیشان":"Address","درووستکردن":"Create","سڕینەوە":"Delete","پارەدان":"Payment","دراوە":"Paid","کڕیار":"Customer","وەرگر":"Recipient","ناردەر":"Sender","هاوبەش":"Partner","کەس":"Person","نوێ":"New","ئینباکس":"Inbox","ناردن":"Send","ئاڕاستە":"Direction","باڵانس":"Balance","خێری نەدراو":"Unpaid profit","نوێکردنەوە":"Refresh","جیاوازی":"Difference","تێچوو":"Out","کڕدراو":"Bought","فرۆشراو":"Sold","دڵنیابوونەوە":"Confirm","پشتڕاستکردنەوە":"Confirm","پاشگەزبوونەوە":"Cancel","تەواوکراو":"Completed","ڕاستەوخۆ":"Direct","گومان":"Suspect","ئەدمین":"Admin","کڕیار-فرۆشیار":"Customer","هاوبەشی سین":"Partner","کەشف حساب":"Statement","قەرز":"Debt","کۆپی کرا ✓":"Copied ✓","تۆمار کرا ✓":"Saved ✓","بڕ پێویستە":"Amount required","هیچ نەدۆزرایەوە":"No results","هیچ فیشێک نییە":"No receipts","هیچ مامەڵەیەک نەدۆزرایەوە":"No transactions found","هیچ داتایەک نییە":"No data","سەرمایە":"Capital","ڕەوت":"Trend","پێشبینین":"Forecast","چالاکی":"Activity","مێژووی نرخ":"Rate history","ڕاپۆرتی ڕۆژ":"Daily report","نرخی جیهانی":"World rates","دابەشکردنی خێر":"Profit split","بەپێی وەرگر":"By recipient","بە فییەوە":"Incl. fee","سبەی":"Tomorrow","ئەلی پەی":"Alipay","وی چات":"WeChat","بانک":"Bank","ژمارەی مامەڵە":"Order No.","پارە هاتووە":"Money in","پارە نێردراوە":"Money out","هەژمار نەکراوە":"Not counted","هۆکار:":"Reason:","وردەکاری":"Details","وێنەکان":"Photos","ڕێکخستن":"Settings","بەکارهێنەران":"Users","پشکنینی فیش":"Check receipts","زیاتر":"More","چوونە ژوورەوە":"Sign in","ژمارەی مۆبایل یان ئیمەیل":"Phone or email","هێشتا مێژوویەک نییە":"No history yet","بارکردنی سیستەم...":"Loading system…","بارکردنی داتا...":"Loading data…","بینین وەک":"View as","بینین وەک بەکارهێنەرێکی تر":"View as another user","خێری ٧ ڕۆژی ڕابردوو":"Profit — last 7 days","مامەڵەی ئەمڕۆ":"Today's transactions","چاوەڕوانی پارە":"Awaiting payment","وردەکاری ←":"Details →","هێشتا فرۆشتنێک نەکراوە":"No sales yet","خۆم:":"Me:","وەبەرهێنەران:":"Investors:","گۆڕین ←":"Change →","· دەرەوە":"· external","لای کێیە؟":"Who holds it?","هی کێیە؟":"Who owns it?","لای خۆم (قاسەی سەرەکی)":"With me (main safe)","هیچی لای هاوبەشەکان نییە":"Nothing with partners","هێشتا سەرمایە دانەنراوە":"No capital added yet","١ دۆلار = چەند؟":"1 USD = how much?","١ دۆلار بە چەند دەکڕم":"I buy 1 USD at","١ دۆلار بە چەند دەفرۆشم":"I sell 1 USD at","خێر بە وردی":"Profit breakdown","قاسە، پارە و خەرجی":"Safe, money & expenses","قاسەی گشتی (هەمووی)":"Main safe (all)","کلیک بۆ وردەکاری":"Tap for details","کلیک لە هەر دراوێک بکە بۆ وردەکاری":"Tap a currency for details","قاسەی تایبەتی خۆم":"My own safe","پارە داخڵکردن / دەرهێنان":"Deposit / withdraw","داخڵکردن":"Deposit","خاوەنی پارە":"Money owner","تۆمارکردنی خەرجی":"Record expense","جۆری خەرجی":"Expense type","زیادکردنی دراوی نوێ":"Add new currency","خانەی دەیمی":"Decimals","دراوی دەرەوە":"External currency","بەرامبەر دراوی":"Against currency","ڕەیتی کڕین و فرۆشتن":"Buy & sell rate","بە چەند دەیکڕم":"I buy at","بە چەند دەیفرۆشم":"I sell at","دەدەم (کڕین)":"I pay (buy)","وەردەگرم (فرۆشتن)":"I receive (sell)","لە کێ دەیکڕم؟":"Buying from?","— ناوێکی ئازاد —":"— free name —","ناوی فرۆشیار...":"Seller name…","بە کێ دەیفرۆشم؟":"Selling to?","ناوی کڕیار...":"Buyer name…","چاوەڕوانی وەرگرتن":"Awaiting receipt","نرخی ڕۆژ:":"Day rate:","نرخێکی تایبەت بەکاردێت":"Custom rate in use","مامناوەندی کڕین:":"Avg. cost:","خێری خەمڵێنراو:":"Est. profit:","— تەرەفێک هەڵبژێرە —":"— choose a partner —","دۆخی پارە":"Payment status","لە فیشەکانەوە — ناگۆڕدرێت":"From receipts — locked","کڕیارێکی تۆمارکراو":"Registered customer","ئۆزەر (بێ ئەکاونت)":"Walk-in (no account)","ناو...":"Name…","فلتەر":"Filter","(ئیدیت)":"(edited)","هەڵوەشاندنەوەی پارەدان":"Undo payment","فیش":"receipts","کۆی گشتی (بە فییەوە)":"Total (incl. fee)","گەیشتوو (بێ فی)":"Received (net)","وردەکاری بەپێی ناو":"Breakdown by name","ژمارەی مامەڵە:":"Order No.:","کاتی مامەڵە:":"Time:","وەرگر:":"Recipient:","ناردەر:":"Sender:","ئەپ/بانک:":"App/Bank:","کاتی ناردن:":"Sent at:","فیشە ڕەسەنەکە:":"Original receipt:","هیچ وێنەیەک نییە":"No photos","جۆری فیشەکان":"Receipt type","پارە هاتووە (کڕین)":"Money in (buy)","پارە نێردراوە (فرۆشتن)":"Money out (sell)","ناردنی خشتەی وردەکاری":"Send detail table","ئەمانە هەژمار ناکرێن":"These are not counted","بەستراوەکان":"Linked","لای کێ":"Location","واتساپ":"WhatsApp","ناردنی فیش لە جیاتی کەسێک":"Send receipts for someone","ناردنی خشتە":"Send table","خشتەی تەواو":"Full table","تەنها کۆکان":"Totals only","تەنها ڕەتکراوەکان":"Rejected only","ناردن بە واتساپ":"Send via WhatsApp","وەرگرتنی فیش لە واتساپەوە":"Receive receipts from WhatsApp","کۆی کۆمەڵەکان":"Total batches","چۆن کار دەکات":"How it works","کۆمەڵەیەکی نوێ لە":"A new batch in","تێبینی:":"Note:","نرخ:":"Price:","بەخۆڕاییە":"free","هەفتە":"Week","مانگ":"Month","ساڵ":"Year","چاوەڕوانی مامەڵە":"Awaiting transaction","هەمووی بۆ:":"All to:","فیشەکان بەسەر":"Receipts across","— فرۆشتنێکی لێ درووست بکە":"— create a sale from it","— کڕینێکی لێ درووست بکە":"— create a purchase from it","بەستراوە بە مامەڵەی":"Linked to transaction","ئەرشیفی فیشەکان":"Receipt archive","کڕینی ئەو":"Their purchases","فرۆشتنی ئەو":"Their sales","فرۆشتوویەتی بە من":"Sold to me","کڕیویەتی لە من":"Bought from me","دوا مامەڵەکان":"Recent transactions","پارەی تۆ لای من":"Your money with me","قەرزی تۆ":"Your debt","حیساب پاکە ✅":"Account settled ✅","پارە دانان / دەرهێنان":"Deposit / withdraw","وەرگرتن (پارە دێت)":"Receive (money in)","دان (پارە دەڕوات)":"Pay out (money out)","لە حسابی":"From account","بۆ حسابی":"To account","دەبڕدرێت و دەچێتە حسابی":"will move to the account of","درووست کراون؟":"created?","زیادکردن / کەمکردن":"Add / subtract","قاسە — پارەی لای من":"Safe — money with me","قەرز — حیسابی مامەڵەکان":"Debt — from transactions","لە مامەڵە چاوەڕوانەکانەوە":"From pending transactions","کەمکردن (پارە دەردەهێنم)":"Subtract (withdraw)","باڵانسی ئێستا":"Current balance","دوای ئەمە":"After this","گواستنەوە بۆ حسابێکی تر":"Transfer to another account","گەڕان بە ناو یان ژمارە...":"Search by name or number…","هیچ جوڵانەوەیەک نییە":"No movements","هیچ کڕیارێک نەدۆزرایەوە":"No customers found","قەرزاری ئەوم:":"I owe them:","لای ئەو:":"They hold:","گەڕانەوە بۆ لیستی کڕیاران":"Back to customers","گواستنەوەی پارە":"Move money","بۆ لای هاوبەش":"To a partner","لە لای هاوبەشەوە":"From a partner","— باڵانسی دوایی:":"— new balance:","· قەرز":"· debt","هیچ وەبەرهێنەرێک نییە":"No investors","سەرمایە + خێری نەدراو":"Capital + unpaid profit","سەرمایە دانەنراوە":"No capital set","مێژووی پارەدان":"Payment history","قاسەی نووسینگە":"Office safe","پارەی دراوی ئەمڕۆ":"Paid out today","بدرێتێ:":"To pay:","پارەم دا":"I paid","گەڕان بە ناو یان کۆد...":"Search by name or code…","درووستکردنی ئەکاونتی نوێ":"Create new account","ناوی تەواو *":"Full name *","ڕۆڵ *":"Role *","لە کام دراوەکاندا شەریکە؟":"Shares profit in which currencies?","ژمارەی مۆبایل * (لۆگین)":"Phone * (login)","وشەی نهێنی * (٦ پیت)":"Password * (6 chars)","هاتوو و تێچوو":"In & out","دەرهێنان بۆ ئێکسڵ":"Export to Excel","مانگی ڕابردوو":"Last month","ئەمساڵ":"This year","هیچ نییە لەم ماوەیەدا":"Nothing in this period","کۆی نەت بە دۆلار":"Net total in USD","هاتوو و تێچووی قاسە":"Safe in & out","قەبارەی مامەڵەکان":"Transaction volume","دابەزاندنی فایل":"Download file","باکئەپە هەڵگیراوەکان":"Saved backups","لە Supabase درووست کراوە؟":"created in Supabase?","مامەڵە ·":"transactions ·","تۆمار":"records","ئامۆژگاری:":"Advice:","باشترین ڕۆژ:":"Best day:","ژمارەی مامەڵەکان":"Number of transactions","کڕین بەرامبەر فرۆشتن":"Buy vs sell","دابەشکردنی قاسە":"Safe breakdown","٧ ڕۆژی داهاتوو":"Next 7 days","دڵنیایی پێشبینین":"Forecast confidence","ڕاپۆرتی ئەمڕۆ":"Today's report","هێشتا هیچ خێرێک نییە":"No profit yet","قەبارەی ئەمڕۆ":"Today's volume","هیچ چالاکییەک نییە":"No activity","پارەی لای خۆت بژمێرە":"Count the cash with you","حیسابی سیستەم:":"System says:","ژماردنی ڕاستەقینە...":"Actual count…","✓ ڕێکە":"✓ Matches","قاسەکە ڕاست بکەرەوە":"Adjust the safe","مێژووی بەستنەکان":"Close history","جیاوازی هەبووە":"Had a difference","ڕێک بووە":"Matched","تۆماری گۆڕانکاری":"Change log","ئەکاونتم":"My account","فیشەکانم":"My receipts","پارەی من لای ئەوان":"My money with them","قەرزی من":"My debt","مامەڵەکانم":"My transactions","مێژووی ئاڵووگۆر":"Exchange history","خشتەی فیشەکان":"Receipt table","کۆپیکردنی خشتە":"Copy table","کۆپیکردنی دەق":"Copy text","پاککردنەوە":"Clear","تۆمارکردنی فیشەکان":"Save receipts"}, ar: {"دراو":"العملة","بڕ":"المبلغ","کڕین":"شراء","فرۆشتن":"بيع","نەزانراو":"غير معروف","بارکردن...":"جارٍ التحميل…","هیچ":"لا شيء","تێبینی":"ملاحظة","هەمووی":"الكل","ئەمڕۆ":"اليوم","گواستنەوە":"تحويل","هیچ نییە":"لا يوجد","قاسەی گشتی":"الخزنة العامة","جۆر":"النوع","چاوەڕوان":"معلّق","لە":"من","مێژوو":"السجل","هێشتا هیچ":"لا شيء بعد","تەواو":"تم","کۆی گشتی":"الإجمالي","بۆ":"إلى","فیشەکان":"الإيصالات","هەڵبژێرە...":"اختر…","ئەکاونتی من":"حسابي","خێری وەبەرهێنەر":"ربح المستثمر","٧ ڕۆژ":"٧ أيام","٣٠ ڕۆژ":"٣٠ يوم","١٤ ڕۆژ":"١٤ يوم","وردەکاری فیشەکان":"تفاصيل الإيصالات","قاسە":"الخزنة","بەتاڵە":"فارغة","(قەرز)":"(دين)","تۆمارکردن":"حفظ","خێر":"الربح","مامەڵە":"معاملة","مامەڵەکان":"المعاملات","فی":"الرسوم","کۆپیکردن":"نسخ","بەستنی ڕۆژ":"إقفال اليوم","عمولە":"العمولة","مامەڵەی نوێ":"معاملة جديدة","گەڕانەوە بۆ داشبۆرد":"العودة للوحة","ئەم هەفتەیە":"هذا الأسبوع","ئەم مانگە":"هذا الشهر","ناردنی فیش":"إرسال إيصالات","هاتنە ژوورەوە":"وارد","چوونە دەرەوە":"صادر","سیستەمی دراو":"نظام الصرافة","داشبۆرد":"اللوحة","خێری ئەمڕۆ":"ربح اليوم","نرخی ئەمڕۆ":"أسعار اليوم","خێری وەبەرهێنەران":"أرباح المستثمرين","دەرهێنان":"سحب","هی خۆم":"لي","وەبەرهێنەر":"مستثمر","کۆد":"الرمز","مامەڵەی ڕاستەوخۆ":"صفقة مباشرة","پارەم داوە":"دفعت","چاوەڕوانی پارەدان":"بانتظار الدفع","پارەم وەرگرتووە":"استلمت","چاوەڕوانی وەرگرتنی پارە":"بانتظار الاستلام","لایەنی بەرامبەر":"الطرف الآخر","دۆخ":"الحالة","لە بەرواری":"من تاريخ","بۆ بەرواری":"إلى تاريخ","بەپێی پلاتفۆرم":"حسب المنصة","دووبارە":"مكرر","نێردراو":"مُرسل","بەستراوە":"مرتبط","گەیشتوو":"المستلم","حیساب پاکە":"الحساب مسدد","ڕاپۆرت":"التقارير","خێر و زەرەر":"الأرباح والخسائر","هاتوو":"وارد","پاراستنی داتا":"حماية البيانات","باکئەپ":"نسخة احتياطية","ڕەوت و شیکاری":"التحليلات","گەڕانەوە":"رجوع","باڵانسی لای من":"الرصيد لدي","نووسینگە":"المكتب","خەرجی":"المصاريف","گواستنەوەی حساب":"تحويل بين الحسابات","وەبەرهێنەران":"المستثمرون","دەستی":"يدوي","بەشەکانی تر":"المزيد","دەرچوون":"خروج","وشەی نهێنی":"كلمة المرور","ماڵی خۆم":"ملكيتي","لای خۆم":"لدي","خێری خۆم":"ربحي","زیادکردن":"إضافة","ناو":"الاسم","هێما":"الرمز","ڕێژە":"النسبة %","ناونیشان":"العنوان","درووستکردن":"إنشاء","سڕینەوە":"حذف","پارەدان":"الدفع","دراوە":"مدفوع","کڕیار":"الزبون","وەرگر":"المستلم","ناردەر":"المرسل","هاوبەش":"الشريك","کەس":"الشخص","نوێ":"جديد","ئینباکس":"الوارد","ناردن":"إرسال","ئاڕاستە":"الاتجاه","باڵانس":"الرصيد","خێری نەدراو":"ربح غير مدفوع","نوێکردنەوە":"تحديث","جیاوازی":"الفرق","تێچوو":"صادر","کڕدراو":"مشترى","فرۆشراو":"مباع","دڵنیابوونەوە":"تأكيد","پشتڕاستکردنەوە":"تأكيد","پاشگەزبوونەوە":"إلغاء","تەواوکراو":"مكتمل","ڕاستەوخۆ":"مباشر","گومان":"مشبوه","ئەدمین":"مدير","کڕیار-فرۆشیار":"زبون","هاوبەشی سین":"شريك","کەشف حساب":"كشف حساب","قەرز":"دين","کۆپی کرا ✓":"تم النسخ ✓","تۆمار کرا ✓":"تم الحفظ ✓","بڕ پێویستە":"المبلغ مطلوب","هیچ نەدۆزرایەوە":"لا نتائج","هیچ فیشێک نییە":"لا إيصالات","هیچ مامەڵەیەک نەدۆزرایەوە":"لا معاملات","هیچ داتایەک نییە":"لا بيانات","سەرمایە":"رأس المال","ڕەوت":"الاتجاه","پێشبینین":"التوقعات","چالاکی":"النشاط","مێژووی نرخ":"سجل الأسعار","ڕاپۆرتی ڕۆژ":"تقرير اليوم","نرخی جیهانی":"الأسعار العالمية","دابەشکردنی خێر":"توزيع الأرباح","بەپێی وەرگر":"حسب المستلم","بە فییەوە":"شامل الرسوم","سبەی":"غداً","ئەلی پەی":"علي باي","وی چات":"وي تشات","بانک":"بنك","ژمارەی مامەڵە":"رقم المعاملة","پارە هاتووە":"مال وارد","پارە نێردراوە":"مال صادر","هەژمار نەکراوە":"غير محسوب","هۆکار:":"السبب:","وردەکاری":"التفاصيل","وێنەکان":"الصور","ڕێکخستن":"الإعدادات","بەکارهێنەران":"المستخدمون","پشکنینی فیش":"فحص الإيصالات","زیاتر":"المزيد","چوونە ژوورەوە":"تسجيل الدخول","ژمارەی مۆبایل یان ئیمەیل":"الهاتف أو البريد","هێشتا مێژوویەک نییە":"لا يوجد سجل بعد","بارکردنی سیستەم...":"جارٍ تحميل النظام…","بارکردنی داتا...":"جارٍ تحميل البيانات…","بینین وەک":"عرض كـ","بینین وەک بەکارهێنەرێکی تر":"عرض كمستخدم آخر","خێری ٧ ڕۆژی ڕابردوو":"ربح آخر ٧ أيام","مامەڵەی ئەمڕۆ":"معاملات اليوم","چاوەڕوانی پارە":"بانتظار الدفع","وردەکاری ←":"التفاصيل ←","هێشتا فرۆشتنێک نەکراوە":"لا مبيعات بعد","خۆم:":"أنا:","وەبەرهێنەران:":"المستثمرون:","گۆڕین ←":"تغيير ←","· دەرەوە":"· خارجية","لای کێیە؟":"لدى من؟","هی کێیە؟":"ملك من؟","لای خۆم (قاسەی سەرەکی)":"لدي (الخزنة الرئيسية)","هیچی لای هاوبەشەکان نییە":"لا شيء لدى الشركاء","هێشتا سەرمایە دانەنراوە":"لم يُضف رأس مال بعد","١ دۆلار = چەند؟":"١ دولار = كم؟","١ دۆلار بە چەند دەکڕم":"أشتري ١ دولار بـ","١ دۆلار بە چەند دەفرۆشم":"أبيع ١ دولار بـ","خێر بە وردی":"تفاصيل الربح","قاسە، پارە و خەرجی":"الخزنة والمال والمصاريف","قاسەی گشتی (هەمووی)":"الخزنة العامة (الكل)","کلیک بۆ وردەکاری":"اضغط للتفاصيل","کلیک لە هەر دراوێک بکە بۆ وردەکاری":"اضغط على أي عملة للتفاصيل","قاسەی تایبەتی خۆم":"خزنتي الخاصة","پارە داخڵکردن / دەرهێنان":"إيداع / سحب","داخڵکردن":"إيداع","خاوەنی پارە":"مالك المال","تۆمارکردنی خەرجی":"تسجيل مصروف","جۆری خەرجی":"نوع المصروف","زیادکردنی دراوی نوێ":"إضافة عملة جديدة","خانەی دەیمی":"المنازل العشرية","دراوی دەرەوە":"عملة خارجية","بەرامبەر دراوی":"مقابل عملة","ڕەیتی کڕین و فرۆشتن":"سعر الشراء والبيع","بە چەند دەیکڕم":"أشتري بـ","بە چەند دەیفرۆشم":"أبيع بـ","دەدەم (کڕین)":"أدفع (شراء)","وەردەگرم (فرۆشتن)":"أستلم (بيع)","لە کێ دەیکڕم؟":"أشتري ممن؟","— ناوێکی ئازاد —":"— اسم حر —","ناوی فرۆشیار...":"اسم البائع…","بە کێ دەیفرۆشم؟":"أبيع لمن؟","ناوی کڕیار...":"اسم المشتري…","چاوەڕوانی وەرگرتن":"بانتظار الاستلام","نرخی ڕۆژ:":"سعر اليوم:","نرخێکی تایبەت بەکاردێت":"يُستخدم سعر خاص","مامناوەندی کڕین:":"متوسط التكلفة:","خێری خەمڵێنراو:":"الربح المقدر:","— تەرەفێک هەڵبژێرە —":"— اختر شريكاً —","دۆخی پارە":"حالة الدفع","لە فیشەکانەوە — ناگۆڕدرێت":"من الإيصالات — غير قابل للتغيير","کڕیارێکی تۆمارکراو":"زبون مسجل","ئۆزەر (بێ ئەکاونت)":"عابر (بدون حساب)","ناو...":"الاسم…","فلتەر":"تصفية","(ئیدیت)":"(معدّل)","هەڵوەشاندنەوەی پارەدان":"إلغاء الدفع","فیش":"إيصال","کۆی گشتی (بە فییەوە)":"الإجمالي (شامل الرسوم)","گەیشتوو (بێ فی)":"المستلم (صافي)","وردەکاری بەپێی ناو":"التفاصيل حسب الاسم","ژمارەی مامەڵە:":"رقم المعاملة:","کاتی مامەڵە:":"الوقت:","وەرگر:":"المستلم:","ناردەر:":"المرسل:","ئەپ/بانک:":"التطبيق/البنك:","کاتی ناردن:":"وقت الإرسال:","فیشە ڕەسەنەکە:":"الإيصال الأصلي:","هیچ وێنەیەک نییە":"لا صور","جۆری فیشەکان":"نوع الإيصالات","پارە هاتووە (کڕین)":"مال وارد (شراء)","پارە نێردراوە (فرۆشتن)":"مال صادر (بيع)","ناردنی خشتەی وردەکاری":"إرسال جدول التفاصيل","ئەمانە هەژمار ناکرێن":"هذه غير محسوبة","بەستراوەکان":"المرتبطة","لای کێ":"الموقع","واتساپ":"واتساب","ناردنی فیش لە جیاتی کەسێک":"إرسال إيصالات نيابة عن شخص","ناردنی خشتە":"إرسال الجدول","خشتەی تەواو":"الجدول الكامل","تەنها کۆکان":"الإجماليات فقط","تەنها ڕەتکراوەکان":"المرفوضة فقط","ناردن بە واتساپ":"إرسال عبر واتساب","وەرگرتنی فیش لە واتساپەوە":"استلام الإيصالات من واتساب","کۆی کۆمەڵەکان":"إجمالي المجموعات","چۆن کار دەکات":"كيف يعمل","کۆمەڵەیەکی نوێ لە":"مجموعة جديدة في","تێبینی:":"ملاحظة:","نرخ:":"السعر:","بەخۆڕاییە":"مجاني","هەفتە":"أسبوع","مانگ":"شهر","ساڵ":"سنة","چاوەڕوانی مامەڵە":"بانتظار المعاملة","هەمووی بۆ:":"الكل إلى:","فیشەکان بەسەر":"الإيصالات على","— فرۆشتنێکی لێ درووست بکە":"— أنشئ عملية بيع","— کڕینێکی لێ درووست بکە":"— أنشئ عملية شراء","بەستراوە بە مامەڵەی":"مرتبط بالمعاملة","ئەرشیفی فیشەکان":"أرشيف الإيصالات","کڕینی ئەو":"مشترياته","فرۆشتنی ئەو":"مبيعاته","فرۆشتوویەتی بە من":"باع لي","کڕیویەتی لە من":"اشترى مني","دوا مامەڵەکان":"آخر المعاملات","پارەی تۆ لای من":"مالك لدي","قەرزی تۆ":"دينك","حیساب پاکە ✅":"الحساب مسدد ✅","پارە دانان / دەرهێنان":"إيداع / سحب","وەرگرتن (پارە دێت)":"استلام (مال وارد)","دان (پارە دەڕوات)":"دفع (مال صادر)","لە حسابی":"من حساب","بۆ حسابی":"إلى حساب","دەبڕدرێت و دەچێتە حسابی":"سيُحوّل إلى حساب","درووست کراون؟":"تم إنشاؤها؟","زیادکردن / کەمکردن":"إضافة / خصم","قاسە — پارەی لای من":"الخزنة — المال لدي","قەرز — حیسابی مامەڵەکان":"الدين — من المعاملات","لە مامەڵە چاوەڕوانەکانەوە":"من المعاملات المعلقة","کەمکردن (پارە دەردەهێنم)":"خصم (سحب)","باڵانسی ئێستا":"الرصيد الحالي","دوای ئەمە":"بعد ذلك","گواستنەوە بۆ حسابێکی تر":"تحويل إلى حساب آخر","گەڕان بە ناو یان ژمارە...":"بحث بالاسم أو الرقم…","هیچ جوڵانەوەیەک نییە":"لا حركات","هیچ کڕیارێک نەدۆزرایەوە":"لا زبائن","قەرزاری ئەوم:":"أدين له:","لای ئەو:":"لديه:","گەڕانەوە بۆ لیستی کڕیاران":"العودة للزبائن","گواستنەوەی پارە":"نقل المال","بۆ لای هاوبەش":"إلى شريك","لە لای هاوبەشەوە":"من شريك","— باڵانسی دوایی:":"— الرصيد الجديد:","· قەرز":"· دين","هیچ وەبەرهێنەرێک نییە":"لا مستثمرين","سەرمایە + خێری نەدراو":"رأس المال + ربح غير مدفوع","سەرمایە دانەنراوە":"لم يُحدد رأس المال","مێژووی پارەدان":"سجل الدفعات","قاسەی نووسینگە":"خزنة المكتب","پارەی دراوی ئەمڕۆ":"المدفوع اليوم","بدرێتێ:":"للدفع:","پارەم دا":"دفعت","گەڕان بە ناو یان کۆد...":"بحث بالاسم أو الرمز…","درووستکردنی ئەکاونتی نوێ":"إنشاء حساب جديد","ناوی تەواو *":"الاسم الكامل *","ڕۆڵ *":"الدور *","لە کام دراوەکاندا شەریکە؟":"يشارك الربح في أي عملات؟","ژمارەی مۆبایل * (لۆگین)":"الهاتف * (الدخول)","وشەی نهێنی * (٦ پیت)":"كلمة المرور * (٦ أحرف)","هاتوو و تێچوو":"الوارد والصادر","دەرهێنان بۆ ئێکسڵ":"تصدير إلى إكسل","مانگی ڕابردوو":"الشهر الماضي","ئەمساڵ":"هذه السنة","هیچ نییە لەم ماوەیەدا":"لا شيء في هذه الفترة","کۆی نەت بە دۆلار":"الصافي بالدولار","هاتوو و تێچووی قاسە":"وارد وصادر الخزنة","قەبارەی مامەڵەکان":"حجم المعاملات","دابەزاندنی فایل":"تنزيل ملف","باکئەپە هەڵگیراوەکان":"النسخ المحفوظة","لە Supabase درووست کراوە؟":"تم إنشاؤه في Supabase؟","مامەڵە ·":"معاملة ·","تۆمار":"سجل","ئامۆژگاری:":"نصيحة:","باشترین ڕۆژ:":"أفضل يوم:","ژمارەی مامەڵەکان":"عدد المعاملات","کڕین بەرامبەر فرۆشتن":"شراء مقابل بيع","دابەشکردنی قاسە":"توزيع الخزنة","٧ ڕۆژی داهاتوو":"الأيام السبعة القادمة","دڵنیایی پێشبینین":"دقة التوقع","ڕاپۆرتی ئەمڕۆ":"تقرير اليوم","هێشتا هیچ خێرێک نییە":"لا ربح بعد","قەبارەی ئەمڕۆ":"حجم اليوم","هیچ چالاکییەک نییە":"لا نشاط","پارەی لای خۆت بژمێرە":"عُدّ النقد الذي لديك","حیسابی سیستەم:":"حسب النظام:","ژماردنی ڕاستەقینە...":"العدّ الفعلي…","✓ ڕێکە":"✓ مطابق","قاسەکە ڕاست بکەرەوە":"صحّح الخزنة","مێژووی بەستنەکان":"سجل الإقفالات","جیاوازی هەبووە":"يوجد فرق","ڕێک بووە":"مطابق","تۆماری گۆڕانکاری":"سجل التغييرات","ئەکاونتم":"حسابي","فیشەکانم":"إيصالاتي","پارەی من لای ئەوان":"مالي لديهم","قەرزی من":"ديني","مامەڵەکانم":"معاملاتي","مێژووی ئاڵووگۆر":"سجل الصرف","خشتەی فیشەکان":"جدول الإيصالات","کۆپیکردنی خشتە":"نسخ الجدول","کۆپیکردنی دەق":"نسخ النص","پاککردنەوە":"مسح","تۆمارکردنی فیشەکان":"حفظ الإيصالات"} };
+
+let _lang = (() => { try { return localStorage.getItem("lang") || "ku"; } catch { return "ku"; } })();
+const setLangGlobal = (l) => { _lang = l; try { localStorage.setItem("lang", l); } catch {} };
+/* t() — گەر وەرگێڕان نەبوو، کوردییەکە دەگەڕێنێتەوە */
+const tr = (k) => (_lang === "ku" ? k : (DICT[_lang]?.[k] ?? k));
+
 /* ══════════════════ چارتەکان ══════════════════ */
 
 /* هێڵی بچووک — ڕەوتی خێرا */
@@ -92,7 +104,7 @@ function Spark({ data, w = 96, h = 30, color = "var(--jade)" }) {
 /* چارتی ستوونی */
 function Bars({ rows, h = 150, fmtV = (v) => fmt(v, 0) }) {
   const [hover, setHover] = useState(null);
-  if (!rows?.length) return <Empty t="هیچ داتایەک نییە" />;
+  if (!rows?.length) return <Empty t={tr("هیچ داتایەک نییە")} />;
   const mx = Math.max(...rows.map((r) => Math.abs(r.v)), 1);
   return (
     <div>
@@ -136,7 +148,7 @@ function Bars({ rows, h = 150, fmtV = (v) => fmt(v, 0) }) {
 function LineChart({ series, h = 190, unit = "" }) {
   const [hover, setHover] = useState(null);
   const all = series.flatMap((s2) => s2.pts.map((p) => p.v));
-  if (!all.length) return <Empty t="هێشتا مێژوویەک نییە" />;
+  if (!all.length) return <Empty t={tr("هێشتا مێژوویەک نییە")} />;
   const mx = Math.max(...all), mn = Math.min(...all);
   const pad = (mx - mn) * .12 || mx * .04 || 1;
   const hi = mx + pad, lo = Math.max(0, mn - pad), rng = hi - lo || 1;
@@ -198,7 +210,7 @@ function LineChart({ series, h = 190, unit = "" }) {
 /* بازنەی دابەشکردن */
 function Donut({ rows, size = 132 }) {
   const tot = rows.reduce((s2, r) => s2 + Math.abs(r.v), 0);
-  if (!tot) return <Empty t="هیچ نییە" />;
+  if (!tot) return <Empty t={tr("هیچ نییە")} />;
   const R = size / 2, r = R * .64, C = 2 * Math.PI * r;
   let acc = 0;
   return (
@@ -361,7 +373,7 @@ const Tabs = ({ items, value, onChange, className = "" }) => (
 
 function Styles() {
   return <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');
 
         :root {
           --ink:        #0D1117;
@@ -411,7 +423,13 @@ function Styles() {
         }
 
         body, input, select, textarea, button { font-family: 'IBM Plex Sans Arabic', 'Segoe UI', Tahoma, sans-serif; }
+        html[lang="en"] body, html[lang="en"] input, html[lang="en"] select,
+        html[lang="en"] textarea, html[lang="en"] button { font-family: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif; }
         .mono, [style*="tabular-nums"] { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-feature-settings: "tnum" 1; }
+        /* لە دۆخی ئینگلیزیدا فۆنتێکی گونجاو */
+        [lang="en"] body, [lang="en"] input, [lang="en"] select, [lang="en"] button {
+          font-family: 'IBM Plex Sans Arabic', 'Segoe UI', system-ui, sans-serif;
+        }
 
         /* ── جووڵە ── */
         @keyframes fadeUp   { from { opacity:0; transform: translateY(10px) } to { opacity:1; transform:none } }
@@ -467,6 +485,15 @@ export default function App() {
   const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
   const [more, setMore] = useState(false);
+  const [langOpen, setLangOpen] = useState(false);
+  const [lang, setLang] = useState(_lang);
+  const changeLang = (l) => { setLangGlobal(l); setLang(l); };
+  useEffect(() => {
+    const d = LANGS[lang]?.dir || "rtl";
+    document.documentElement.setAttribute("lang", lang);
+    document.documentElement.setAttribute("dir", d);
+  }, [lang]);
+
   const [stale, setStale] = useState(null);
   const [online, setOnline] = useState(() => (typeof navigator === "undefined" ? true : navigator.onLine));
   useEffect(() => {
@@ -1164,26 +1191,26 @@ export default function App() {
   const signOut = () => supabase.auth.signOut();
 
   /* ───────── ڕەندەر ───────── */
-  if (session === undefined) return <><Styles /><Splash t="بارکردنی سیستەم..." /></>;
+  if (session === undefined) return <><Styles /><Splash t={tr("بارکردنی سیستەم...")} /></>;
   if (!session) return <><Styles /><Login /></>;
-  if (!data || !calc) return <><Styles /><Splash t="بارکردنی داتا..." /></>;
-  if (!profile) return <><Styles /><Splash t="ئەکاونتەکەت بە سیستەمەکە نەبەستراوە — پەیوەندی بە ئەدمینەوە بکە." signOut={signOut} /></>;
+  if (!data || !calc) return <><Styles /><Splash t={tr("بارکردنی داتا...")} /></>;
+  if (!profile) return <><Styles /><Splash t={tr("ئەکاونتەکەت بە سیستەمەکە نەبەستراوە — پەیوەندی بە ئەدمینەوە بکە.")} signOut={signOut} /></>;
 
   const isAdmin = profile.role === "admin";
   const va = viewAs ? usr(viewAs) : null;
   const portalUser = !isAdmin ? profile : va;
 
   const NAV = [
-    ["dash", "داشبۆرد", LayoutDashboard],
-    ["newtx", "مامەڵەی نوێ", ArrowLeftRight],
-    ["txs", "مامەڵەکان", ListOrdered],
-    ["receipts", "پشکنینی فیش", ScanLine],
-    ["people", "بەکارهێنەران", Users],
-    ["report", "ڕاپۆرت", PieChart],
+    ["dash", tr("داشبۆرد"), LayoutDashboard],
+    ["newtx", tr("مامەڵەی نوێ"), ArrowLeftRight],
+    ["txs", tr("مامەڵەکان"), ListOrdered],
+    ["receipts", tr("پشکنینی فیش"), ScanLine],
+    ["people", tr("بەکارهێنەران"), Users],
+    ["report", tr("ڕاپۆرت"), PieChart],
     ["audit", "تۆمار", History],
-    ["insights", "ڕەوت و شیکاری", TrendingUp],
-    ["close", "بەستنی ڕۆژ", ClipboardCheck],
-    ["backup", "پاراستنی داتا", Database],
+    ["insights", tr("ڕەوت و شیکاری"), TrendingUp],
+    ["close", tr("بەستنی ڕۆژ"), ClipboardCheck],
+    ["backup", tr("پاراستنی داتا"), Database],
   ];
 
 
@@ -1192,7 +1219,7 @@ export default function App() {
     toUsd, sumUsd, ratesReady, owners };
 
   return (
-    <div dir="rtl" className="min-h-screen" style={{ background: "var(--paper)", color: "var(--txt)" }}>
+    <div dir={LANGS[lang]?.dir || "rtl"} key={lang} className="min-h-screen" style={{ background: "var(--paper)", color: "var(--txt)" }}>
       <Styles />
 
       {(!online || stale) && (
@@ -1222,16 +1249,40 @@ export default function App() {
               <Vault className="w-[18px] h-[18px] text-white" />
             </div>
             <div className="min-w-0">
-              <div className="font-bold leading-tight text-sm md:text-base truncate">سیستەمی دراو</div>
+              <div className="font-bold leading-tight text-sm md:text-base truncate">{tr("سیستەمی دراو")}</div>
               <div className="text-[11px] text-[var(--txt-3)] truncate">{profile.name} — {ROLE_KU[profile.role]}</div>
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {isAdmin && va && (
               <button onClick={() => setViewAs(null)} className="flex items-center gap-1 text-xs bg-amber-600 hover:bg-amber-700 px-2.5 py-1.5 rounded-lg">
-                <LogOut className="w-3.5 h-3.5" /> گەڕانەوە
+                <LogOut className="w-3.5 h-3.5" /> {tr("گەڕانەوە")}
               </button>
             )}
+            <div className="relative">
+              <button onClick={() => setLangOpen(!langOpen)}
+                className="px-2.5 py-2 rounded-xl border transition-all press text-[11px] font-bold"
+                style={{ background: "rgba(255,255,255,.06)", borderColor: "rgba(255,255,255,.1)" }}>
+                {LANGS[lang]?.flag || "KU"}
+              </button>
+              {langOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setLangOpen(false)} />
+                  <div className="absolute top-full mt-2 left-0 z-50 rounded-xl overflow-hidden min-w-[130px]"
+                    style={{ background: "var(--card)", border: "1px solid var(--line)", boxShadow: "var(--shadow-3)" }}>
+                    {Object.entries(LANGS).map(([k, v]) => (
+                      <button key={k} onClick={() => { changeLang(k); setLangOpen(false); }}
+                        className="w-full text-start px-3.5 py-2.5 text-sm transition-colors flex items-center gap-2.5"
+                        style={lang === k
+                          ? { background: "var(--jade)", color: "#fff", fontWeight: 700 }
+                          : { color: "var(--txt)" }}>
+                        <span className="text-[10px] font-bold opacity-70">{v.flag}</span> {v.name}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
             <button onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
               className="p-2 rounded-xl border transition-all press"
               style={{ background: "rgba(255,255,255,.06)", borderColor: "rgba(255,255,255,.1)" }}
@@ -1265,7 +1316,7 @@ export default function App() {
             {isAdmin && (
               <div className="mt-4 pt-3 border-t border-[var(--line)]">
                 <div className="flex items-center gap-1.5 text-[11px] font-semibold text-[var(--txt-3)] mb-1.5 px-1">
-                  <Eye className="w-3.5 h-3.5" /> بینین وەک
+                  <Eye className="w-3.5 h-3.5" /> {tr("بینین وەک")}
                 </div>
                 <ViewAsPicker users={data.users} onPick={setViewAs} compact />
               </div>
@@ -1273,9 +1324,9 @@ export default function App() {
           </nav>
           <main className="flex-1 p-3 pb-24 md:p-6 md:pb-6 max-w-5xl w-full mx-auto">
             {page === "dash" && <Dashboard {...shared} batches={batches} go={setPage} />}
-            {page === "safes" && <><Back onClick={() => setPage("dash")} t="گەڕانەوە بۆ داشبۆرد" /><Safes {...shared} addDeposit={addDeposit} addExpense={addExpense} addCurrency={addCurrency} /></>}
-            {page === "rates" && <><Back onClick={() => setPage("dash")} t="گەڕانەوە بۆ داشبۆرد" /><Rates {...shared} saveRates={saveRates} /></>}
-            {page === "profit" && <><Back onClick={() => setPage("dash")} t="گەڕانەوە بۆ داشبۆرد" /><ProfitPage {...shared} /></>}
+            {page === "safes" && <><Back onClick={() => setPage("dash")} t={tr("گەڕانەوە بۆ داشبۆرد")} /><Safes {...shared} addDeposit={addDeposit} addExpense={addExpense} addCurrency={addCurrency} /></>}
+            {page === "rates" && <><Back onClick={() => setPage("dash")} t={tr("گەڕانەوە بۆ داشبۆرد")} /><Rates {...shared} saveRates={saveRates} /></>}
+            {page === "profit" && <><Back onClick={() => setPage("dash")} t={tr("گەڕانەوە بۆ داشبۆرد")} /><ProfitPage {...shared} /></>}
             {page === "newtx" && <TxForm {...shared} onSave={saveTx} batch={pendingBatch} onClearBatch={() => setPendingBatch(null)} busy={busy} />}
             {page === "txs" && (editTx
               ? <TxForm {...shared} onSave={saveTx} editing={editTx} onCancel={() => setEditTx(null)} />
@@ -1304,7 +1355,7 @@ export default function App() {
             <button onClick={() => setMore(!more)}
               style={{ color: NAV.slice(4).some(([id]) => id === page) ? "var(--jade)" : "var(--txt-3)" }}
               className="flex-1 flex flex-col items-center gap-1 py-2.5 text-[10px] font-bold transition-all press">
-              <MoreHorizontal className="w-[19px] h-[19px]" /> زیاتر
+              <MoreHorizontal className="w-[19px] h-[19px]" /> {tr("زیاتر")}
             </button>
           </nav>
 
@@ -1314,7 +1365,7 @@ export default function App() {
                 style={{ background: "var(--card)", boxShadow: "0 -8px 40px -8px rgba(13,17,23,.3)" }} onClick={(e) => e.stopPropagation()}>
                 <div className="w-10 h-1 rounded-full mx-auto mb-4" style={{ background: "var(--line)" }} />
                 <div className="flex items-center justify-between mb-3">
-                  <div className="font-bold text-[var(--txt)]">بەشەکانی تر</div>
+                  <div className="font-bold text-[var(--txt)]">{tr("بەشەکانی تر")}</div>
                   <button onClick={() => setMore(false)} className="p-1.5 text-[var(--txt-3)]"><X className="w-5 h-5" /></button>
                 </div>
                 {NAV.slice(4).map(([id, t, Ic]) => (
@@ -1326,7 +1377,7 @@ export default function App() {
                 {isAdmin && (
                   <div className="mt-3 pt-3 border-t border-[var(--line)]">
                     <div className="flex items-center gap-2 text-xs font-semibold text-[var(--txt-2)] mb-2 px-1">
-                      <Eye className="w-4 h-4" /> بینین وەک بەکارهێنەرێکی تر
+                      <Eye className="w-4 h-4" /> {tr("بینین وەک بەکارهێنەرێکی تر")}
                     </div>
                     <ViewAsPicker users={data.users} onPick={(id) => { setViewAs(id); setMore(false); }} />
                   </div>
@@ -1347,10 +1398,10 @@ function ViewAsPicker({ users, onPick, compact }) {
     .filter((u) => !q || (u.name || "").includes(q) || (u.phone || "").includes(q) || (ROLE_KU[u.role] || "").includes(q));
   return (
     <div>
-      <Inp value={q} onChange={(e) => setQ(e.target.value)} placeholder="گەڕان بە ناو، ژمارە، یان ڕۆڵ..."
+      <Inp value={q} onChange={(e) => setQ(e.target.value)} placeholder={tr("گەڕان بە ناو، ژمارە، یان ڕۆڵ...")}
         className={compact ? "text-xs py-2" : ""} />
       <div className={`mt-1.5 space-y-1 overflow-y-auto ${compact ? "max-h-44" : "max-h-64"}`}>
-        {list.length === 0 ? <div className="text-xs text-[var(--txt-3)] py-2 text-center">هیچ نەدۆزرایەوە</div> :
+        {list.length === 0 ? <div className="text-xs text-[var(--txt-3)] py-2 text-center">{tr("هیچ نەدۆزرایەوە")}</div> :
           list.map((u) => (
             <button key={u.id} onClick={() => onPick(u.id)}
               className="w-full text-right px-3 py-2 rounded-lg hover:bg-[var(--jade)] hover:text-white transition group">
@@ -1368,10 +1419,10 @@ function ViewAsPicker({ users, onPick, compact }) {
 /* ══════════════════ لۆگین ══════════════════ */
 function Splash({ t, signOut }) {
   return (
-    <div dir="rtl" className="min-h-screen flex flex-col items-center justify-center bg-[#F6F5F2] text-[var(--txt-2)] gap-4 p-6 text-center">
+    <div dir={LANGS[_lang]?.dir || "rtl"} className="min-h-screen flex flex-col items-center justify-center gap-4 p-6 text-center" style={{ background: "var(--paper)", color: "var(--txt-2)" }}>
       <Vault className="w-10 h-10 text-amber-500" />
       <div>{t}</div>
-      {signOut && <Btn kind="ghost" onClick={signOut}>دەرچوون</Btn>}
+      {signOut && <Btn kind="ghost" onClick={signOut}>{tr("دەرچوون")}</Btn>}
     </div>
   );
 }
@@ -1399,7 +1450,7 @@ function Login() {
   };
 
   return (
-    <div dir="rtl" className="min-h-screen flex items-center justify-center p-5 relative overflow-hidden"
+    <div dir={LANGS[_lang]?.dir || "rtl"} className="min-h-screen flex items-center justify-center p-5 relative overflow-hidden"
       style={{ background: "linear-gradient(165deg, var(--ink) 0%, #131A24 55%, #0A1015 100%)" }}>
 
       {/* تیشکی پاشبنەما */}
@@ -1415,8 +1466,8 @@ function Login() {
                      boxShadow: "0 10px 32px -8px rgba(184,134,59,.55), inset 0 1px 0 rgba(255,255,255,.35)" }}>
             <Vault className="w-9 h-9 text-white" />
           </div>
-          <h1 className="text-[26px] font-bold text-white tracking-tight">سیستەمی دراو</h1>
-          <p className="text-[13px] mt-1.5" style={{ color: "rgba(255,255,255,.42)" }}>کڕین و فرۆشتن · قاسە · حیسابات</p>
+          <h1 className="text-[26px] font-bold text-white tracking-tight">{tr("سیستەمی دراو")}</h1>
+          <p className="text-[13px] mt-1.5" style={{ color: "rgba(255,255,255,.42)" }}>{tr("کڕین و فرۆشتن · قاسە · حیسابات")}</p>
         </div>
 
         <div className="rounded-[26px] p-7 backdrop-blur-2xl"
@@ -1425,7 +1476,7 @@ function Login() {
           <div className="space-y-4">
             <div>
               <label className="block text-[12px] font-semibold mb-2" style={{ color: "rgba(255,255,255,.62)" }}>
-                ژمارەی مۆبایل یان ئیمەیل
+                {tr("ژمارەی مۆبایل یان ئیمەیل")}
               </label>
               <input dir="ltr" type="text" autoComplete="username" value={id} onChange={(e) => setId(e.target.value)}
                 placeholder="07701234567" onKeyDown={(e) => e.key === "Enter" && go()}
@@ -1435,7 +1486,7 @@ function Login() {
                 onBlur={(e) => { e.target.style.borderColor = "rgba(255,255,255,.12)"; e.target.style.background = "rgba(255,255,255,.06)"; }} />
             </div>
             <div>
-              <label className="block text-[12px] font-semibold mb-2" style={{ color: "rgba(255,255,255,.62)" }}>وشەی نهێنی</label>
+              <label className="block text-[12px] font-semibold mb-2" style={{ color: "rgba(255,255,255,.62)" }}>{tr("وشەی نهێنی")}</label>
               <div className="relative">
                 <input type={show ? "text" : "password"} autoComplete="current-password" value={pw}
                   onChange={(e) => setPw(e.target.value)} onKeyDown={(e) => e.key === "Enter" && go()}
@@ -1467,8 +1518,19 @@ function Login() {
           </div>
         </div>
 
-        <p className="text-center text-[11px] mt-7" style={{ color: "rgba(255,255,255,.28)" }}>
-          زانیارییەکانت لە بەڕێوەبەرەوە وەربگرە
+        <div className="flex justify-center gap-1.5 mt-7">
+          {Object.entries(LANGS).map(([k, v]) => (
+            <button key={k} onClick={() => { setLangGlobal(k); location.reload(); }}
+              className="px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all press"
+              style={_lang === k
+                ? { background: "rgba(184,134,59,.22)", color: "var(--brass-lt)", border: "1px solid rgba(184,134,59,.35)" }
+                : { background: "rgba(255,255,255,.05)", color: "rgba(255,255,255,.4)", border: "1px solid rgba(255,255,255,.08)" }}>
+              {v.name}
+            </button>
+          ))}
+        </div>
+        <p className="text-center text-[11px] mt-4" style={{ color: "rgba(255,255,255,.28)" }}>
+          {tr("زانیارییەکانت لە بەڕێوەبەرەوە وەربگرە")}
         </p>
       </div>
     </div>
@@ -1521,7 +1583,7 @@ function Dashboard({ data, calc, cur, mySafe, profitIn, ownProfitIn, investorsPr
 
   return (
     <div className="space-y-4">
-      <H sub={new Date().toLocaleDateString("en-GB")}>داشبۆرد</H>
+      <H sub={new Date().toLocaleDateString("en-GB")}>{tr("داشبۆرد")}</H>
 
       {alerts.length > 0 && (
         <div className="space-y-2">
@@ -1542,7 +1604,7 @@ function Dashboard({ data, calc, cur, mySafe, profitIn, ownProfitIn, investorsPr
         <Card className="p-4 fade-up" onClick={() => go("insights")}>
           <div className="flex items-center justify-between gap-4">
             <div>
-              <div className="text-[11px]" style={{ color: "var(--txt-2)" }}>خێری ٧ ڕۆژی ڕابردوو</div>
+              <div className="text-[11px]" style={{ color: "var(--txt-2)" }}>{tr("خێری ٧ ڕۆژی ڕابردوو")}</div>
               <div className="text-xl font-bold mt-0.5" style={{ ...num, color: week7 >= 0 ? "var(--jade)" : "var(--verm)" }}>
                 {fmt(week7, 0)}{ratesReady && <span className="text-xs mr-1" style={{ color: "var(--txt-3)" }}>$</span>}
               </div>
@@ -1553,19 +1615,19 @@ function Dashboard({ data, calc, cur, mySafe, profitIn, ownProfitIn, investorsPr
       )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Stat t="مامەڵەی ئەمڕۆ" v={todayTxs.length} i={0} />
-        <Stat t="کڕین" v={todayTxs.filter((t) => t.type === "buy").length} tone="text-[var(--jade)]" i={1} />
-        <Stat t="فرۆشتن" v={todayTxs.filter((t) => t.type === "sell").length} tone="text-[var(--verm)]" i={2} />
-        <Stat t="چاوەڕوانی پارە" v={pendingCount} tone={pendingCount ? "text-[var(--amber)]" : ""} i={3} />
+        <Stat t={tr("مامەڵەی ئەمڕۆ")} v={todayTxs.length} i={0} />
+        <Stat t={tr("کڕین")} v={todayTxs.filter((t) => t.type === "buy").length} tone="text-[var(--jade)]" i={1} />
+        <Stat t={tr("فرۆشتن")} v={todayTxs.filter((t) => t.type === "sell").length} tone="text-[var(--verm)]" i={2} />
+        <Stat t={tr("چاوەڕوانی پارە")} v={pendingCount} tone={pendingCount ? "text-[var(--amber)]" : ""} i={3} />
       </div>
 
       <div className="grid md:grid-cols-2 gap-4">
         <Card className="p-5" onClick={() => go("profit")}>
           <div className="flex items-center justify-between mb-3">
-            <SecLbl>خێری ئەمڕۆ</SecLbl>
-            <span className="text-xs text-[var(--jade)] font-semibold">وردەکاری ←</span>
+            <SecLbl>{tr("خێری ئەمڕۆ")}</SecLbl>
+            <span className="text-xs text-[var(--jade)] font-semibold">{tr("وردەکاری ←")}</span>
           </div>
-          {Object.keys(pTod).length === 0 ? <div className="text-sm text-[var(--txt-3)]">هێشتا فرۆشتنێک نەکراوە</div> :
+          {Object.keys(pTod).length === 0 ? <div className="text-sm text-[var(--txt-3)]">{tr("هێشتا فرۆشتنێک نەکراوە")}</div> :
             Object.entries(pTod).map(([cid, v]) => (
               <div key={cid} className="py-2 border-b border-[var(--line-soft)] last:border-0">
                 <div className="flex justify-between items-baseline">
@@ -1573,8 +1635,8 @@ function Dashboard({ data, calc, cur, mySafe, profitIn, ownProfitIn, investorsPr
                   <span className="text-lg"><Money v={v} dec={cur(cid).dec} pos /></span>
                 </div>
                 <div className="flex gap-4 text-[11px] text-[var(--txt-3)] mt-1">
-                  <span>خۆم: <span style={num}>{fmt(v - (invTod[cid] || 0), cur(cid).dec)}</span></span>
-                  <span>وەبەرهێنەران: <span style={num}>{fmt(invTod[cid] || 0, cur(cid).dec)}</span></span>
+                  <span>{tr("خۆم:")} <span style={num}>{fmt(v - (invTod[cid] || 0), cur(cid).dec)}</span></span>
+                  <span>{tr("وەبەرهێنەران:")} <span style={num}>{fmt(invTod[cid] || 0, cur(cid).dec)}</span></span>
                 </div>
               </div>
             ))}
@@ -1582,8 +1644,8 @@ function Dashboard({ data, calc, cur, mySafe, profitIn, ownProfitIn, investorsPr
 
         <Card className="p-5" onClick={() => go("rates")}>
           <div className="flex items-center justify-between mb-3">
-            <SecLbl>نرخی ئەمڕۆ</SecLbl>
-            <span className="text-xs text-[var(--jade)] font-semibold">گۆڕین ←</span>
+            <SecLbl>{tr("نرخی ئەمڕۆ")}</SecLbl>
+            <span className="text-xs text-[var(--jade)] font-semibold">{tr("گۆڕین ←")}</span>
           </div>
           {data.currencies.filter((c) => c.id !== "usd").map((c) => (
             <div key={c.id} className="flex justify-between items-center py-1.5 border-b border-[var(--line-soft)] last:border-0 text-sm">
@@ -1595,7 +1657,7 @@ function Dashboard({ data, calc, cur, mySafe, profitIn, ownProfitIn, investorsPr
               </span>
             </div>
           ))}
-          <div className="text-[11px] text-[var(--txt-3)] mt-2">کڕین / فرۆشتن — ١ دۆلار بە چەند</div>
+          <div className="text-[11px] text-[var(--txt-3)] mt-2">{tr("کڕین / فرۆشتن — ١ دۆلار بە چەند")}</div>
         </Card>
       </div>
 
@@ -1615,7 +1677,7 @@ function SafeCards({ data, calc, cur, mySafe, sumUsd, ratesReady, owners, go }) 
   return (
     <Card className="p-5">
       <div className="flex items-center justify-between mb-3">
-        <SecLbl>قاسەی گشتی</SecLbl>
+        <SecLbl>{tr("قاسەی گشتی")}</SecLbl>
         <button onClick={() => go("safes")} className="text-xs text-[var(--jade)] font-semibold">پارە و خەرجی ←</button>
       </div>
 
@@ -1625,7 +1687,7 @@ function SafeCards({ data, calc, cur, mySafe, sumUsd, ratesReady, owners, go }) 
             style={{ background: "linear-gradient(150deg, var(--ink-soft), var(--ink))", boxShadow: "var(--shadow-2)" }}>
             <div className="absolute -top-8 -left-8 w-28 h-28 rounded-full"
               style={{ background: "radial-gradient(circle, rgba(184,134,59,.16), transparent 70%)" }} />
-            <div className="text-[11px] relative" style={{ color: "rgba(255,255,255,.5)" }}>کۆی گشتی</div>
+            <div className="text-[11px] relative" style={{ color: "rgba(255,255,255,.5)" }}>{tr("کۆی گشتی")}</div>
             <div className="text-[26px] font-bold text-white relative leading-tight">
               <CountUp v={sumUsd(calc.phys)} />
               <span className="text-sm mr-1" style={{ color: "var(--brass-lt)" }}>$</span>
@@ -1635,7 +1697,7 @@ function SafeCards({ data, calc, cur, mySafe, sumUsd, ratesReady, owners, go }) 
             background: "linear-gradient(150deg, var(--jade-lt), var(--jade-dp))", boxShadow: "0 4px 18px -4px rgba(14,122,107,.45)" }}>
             <div className="absolute -bottom-10 -right-6 w-28 h-28 rounded-full"
               style={{ background: "radial-gradient(circle, rgba(255,255,255,.14), transparent 70%)" }} />
-            <div className="text-[11px] relative" style={{ color: "rgba(255,255,255,.72)" }}>ماڵی خۆم</div>
+            <div className="text-[11px] relative" style={{ color: "rgba(255,255,255,.72)" }}>{tr("ماڵی خۆم")}</div>
             <div className="text-[26px] font-bold text-white relative leading-tight">
               <CountUp v={sumUsd(mySafe)} />
               <span className="text-sm mr-1" style={{ color: "rgba(255,255,255,.7)" }}>$</span>
@@ -1644,7 +1706,7 @@ function SafeCards({ data, calc, cur, mySafe, sumUsd, ratesReady, owners, go }) 
         </div>
       )}
 
-      <div className="text-[11px] text-[var(--txt-3)] mb-2">کلیک لە هەر دراوێک بکە بۆ وردەکاری</div>
+      <div className="text-[11px] text-[var(--txt-3)] mb-2">{tr("کلیک لە هەر دراوێک بکە بۆ وردەکاری")}</div>
       <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
         {data.currencies.map((cc, i) => {
           const isOpen = open === cc.id;
@@ -1660,7 +1722,7 @@ function SafeCards({ data, calc, cur, mySafe, sumUsd, ratesReady, owners, go }) 
                 <CurBadge c={cc} pulse={isOpen} />
                 <div className="min-w-0">
                   <div className="text-[11px] text-[var(--txt-2)] truncate">
-                    {cc.name}{cc.external && <span className="text-[var(--amber)] mr-1">· دەرەوە</span>}
+                    {cc.name}{cc.external && <span className="text-[var(--amber)] mr-1">{tr("· دەرەوە")}</span>}
                   </div>
                   <div className={`text-lg font-bold ${v < 0 ? "text-[var(--verm)]" : "text-[var(--txt)]"}`}>
                     <CountUp v={v} />
@@ -1694,7 +1756,7 @@ function CurrencyBreakdown({ curId, data, calc, cur, owners, ratesReady }) {
   return (
     <div>
       <div className="flex gap-1 bg-[var(--line-soft)] rounded-xl p-1 mb-3">
-        {[["where", "لای کێیە؟"], ["whose", "هی کێیە؟"]].map(([k, t]) => (
+        {[["where", tr("لای کێیە؟")], ["whose", tr("هی کێیە؟")]].map(([k, t]) => (
           <button key={k} onClick={() => setView(k)}
             className={`flex-1 py-2 rounded-lg text-sm transition ${view === k ? "bg-[var(--card)] text-[var(--jade)] font-bold shadow-sm" : "text-[var(--txt-2)]"}`}>{t}</button>
         ))}
@@ -1703,7 +1765,7 @@ function CurrencyBreakdown({ curId, data, calc, cur, owners, ratesReady }) {
       {view === "where" ? (
         <div>
           <div className="flex justify-between items-center py-2.5 border-b border-[var(--line-soft)]">
-            <span className="text-sm text-[var(--txt-2)]">لای خۆم (قاسەی سەرەکی)</span>
+            <span className="text-sm text-[var(--txt-2)]">{tr("لای خۆم (قاسەی سەرەکی)")}</span>
             <Money v={calc.atMe[curId] || 0} dec={0} />
           </div>
           {partners.map((p) => {
@@ -1711,26 +1773,26 @@ function CurrencyBreakdown({ curId, data, calc, cur, owners, ratesReady }) {
             if (!v) return null;
             return (
               <div key={p.id} className="flex justify-between items-center py-2.5 border-b border-[var(--line-soft)]">
-                <span className="text-sm text-[var(--txt-2)]">لای {p.name}{v < 0 && <span className="text-[var(--verm)] text-xs mr-1">(قەرز)</span>}</span>
+                <span className="text-sm text-[var(--txt-2)]">لای {p.name}{v < 0 && <span className="text-[var(--verm)] text-xs mr-1">{tr("(قەرز)")}</span>}</span>
                 <Money v={v} dec={0} />
               </div>
             );
           })}
           {partners.every((p) => !((calc.partner[p.id] || {})[curId])) && (
-            <div className="text-xs text-[var(--txt-3)] py-2">هیچی لای هاوبەشەکان نییە</div>
+            <div className="text-xs text-[var(--txt-3)] py-2">{tr("هیچی لای هاوبەشەکان نییە")}</div>
           )}
           <div className="flex justify-between items-center pt-3 font-bold">
-            <span className="text-sm">کۆی گشتی</span><Money v={bal} dec={0} />
+            <span className="text-sm">{tr("کۆی گشتی")}</span><Money v={bal} dec={0} />
           </div>
         </div>
       ) : (
         <div>
           {!ratesReady && (
             <div className="text-xs text-[var(--amber)] bg-[color-mix(in_srgb,var(--amber)_11%,transparent)] border border-[color-mix(in_srgb,var(--amber)_26%,transparent)] rounded-lg p-2.5 mb-2">
-              بۆ وردی زیاتر، نرخی هەموو دراوەکان دابنێ
+              {tr("بۆ وردی زیاتر، نرخی هەموو دراوەکان دابنێ")}
             </div>
           )}
-          {!owners || owners.total <= 0 ? <Empty t="هێشتا سەرمایە دانەنراوە" /> :
+          {!owners || owners.total <= 0 ? <Empty t={tr("هێشتا سەرمایە دانەنراوە")} /> :
             owners.list.map((o) => (
               <div key={o.id} className="flex justify-between items-center py-2.5 border-b border-[var(--line-soft)] last:border-0">
                 <div>
@@ -1741,7 +1803,7 @@ function CurrencyBreakdown({ curId, data, calc, cur, owners, ratesReady }) {
               </div>
             ))}
           <div className="text-[11px] text-[var(--txt-3)] mt-2.5">
-            بەشی هەرکەس بەپێی ڕێژەی سەرمایەکەیەتی — چوونکە هەموو دراوەکان بە پارەی هاوبەش کڕدراون
+            {tr("بەشی هەرکەس بەپێی ڕێژەی سەرمایەکەیەتی — چوونکە هەموو دراوەکان بە پارەی هاوبەش کڕدراون")}
           </div>
         </div>
       )}
@@ -1756,10 +1818,10 @@ function Rates({ data, saveRates }) {
   const last = data.currencies.find((c) => c.rateUpdated)?.rateUpdated;
   return (
     <div className="space-y-4">
-      <H sub="ڕەیتی هەر دراوێک بەرامبەر ١ دۆلار — لە مامەڵەکاندا ئۆتۆماتیکی بەکاردێت">نرخی ئەمڕۆ</H>
+      <H sub="ڕەیتی هەر دراوێک بەرامبەر ١ دۆلار — لە مامەڵەکاندا ئۆتۆماتیکی بەکاردێت">{tr("نرخی ئەمڕۆ")}</H>
       <Card className="p-5">
         <div className="text-xs text-[var(--txt-2)] mb-4 bg-[var(--line-soft)] rounded-xl p-3 leading-relaxed">
-          <b className="text-[var(--txt)]">١ دۆلار = چەند؟</b> — نموونە: گەر ١ دۆلار بە <b>٧.٢٠</b> یەن بکڕیت و بە <b>٧.١٥</b> یەن بیفرۆشیت، ئەو دوو ژمارەیە بنووسە.
+          <b className="text-[var(--txt)]">{tr("١ دۆلار = چەند؟")}</b> — نموونە: گەر ١ دۆلار بە <b>{tr("٧.٢٠")}</b> یەن بکڕیت و بە <b>{tr("٧.١٥")}</b> یەن بیفرۆشیت، ئەو دوو ژمارەیە بنووسە.
         </div>
         <div className="space-y-4">
           {rows.map((r) => (
@@ -1771,13 +1833,13 @@ function Rates({ data, saveRates }) {
               </div>
               <div className="grid grid-cols-2 gap-2.5">
                 <div>
-                  <div className="text-[11px] font-semibold text-[var(--jade)] mb-1">١ دۆلار بە چەند دەکڕم</div>
+                  <div className="text-[11px] font-semibold text-[var(--jade)] mb-1">{tr("١ دۆلار بە چەند دەکڕم")}</div>
                   <Inp type="number" step="any" dir="ltr" value={r.buyRate}
                     onChange={(e) => upd(r.id, "buyRate", e.target.value)}
                     className="text-center font-bold text-base" placeholder="7.20" />
                 </div>
                 <div>
-                  <div className="text-[11px] font-semibold text-[var(--verm)] mb-1">١ دۆلار بە چەند دەفرۆشم</div>
+                  <div className="text-[11px] font-semibold text-[var(--verm)] mb-1">{tr("١ دۆلار بە چەند دەفرۆشم")}</div>
                   <Inp type="number" step="any" dir="ltr" value={r.sellRate}
                     onChange={(e) => upd(r.id, "sellRate", e.target.value)}
                     className="text-center font-bold text-base" placeholder="7.15" />
@@ -1816,15 +1878,15 @@ function ProfitPage({ data, cur, profitIn, investorsProfitIn, invShare }) {
 
   return (
     <div className="space-y-4">
-      <H>خێر بە وردی</H>
+      <H>{tr("خێر بە وردی")}</H>
       <div className="flex gap-1 bg-[var(--card)] border border-[var(--line)] rounded-xl p-1 w-fit">
-        {[["day", "ئەمڕۆ"], ["week", "ئەم هەفتەیە"], ["month", "ئەم مانگە"]].map(([k, t2]) => (
+        {[["day", tr("ئەمڕۆ")], ["week", tr("ئەم هەفتەیە")], ["month", tr("ئەم مانگە")]].map(([k, t2]) => (
           <button key={k} onClick={() => setMode(k)}
             className={`px-4 py-2 rounded-lg text-sm ${mode === k ? "bg-[var(--jade)] text-white font-semibold" : "text-[var(--txt-2)] hover:bg-[var(--line-soft)]"}`}>{t2}</button>
         ))}
       </div>
 
-      {Object.keys(pm).length === 0 ? <Card><Empty t="هیچ خێرێک نییە لەم ماوەیەدا" /></Card> :
+      {Object.keys(pm).length === 0 ? <Card><Empty t={tr("هیچ خێرێک نییە لەم ماوەیەدا")} /></Card> :
         Object.entries(pm).map(([cid, tot]) => {
           const c = cur(cid);
           const invTot = inv[cid] || 0;
@@ -1836,17 +1898,17 @@ function ProfitPage({ data, cur, profitIn, investorsProfitIn, invShare }) {
               </div>
               <div className="grid grid-cols-2 gap-3 mb-4">
                 <div className="bg-[color-mix(in_srgb,var(--jade)_10%,transparent)]/70 rounded-xl p-3">
-                  <div className="text-xs text-[var(--jade)]/70">خێری خۆم</div>
+                  <div className="text-xs text-[var(--jade)]/70">{tr("خێری خۆم")}</div>
                   <div className="text-lg"><Money v={tot - invTot} dec={c.dec} pos /></div>
                 </div>
                 <div className="bg-[var(--line-soft)]/70 rounded-xl p-3">
-                  <div className="text-xs text-[var(--txt-2)]">خێری وەبەرهێنەران</div>
+                  <div className="text-xs text-[var(--txt-2)]">{tr("خێری وەبەرهێنەران")}</div>
                   <div className="text-lg"><Money v={invTot} dec={c.dec} /></div>
                 </div>
               </div>
               {invTot > 0 && (
                 <div className="border-t border-[var(--line-soft)] pt-3">
-                  <div className="text-xs font-semibold text-[var(--txt-2)] mb-2">دابەشبوون بەسەر وەبەرهێنەران</div>
+                  <div className="text-xs font-semibold text-[var(--txt-2)] mb-2">{tr("دابەشبوون بەسەر وەبەرهێنەران")}</div>
                   {investors.map((u) => {
                     const s = invShare(u.id, cid, tot);
                     if (!s) return null;
@@ -1873,19 +1935,19 @@ function Safes({ data, calc, cur, usr, mySafe, invUnpaid, owners, ratesReady, ad
   const [xf, setXf] = useState({ category: "کرێی شوێن", investorId: "", curId: data.currencies[0]?.id, amount: "", note: "" });
   const [nc, setNc] = useState({ code: "", name: "", symbol: "", dec: 2 });
   const investors = data.users.filter((u) => u.role === "investor" && !u.deleted);
-  const XCATS = ["کرێی شوێن", "مووچە", "گواستنەوە و حەواڵە", "کارەبا و ئینتەرنێت", "خەرجی تر", "خێری وەبەرهێنەر"];
+  const XCATS = ["کرێی شوێن", "مووچە", "گواستنەوە و حەواڵە", "کارەبا و ئینتەرنێت", "خەرجی تر", tr("خێری وەبەرهێنەر")];
   const isPayout = xf.category === "خێری وەبەرهێنەر";
   const unpaid = isPayout && xf.investorId ? invUnpaid(xf.investorId, xf.curId) : null;
 
   return (
     <div className="space-y-4">
-      <H>قاسە، پارە و خەرجی</H>
+      <H>{tr("قاسە، پارە و خەرجی")}</H>
 
       <div className="grid md:grid-cols-2 gap-4">
         <Card className="p-5">
           <div className="flex items-center justify-between mb-1">
-            <SecLbl>قاسەی گشتی (هەمووی)</SecLbl>
-            <span className="text-[11px] text-[var(--txt-3)]">کلیک بۆ وردەکاری</span>
+            <SecLbl>{tr("قاسەی گشتی (هەمووی)")}</SecLbl>
+            <span className="text-[11px] text-[var(--txt-3)]">{tr("کلیک بۆ وردەکاری")}</span>
           </div>
           {data.currencies.map((c) => (
             <div key={c.id}>
@@ -1909,7 +1971,7 @@ function Safes({ data, calc, cur, usr, mySafe, invUnpaid, owners, ratesReady, ad
         <Card className="p-5">
           <div className="flex items-center gap-1.5 mb-3">
             <Wallet className="w-4 h-4 text-[var(--jade)]" />
-            <SecLbl>قاسەی تایبەتی خۆم</SecLbl>
+            <SecLbl>{tr("قاسەی تایبەتی خۆم")}</SecLbl>
           </div>
           {data.currencies.map((c) => (
             <div key={c.id} className="flex justify-between py-2 border-b border-[var(--line-soft)] last:border-0">
@@ -1917,32 +1979,32 @@ function Safes({ data, calc, cur, usr, mySafe, invUnpaid, owners, ratesReady, ad
               <Money v={mySafe[c.id] || 0} dec={c.dec} />
             </div>
           ))}
-          <div className="text-[11px] text-[var(--txt-3)] mt-2">سەرمایەی خۆت + خێری خۆت − خەرجی و عمولەکان</div>
+          <div className="text-[11px] text-[var(--txt-3)] mt-2">{tr("سەرمایەی خۆت + خێری خۆت − خەرجی و عمولەکان")}</div>
         </Card>
       </div>
 
       <Card className="p-5">
-        <SecLbl>پارە داخڵکردن / دەرهێنان</SecLbl>
+        <SecLbl>{tr("پارە داخڵکردن / دەرهێنان")}</SecLbl>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-          <div><Lbl>جۆر</Lbl><Sel value={f.dir} onChange={(e) => setF({ ...f, dir: e.target.value })}><option value="in">داخڵکردن</option><option value="out">دەرهێنان</option></Sel></div>
-          <div><Lbl>خاوەنی پارە</Lbl><Sel value={f.owner} onChange={(e) => setF({ ...f, owner: e.target.value })}><option value="self">هی خۆم</option>{investors.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</Sel></div>
-          <div><Lbl>دراو</Lbl><Sel value={f.curId} onChange={(e) => setF({ ...f, curId: e.target.value })}>{data.currencies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Sel></div>
-          <div><Lbl>بڕ</Lbl><Inp type="number" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} placeholder="0" /></div>
-          <div className="flex items-end"><Btn className="w-full" onClick={() => { if (+f.amount > 0) { addDeposit(f); setF({ ...f, amount: "" }); } }}>تۆمارکردن</Btn></div>
+          <div><Lbl>{tr("جۆر")}</Lbl><Sel value={f.dir} onChange={(e) => setF({ ...f, dir: e.target.value })}><option value="in">{tr("داخڵکردن")}</option><option value="out">{tr("دەرهێنان")}</option></Sel></div>
+          <div><Lbl>{tr("خاوەنی پارە")}</Lbl><Sel value={f.owner} onChange={(e) => setF({ ...f, owner: e.target.value })}><option value="self">{tr("هی خۆم")}</option>{investors.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</Sel></div>
+          <div><Lbl>{tr("دراو")}</Lbl><Sel value={f.curId} onChange={(e) => setF({ ...f, curId: e.target.value })}>{data.currencies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Sel></div>
+          <div><Lbl>{tr("بڕ")}</Lbl><Inp type="number" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} placeholder="0" /></div>
+          <div className="flex items-end"><Btn className="w-full" onClick={() => { if (+f.amount > 0) { addDeposit(f); setF({ ...f, amount: "" }); } }}>{tr("تۆمارکردن")}</Btn></div>
         </div>
       </Card>
 
       <Card className="p-5">
-        <div className="flex items-center gap-1.5 mb-3"><Receipt className="w-4 h-4 text-[var(--verm)]" /><SecLbl>تۆمارکردنی خەرجی</SecLbl></div>
+        <div className="flex items-center gap-1.5 mb-3"><Receipt className="w-4 h-4 text-[var(--verm)]" /><SecLbl>{tr("تۆمارکردنی خەرجی")}</SecLbl></div>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-          <div><Lbl>جۆری خەرجی</Lbl><Sel value={xf.category} onChange={(e) => setXf({ ...xf, category: e.target.value, investorId: "" })}>{XCATS.map((c) => <option key={c} value={c}>{c}</option>)}</Sel></div>
+          <div><Lbl>{tr("جۆری خەرجی")}</Lbl><Sel value={xf.category} onChange={(e) => setXf({ ...xf, category: e.target.value, investorId: "" })}>{XCATS.map((c) => <option key={c} value={c}>{c}</option>)}</Sel></div>
           {isPayout && (
-            <div><Lbl>وەبەرهێنەر</Lbl><Sel value={xf.investorId} onChange={(e) => setXf({ ...xf, investorId: e.target.value })}><option value="">—</option>{investors.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</Sel></div>
+            <div><Lbl>{tr("وەبەرهێنەر")}</Lbl><Sel value={xf.investorId} onChange={(e) => setXf({ ...xf, investorId: e.target.value })}><option value="">—</option>{investors.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</Sel></div>
           )}
-          <div><Lbl>دراو</Lbl><Sel value={xf.curId} onChange={(e) => setXf({ ...xf, curId: e.target.value })}>{data.currencies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Sel></div>
-          <div><Lbl>بڕ</Lbl><Inp type="number" value={xf.amount} onChange={(e) => setXf({ ...xf, amount: e.target.value })} placeholder="0" /></div>
-          {!isPayout && <div><Lbl>تێبینی</Lbl><Inp value={xf.note} onChange={(e) => setXf({ ...xf, note: e.target.value })} /></div>}
-          <div className="flex items-end"><Btn kind="danger" className="w-full" onClick={() => { if (+xf.amount > 0) { addExpense(xf); setXf({ ...xf, amount: "", note: "" }); } }}>تۆمارکردن</Btn></div>
+          <div><Lbl>{tr("دراو")}</Lbl><Sel value={xf.curId} onChange={(e) => setXf({ ...xf, curId: e.target.value })}>{data.currencies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Sel></div>
+          <div><Lbl>{tr("بڕ")}</Lbl><Inp type="number" value={xf.amount} onChange={(e) => setXf({ ...xf, amount: e.target.value })} placeholder="0" /></div>
+          {!isPayout && <div><Lbl>{tr("تێبینی")}</Lbl><Inp value={xf.note} onChange={(e) => setXf({ ...xf, note: e.target.value })} /></div>}
+          <div className="flex items-end"><Btn kind="danger" className="w-full" onClick={() => { if (+xf.amount > 0) { addExpense(xf); setXf({ ...xf, amount: "", note: "" }); } }}>{tr("تۆمارکردن")}</Btn></div>
         </div>
         {isPayout && xf.investorId && (
           <div className="mt-3 bg-[color-mix(in_srgb,var(--amber)_11%,transparent)] border border-[color-mix(in_srgb,var(--amber)_26%,transparent)] rounded-xl p-3 text-sm flex items-center justify-between flex-wrap gap-2">
@@ -1953,23 +2015,23 @@ function Safes({ data, calc, cur, usr, mySafe, invUnpaid, owners, ratesReady, ad
       </Card>
 
       <Card className="p-5">
-        <SecLbl>زیادکردنی دراوی نوێ</SecLbl>
+        <SecLbl>{tr("زیادکردنی دراوی نوێ")}</SecLbl>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-          <div><Lbl>کۆد</Lbl><Inp dir="ltr" value={nc.code} onChange={(e) => setNc({ ...nc, code: e.target.value.toUpperCase() })} placeholder="EUR" /></div>
-          <div><Lbl>ناو</Lbl><Inp value={nc.name} onChange={(e) => setNc({ ...nc, name: e.target.value })} /></div>
-          <div><Lbl>هێما</Lbl><Inp value={nc.symbol} onChange={(e) => setNc({ ...nc, symbol: e.target.value })} /></div>
-          <div><Lbl>خانەی دەیمی</Lbl><Inp type="number" value={nc.dec} onChange={(e) => setNc({ ...nc, dec: +e.target.value })} /></div>
+          <div><Lbl>{tr("کۆد")}</Lbl><Inp dir="ltr" value={nc.code} onChange={(e) => setNc({ ...nc, code: e.target.value.toUpperCase() })} placeholder="EUR" /></div>
+          <div><Lbl>{tr("ناو")}</Lbl><Inp value={nc.name} onChange={(e) => setNc({ ...nc, name: e.target.value })} /></div>
+          <div><Lbl>{tr("هێما")}</Lbl><Inp value={nc.symbol} onChange={(e) => setNc({ ...nc, symbol: e.target.value })} /></div>
+          <div><Lbl>{tr("خانەی دەیمی")}</Lbl><Inp type="number" value={nc.dec} onChange={(e) => setNc({ ...nc, dec: +e.target.value })} /></div>
           <div className="col-span-2 md:col-span-5">
             <label className="flex items-start gap-2.5 cursor-pointer bg-[var(--line-soft)] border border-[var(--line)] rounded-xl p-3">
               <input type="checkbox" checked={!!nc.external} onChange={(e) => setNc({ ...nc, external: e.target.checked })}
                 className="mt-0.5 w-4 h-4 accent-[var(--jade)]" />
               <span className="text-sm text-[var(--txt)]">
-                <b>دراوی دەرەوە</b>
-                <div className="text-xs text-[var(--txt-2)] mt-0.5">لای تەرەفەکان هەڵدەگیرێت، لە قاسەی گشتیدا نامێنێتەوە (وەک یەن)</div>
+                <b>{tr("دراوی دەرەوە")}</b>
+                <div className="text-xs text-[var(--txt-2)] mt-0.5">{tr("لای تەرەفەکان هەڵدەگیرێت، لە قاسەی گشتیدا نامێنێتەوە (وەک یەن)")}</div>
               </span>
             </label>
           </div>
-          <div className="flex items-end"><Btn kind="gold" className="w-full" onClick={() => { if (nc.code && nc.name) { addCurrency(nc); setNc({ code: "", name: "", symbol: "", dec: 2 }); } }}>زیادکردن</Btn></div>
+          <div className="flex items-end"><Btn kind="gold" className="w-full" onClick={() => { if (nc.code && nc.name) { addCurrency(nc); setNc({ code: "", name: "", symbol: "", dec: 2 }); } }}>{tr("زیادکردن")}</Btn></div>
         </div>
       </Card>
     </div>
@@ -2053,7 +2115,7 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
                 {batch.n} فیش · بێ فی {fmt(batch.total_net, 0)} {batch.currency}
                 {batch.total_fee > 0 && ` · بە فی ${fmt(batch.total_gross, 0)}`}
               </div>
-              <div className="text-[11px] text-[var(--jade)] mt-1">بڕەکە خۆی دانراوە — تەنها نرخ و شوێنی دانان پڕ بکەرەوە</div>
+              <div className="text-[11px] text-[var(--jade)] mt-1">{tr("بڕەکە خۆی دانراوە — تەنها نرخ و شوێنی دانان پڕ بکەرەوە")}</div>
             </div>
             <button onClick={onClearBatch} className="p-1.5 text-[var(--jade)]/60 hover:text-[var(--jade)]"><X className="w-4 h-4" /></button>
           </div>
@@ -2081,30 +2143,30 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
               onChange={(ev) => setF({ ...f, direct: ev.target.checked, partnerId: "" })}
               className="mt-0.5 w-4 h-4 accent-[var(--jade)]" />
             <span className="text-sm text-[var(--txt)]">
-              <b>مامەڵەی ڕاستەوخۆ</b>
-              <div className="text-xs text-[var(--txt-2)] mt-0.5">پارەکە لای هیچ کەس هەڵناگیرێت — ڕاستەوخۆ دەکڕدرێت و دەفرۆشرێت، بێ عمولە</div>
+              <b>{tr("مامەڵەی ڕاستەوخۆ")}</b>
+              <div className="text-xs text-[var(--txt-2)] mt-0.5">{tr("پارەکە لای هیچ کەس هەڵناگیرێت — ڕاستەوخۆ دەکڕدرێت و دەفرۆشرێت، بێ عمولە")}</div>
             </span>
           </label>
         )}
 
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-          <div><Lbl>دراو</Lbl><Sel value={f.curId} onChange={(ev) => setF({ ...f, curId: ev.target.value, manualRate: false, quote: "" })}>{data.currencies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Sel></div>
-          <div><Lbl>بڕ</Lbl><Inp type="number" value={f.amount} onChange={(ev) => setF({ ...f, amount: ev.target.value })} placeholder="0" /></div>
-          <div><Lbl>بەرامبەر دراوی</Lbl><Sel value={f.againstId} onChange={(ev) => setF({ ...f, againstId: ev.target.value, manualRate: false, quote: "" })}>{data.currencies.filter((c) => c.id !== f.curId).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Sel></div>
+          <div><Lbl>{tr("دراو")}</Lbl><Sel value={f.curId} onChange={(ev) => setF({ ...f, curId: ev.target.value, manualRate: false, quote: "" })}>{data.currencies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Sel></div>
+          <div><Lbl>{tr("بڕ")}</Lbl><Inp type="number" value={f.amount} onChange={(ev) => setF({ ...f, amount: ev.target.value })} placeholder="0" /></div>
+          <div><Lbl>{tr("بەرامبەر دراوی")}</Lbl><Sel value={f.againstId} onChange={(ev) => setF({ ...f, againstId: ev.target.value, manualRate: false, quote: "" })}>{data.currencies.filter((c) => c.id !== f.curId).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Sel></div>
         </div>
 
         {f.direct ? (
           <div className="bg-violet-50/60 border border-violet-200 rounded-xl p-4 space-y-3">
-            <div className="text-xs font-bold text-violet-900">ڕەیتی کڕین و فرۆشتن</div>
+            <div className="text-xs font-bold text-violet-900">{tr("ڕەیتی کڕین و فرۆشتن")}</div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <div className="text-[11px] font-semibold text-[var(--jade)] mb-1">بە چەند دەیکڕم</div>
+                <div className="text-[11px] font-semibold text-[var(--jade)] mb-1">{tr("بە چەند دەیکڕم")}</div>
                 <Inp type="number" step="any" dir="ltr" value={f.buyQuote}
                   onChange={(ev) => setF({ ...f, buyQuote: ev.target.value })}
                   className="text-center font-bold text-base" placeholder={autoQuote ? String(autoQuote) : "7.20"} />
               </div>
               <div>
-                <div className="text-[11px] font-semibold text-[var(--verm)] mb-1">بە چەند دەیفرۆشم</div>
+                <div className="text-[11px] font-semibold text-[var(--verm)] mb-1">{tr("بە چەند دەیفرۆشم")}</div>
                 <Inp type="number" step="any" dir="ltr" value={f.sellQuote}
                   onChange={(ev) => setF({ ...f, sellQuote: ev.target.value })}
                   className="text-center font-bold text-base" placeholder="7.15" />
@@ -2113,20 +2175,20 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
             {bq > 0 && sq > 0 && amtR > 0 && (
               <div className="bg-[var(--card)] rounded-xl p-3 space-y-1.5">
                 <div className="flex justify-between text-sm">
-                  <span className="text-[var(--txt-2)]">دەدەم (کڕین)</span>
+                  <span className="text-[var(--txt-2)]">{tr("دەدەم (کڕین)")}</span>
                   <span className="font-bold text-[var(--verm)]" style={num}>{fmt(dBuyTotal, 0)} {cur(f.againstId).code}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-[var(--txt-2)]">وەردەگرم (فرۆشتن)</span>
+                  <span className="text-[var(--txt-2)]">{tr("وەردەگرم (فرۆشتن)")}</span>
                   <span className="font-bold text-[var(--jade)]" style={num}>{fmt(dSellTotal, 0)} {cur(f.againstId).code}</span>
                 </div>
                 <div className="flex justify-between pt-2 mt-1 border-t border-[var(--line)]">
-                  <span className="text-sm font-bold text-[var(--txt)]">خێر</span>
+                  <span className="text-sm font-bold text-[var(--txt)]">{tr("خێر")}</span>
                   <span className={`text-xl font-bold ${dProfit >= 0 ? "text-[var(--jade)]" : "text-[var(--verm)]"}`} style={num}>
                     {dProfit > 0 ? "+" : ""}{fmt(dProfit, 0)} {cur(f.againstId).code}
                   </span>
                 </div>
-                {dProfit < 0 && <div className="text-[11px] text-[var(--verm)] font-semibold">ئاگاداری: بە زەرەر دەفرۆشیت</div>}
+                {dProfit < 0 && <div className="text-[11px] text-[var(--verm)] font-semibold">{tr("ئاگاداری: بە زەرەر دەفرۆشیت")}</div>}
               </div>
             )}
             {autoQuote && (
@@ -2139,39 +2201,39 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-3 border-t border-violet-200">
               <div>
-                <Lbl>لە کێ دەیکڕم؟</Lbl>
+                <Lbl>{tr("لە کێ دەیکڕم؟")}</Lbl>
                 <Sel value={f.fromId} onChange={(ev) => setF({ ...f, fromId: ev.target.value, fromName: "" })}>
-                  <option value="">— ناوێکی ئازاد —</option>
+                  <option value="">{tr("— ناوێکی ئازاد —")}</option>
                   {customers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
                 </Sel>
-                {!f.fromId && <Inp className="mt-1.5" value={f.fromName} onChange={(ev) => setF({ ...f, fromName: ev.target.value })} placeholder="ناوی فرۆشیار..." />}
+                {!f.fromId && <Inp className="mt-1.5" value={f.fromName} onChange={(ev) => setF({ ...f, fromName: ev.target.value })} placeholder={tr("ناوی فرۆشیار...")} />}
                 <Sel className="mt-1.5" value={f.buyStatus} onChange={(ev) => setF({ ...f, buyStatus: ev.target.value })}>
-                  <option value="completed">پارەم داوە</option>
-                  <option value="pending">چاوەڕوانی پارەدان</option>
+                  <option value="completed">{tr("پارەم داوە")}</option>
+                  <option value="pending">{tr("چاوەڕوانی پارەدان")}</option>
                 </Sel>
               </div>
               <div>
-                <Lbl>بە کێ دەیفرۆشم؟</Lbl>
+                <Lbl>{tr("بە کێ دەیفرۆشم؟")}</Lbl>
                 <Sel value={f.toId} onChange={(ev) => setF({ ...f, toId: ev.target.value, toName: "" })}>
-                  <option value="">— ناوێکی ئازاد —</option>
+                  <option value="">{tr("— ناوێکی ئازاد —")}</option>
                   {customers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
                 </Sel>
-                {!f.toId && <Inp className="mt-1.5" value={f.toName} onChange={(ev) => setF({ ...f, toName: ev.target.value })} placeholder="ناوی کڕیار..." />}
+                {!f.toId && <Inp className="mt-1.5" value={f.toName} onChange={(ev) => setF({ ...f, toName: ev.target.value })} placeholder={tr("ناوی کڕیار...")} />}
                 <Sel className="mt-1.5" value={f.sellStatus} onChange={(ev) => setF({ ...f, sellStatus: ev.target.value })}>
-                  <option value="completed">پارەم وەرگرتووە</option>
-                  <option value="pending">چاوەڕوانی وەرگرتن</option>
+                  <option value="completed">{tr("پارەم وەرگرتووە")}</option>
+                  <option value="pending">{tr("چاوەڕوانی وەرگرتن")}</option>
                 </Sel>
               </div>
             </div>
             <div className="text-[11px] text-violet-800 bg-violet-100/60 rounded-lg p-2.5">
-              دوو مامەڵە تۆمار دەکرێت: کڕینێک و فرۆشتنێک · بە پارەی خۆت · خێرەکەی ١٠٠٪ هی خۆتە
+              {tr("دوو مامەڵە تۆمار دەکرێت: کڕینێک و فرۆشتنێک · بە پارەی خۆت · خێرەکەی ١٠٠٪ هی خۆتە")}
             </div>
           </div>
         ) : (
         <div className="bg-[var(--line-soft)] border border-[var(--line)] rounded-xl p-4">
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div>
-              <div className="text-xs text-[var(--txt-2)]">کۆی گشتی</div>
+              <div className="text-xs text-[var(--txt-2)]">{tr("کۆی گشتی")}</div>
               <div className="text-2xl"><Money v={total} dec={cur(f.againstId).dec} /> <span className="text-sm text-[var(--txt-2)]">{cur(f.againstId).code}</span></div>
             </div>
             <div className="text-left">
@@ -2186,7 +2248,7 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
 
           <div className="flex items-center justify-between flex-wrap gap-2 mt-3 pt-3 border-t border-[var(--line)] text-xs">
             <span className="text-[var(--txt-2)]">
-              نرخی ڕۆژ: <b style={num} className="text-[var(--txt)]">{autoQuote ? fmt(autoQuote, 3) : "دانەنراوە"}</b>
+              {tr("نرخی ڕۆژ:")} <b style={num} className="text-[var(--txt)]">{autoQuote ? fmt(autoQuote, 3) : "دانەنراوە"}</b>
               {quote > 0 && amtR > 0 && (
                 <span className="text-[var(--txt-3)] mr-2" style={num}>
                   · {fmt(amtR, 0)} ÷ {fmt(quote, 3)} = {fmt(total, 0)}
@@ -2195,7 +2257,7 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
             </span>
             {offDay && (
               <div className="flex items-center gap-2">
-                <span className="text-[var(--amber)] font-semibold">نرخێکی تایبەت بەکاردێت</span>
+                <span className="text-[var(--amber)] font-semibold">{tr("نرخێکی تایبەت بەکاردێت")}</span>
                 <button onClick={() => setF({ ...f, manualRate: false, quote: autoQuote })}
                   className="text-[var(--jade)] font-semibold underline">گەڕانەوە بۆ نرخی ڕۆژ</button>
               </div>
@@ -2204,8 +2266,8 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
 
           {(av !== null || estProfit !== null) && (
             <div className="flex gap-5 flex-wrap text-sm mt-3 pt-3 border-t border-[var(--line)]">
-              {av !== null && av > 0 && <span className="text-[var(--txt-2)]">مامناوەندی کڕین: <span style={num}>{fmt(1 / av, 3)}</span></span>}
-              {estProfit !== null && <span className="text-[var(--txt-2)]">خێری خەمڵێنراو: <Money v={estProfit} dec={cur(f.againstId).dec} pos /></span>}
+              {av !== null && av > 0 && <span className="text-[var(--txt-2)]">{tr("مامناوەندی کڕین:")} <span style={num}>{fmt(1 / av, 3)}</span></span>}
+              {estProfit !== null && <span className="text-[var(--txt-2)]">{tr("خێری خەمڵێنراو:")} <Money v={estProfit} dec={cur(f.againstId).dec} pos /></span>}
             </div>
           )}
         </div>
@@ -2216,7 +2278,7 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
             <Lbl>{f.type === "buy" ? "لە کوێ دای دەنێیت؟" : "لە کوێوە دەفرۆشیت؟"}</Lbl>
             <Sel value={f.partnerId} onChange={(ev) => setF({ ...f, partnerId: ev.target.value })}>
               {!cur(f.curId).external && <option value="">قاسەی گشتی — {fmt(calc.atMe[f.curId] || 0, 0)} {cur(f.curId).code}</option>}
-              {cur(f.curId).external && <option value="">— تەرەفێک هەڵبژێرە —</option>}
+              {cur(f.curId).external && <option value="">{tr("— تەرەفێک هەڵبژێرە —")}</option>}
               {partners.map((p) => {
                 const b = (calc.partner[p.id] || {})[f.curId] || 0;
                 return <option key={p.id} value={p.id}>{p.name} — {fmt(Math.abs(b), cur(f.curId).dec)} {cur(f.curId).code}{b < 0 ? " (قەرز)" : ""}</option>;
@@ -2224,38 +2286,38 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
             </Sel>
           </div>
           <div>
-            <Lbl>دۆخی پارە</Lbl>
+            <Lbl>{tr("دۆخی پارە")}</Lbl>
             <Sel value={f.status} onChange={(ev) => setF({ ...f, status: ev.target.value })}>
               {f.type === "buy"
-                ? <><option value="completed">پارەم داوە</option><option value="pending">چاوەڕوانی پارە (نووسینگە دەیدات)</option></>
-                : <><option value="completed">پارەم وەرگرتووە</option><option value="pending">چاوەڕوانی وەرگرتنی پارە</option></>}
+                ? <><option value="completed">{tr("پارەم داوە")}</option><option value="pending">{tr("چاوەڕوانی پارە (نووسینگە دەیدات)")}</option></>
+                : <><option value="completed">{tr("پارەم وەرگرتووە")}</option><option value="pending">{tr("چاوەڕوانی وەرگرتنی پارە")}</option></>}
             </Sel>
           </div>
         </div>
 
         {batch && (
           <div>
-            <Lbl>لایەنی بەرامبەر</Lbl>
+            <Lbl>{tr("لایەنی بەرامبەر")}</Lbl>
             <div className="flex items-center gap-2 border border-[var(--line)] bg-[var(--line-soft)] rounded-xl px-3 py-2.5">
               <Users className="w-4 h-4 text-[var(--txt-3)]" />
               <span className="text-sm font-semibold text-[var(--txt)]">{batch.customer_name || usr(batch.customer_id).name || "—"}</span>
-              <span className="text-[11px] text-[var(--txt-3)] mr-auto">لە فیشەکانەوە — ناگۆڕدرێت</span>
+              <span className="text-[11px] text-[var(--txt-3)] mr-auto">{tr("لە فیشەکانەوە — ناگۆڕدرێت")}</span>
             </div>
           </div>
         )}
         {!lockCp && !batch && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-              <Lbl>لایەنی بەرامبەر</Lbl>
+              <Lbl>{tr("لایەنی بەرامبەر")}</Lbl>
               <Sel value={f.cpMode} onChange={(ev) => setF({ ...f, cpMode: ev.target.value, cpId: "", cpName: "" })}>
-                <option value="acc">کڕیارێکی تۆمارکراو</option><option value="free">ئۆزەر (بێ ئەکاونت)</option>
+                <option value="acc">{tr("کڕیارێکی تۆمارکراو")}</option><option value="free">{tr("ئۆزەر (بێ ئەکاونت)")}</option>
               </Sel>
             </div>
             <div>
               <Lbl>{f.cpMode === "acc" ? "کڕیار هەڵبژێرە" : "ناوی کەسەکە"}</Lbl>
               {f.cpMode === "acc"
                 ? <Sel value={f.cpId} onChange={(ev) => setF({ ...f, cpId: ev.target.value })}><option value="">—</option>{customers.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</Sel>
-                : <Inp value={f.cpName} onChange={(ev) => setF({ ...f, cpName: ev.target.value })} placeholder="ناو..." />}
+                : <Inp value={f.cpName} onChange={(ev) => setF({ ...f, cpName: ev.target.value })} placeholder={tr("ناو...")} />}
             </div>
           </div>
         )}
@@ -2279,17 +2341,17 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
         )}
         {willBeNeg && (
           <div className="flex items-start gap-2 text-[var(--amber)] bg-[color-mix(in_srgb,var(--amber)_11%,transparent)] border border-[color-mix(in_srgb,var(--amber)_26%,transparent)] rounded-xl p-3 text-sm">
-            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" /> دوای ئەم فرۆشتنە باڵانسەکە دەبێتە سالب — قەرزار دەبیت و لە تێکردنی داهاتوودا ئۆتۆماتیکی دەبڕدرێتەوە.
+            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" /> {tr("دوای ئەم فرۆشتنە باڵانسەکە دەبێتە سالب — قەرزار دەبیت و لە تێکردنی داهاتوودا ئۆتۆماتیکی دەبڕدرێتەوە.")}
           </div>
         )}
 
-        <div><Lbl>تێبینی</Lbl><Inp value={f.note} onChange={(ev) => setF({ ...f, note: ev.target.value })} /></div>
+        <div><Lbl>{tr("تێبینی")}</Lbl><Inp value={f.note} onChange={(ev) => setF({ ...f, note: ev.target.value })} /></div>
 
         <div className="flex gap-2">
           <Btn kind={f.direct ? "gold" : f.type === "buy" ? "primary" : "danger"} onClick={submit} disabled={sending || busy}>
             {sending || busy ? "تۆمارکردن..." : e ? "پاشەکەوتی ئیدیت" : f.direct ? "تۆمارکردنی مامەڵەی ڕاستەوخۆ" : f.type === "buy" ? "تۆمارکردنی کڕین" : "تۆمارکردنی فرۆشتن"}
           </Btn>
-          {e && <Btn kind="ghost" onClick={onCancel}>پاشگەزبوونەوە</Btn>}
+          {e && <Btn kind="ghost" onClick={onCancel}>{tr("پاشگەزبوونەوە")}</Btn>}
         </div>
       </Card>
     </div>
@@ -2330,26 +2392,26 @@ function TxFilterBar({ data, f, setF, count, total }) {
   return (
     <Card className="p-3 md:p-4">
       <div className="flex gap-2 items-center">
-        <Inp value={f.q} onChange={(e) => setF({ ...f, q: e.target.value })} placeholder="گەڕان بە کۆد، ناو، دراو..." className="flex-1" />
+        <Inp value={f.q} onChange={(e) => setF({ ...f, q: e.target.value })} placeholder={tr("گەڕان بە کۆد، ناو، دراو...")} className="flex-1" />
         <button onClick={() => setOpen(!open)}
           className={`shrink-0 px-3 py-2.5 rounded-xl border text-sm font-semibold flex items-center gap-1.5 transition ${active ? "bg-[var(--jade)] text-white border-emerald-700" : "bg-[var(--card)] border-[var(--line)] text-[var(--txt-2)]"}`}>
-          <SlidersHorizontal className="w-4 h-4" /> فلتەر
+          <SlidersHorizontal className="w-4 h-4" /> {tr("فلتەر")}
         </button>
       </div>
       {open && (
         <div className="mt-3 pt-3 border-t border-[var(--line-soft)] space-y-3">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
-            <div><Lbl>جۆر</Lbl><Sel value={f.type} onChange={(e) => setF({ ...f, type: e.target.value })}>
-              <option value="all">هەمووی</option><option value="buy">کڕین</option><option value="sell">فرۆشتن</option></Sel></div>
-            <div><Lbl>دۆخ</Lbl><Sel value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })}>
-              <option value="all">هەمووی</option><option value="pending">چاوەڕوان</option><option value="completed">تەواوکراو</option></Sel></div>
-            <div><Lbl>دراو</Lbl><Sel value={f.cur} onChange={(e) => setF({ ...f, cur: e.target.value })}>
-              <option value="all">هەمووی</option>{data.currencies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Sel></div>
+            <div><Lbl>{tr("جۆر")}</Lbl><Sel value={f.type} onChange={(e) => setF({ ...f, type: e.target.value })}>
+              <option value="all">{tr("هەمووی")}</option><option value="buy">{tr("کڕین")}</option><option value="sell">{tr("فرۆشتن")}</option></Sel></div>
+            <div><Lbl>{tr("دۆخ")}</Lbl><Sel value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })}>
+              <option value="all">{tr("هەمووی")}</option><option value="pending">{tr("چاوەڕوان")}</option><option value="completed">{tr("تەواوکراو")}</option></Sel></div>
+            <div><Lbl>{tr("دراو")}</Lbl><Sel value={f.cur} onChange={(e) => setF({ ...f, cur: e.target.value })}>
+              <option value="all">{tr("هەمووی")}</option>{data.currencies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Sel></div>
             <div className="flex items-end"><Btn kind="ghost" className="w-full" onClick={() => setF(emptyFilter)}>سڕینەوەی فلتەر</Btn></div>
           </div>
           <div className="grid grid-cols-2 gap-2.5">
-            <div><Lbl>لە بەرواری</Lbl><Inp type="date" value={f.from} onChange={(e) => setF({ ...f, from: e.target.value })} /></div>
-            <div><Lbl>بۆ بەرواری</Lbl><Inp type="date" value={f.to} onChange={(e) => setF({ ...f, to: e.target.value })} /></div>
+            <div><Lbl>{tr("لە بەرواری")}</Lbl><Inp type="date" value={f.from} onChange={(e) => setF({ ...f, from: e.target.value })} /></div>
+            <div><Lbl>{tr("بۆ بەرواری")}</Lbl><Inp type="date" value={f.to} onChange={(e) => setF({ ...f, to: e.target.value })} /></div>
           </div>
           <div className="flex gap-1.5 flex-wrap">
             {[["ئەمڕۆ", 0], ["٧ ڕۆژ", 7], ["٣٠ ڕۆژ", 30], ["٩٠ ڕۆژ", 90]].map(([t, d]) => (
@@ -2360,7 +2422,7 @@ function TxFilterBar({ data, f, setF, count, total }) {
       )}
       {(count != null) && (
         <div className="mt-2.5 pt-2.5 border-t border-[var(--line-soft)] flex gap-4 flex-wrap text-xs text-[var(--txt-2)]">
-          <span><b style={num}>{count}</b> مامەڵە</span>
+          <span><b style={num}>{count}</b>{tr("مامەڵە")}</span>
           {total && Object.entries(total).map(([c, v]) => <span key={c}>{c}: <b style={num}>{fmt(v, 0)}</b></span>)}
         </div>
       )}
@@ -2376,9 +2438,9 @@ function TxList({ data, cur, usr, onEdit, onDel, settle, unsettle }) {
   list.forEach((t) => { total[cur(t.againstId).code || "?"] = (total[cur(t.againstId).code || "?"] || 0) + t.total; });
   return (
     <div className="space-y-3">
-      <H>مامەڵەکان</H>
+      <H>{tr("مامەڵەکان")}</H>
       <TxFilterBar data={data} f={f} setF={setF} count={list.length} total={total} />
-      {list.length === 0 ? <Card><Empty t="هیچ مامەڵەیەک نەدۆزرایەوە" /></Card> :
+      {list.length === 0 ? <Card><Empty t={tr("هیچ مامەڵەیەک نەدۆزرایەوە")} /></Card> :
         list.map((t) => <TxRow key={t.id} t={t} cur={cur} usr={usr} onEdit={onEdit} onDel={onDel} settle={settle} unsettle={unsettle} />)}
     </div>
   );
@@ -2398,7 +2460,7 @@ function TxRow({ t, cur, usr, onEdit, onDel, flip, lite, settle, unsettle }) {
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5 flex-wrap">
             {t.direct
-              ? <Pill tone="amber">ڕاستەوخۆ</Pill>
+              ? <Pill tone="amber">{tr("ڕاستەوخۆ")}</Pill>
               : <Pill tone={shown === "buy" ? "green" : "red"}>{shown === "buy" ? "کڕین" : "فرۆشتن"}</Pill>}
             <span className="font-bold text-[var(--txt)]" style={num}>{fmt(t.amount, 0)}</span>
             <span className="text-sm text-[var(--txt-2)]">{cur(t.curId).code}</span>
@@ -2412,8 +2474,8 @@ function TxRow({ t, cur, usr, onEdit, onDel, flip, lite, settle, unsettle }) {
 <span style={num}>ڕەیت {t.rate ? fmt(1 / t.rate, 3) : "—"}</span>
             {!lite && t.partnerId && <span className="text-[var(--amber)]">لای {usr(t.partnerId).name}</span>}
             {!lite && t.direct && t.buyRate && <span style={num} className="text-[var(--txt-2)]">کڕی {fmt(1 / t.buyRate, 3)}</span>}
-            {!lite && t.profit != null && <span>خێر <b className="text-[var(--jade)]" style={num}>{fmt(t.profit, 0)}</b></span>}
-            {!lite && t.edited && <span className="text-[var(--txt-3)]">(ئیدیت)</span>}
+            {!lite && t.profit != null && <span>{tr("خێر")}<b className="text-[var(--jade)]" style={num}>{fmt(t.profit, 0)}</b></span>}
+            {!lite && t.edited && <span className="text-[var(--txt-3)]">{tr("(ئیدیت)")}</span>}
             <span className="text-[var(--txt-3)]" style={num}>{new Date(t.date).toLocaleDateString("en-GB")}</span>
           </div>
           {pend && <div className="mt-2"><Pill tone="amber">{pendLbl}</Pill></div>}
@@ -2435,7 +2497,7 @@ function TxRow({ t, cur, usr, onEdit, onDel, flip, lite, settle, unsettle }) {
       {!pend && t.paidAt && unsettle && (
         <div className="mt-2.5 pt-2.5 border-t border-[var(--line-soft)]">
           <button onClick={() => unsettle(t)} className="flex items-center gap-1.5 text-xs text-[var(--txt-3)] hover:text-[var(--amber)]">
-            <RotateCcw className="w-3.5 h-3.5" /> هەڵوەشاندنەوەی پارەدان
+            <RotateCcw className="w-3.5 h-3.5" /> {tr("هەڵوەشاندنەوەی پارەدان")}
           </button>
         </div>
       )}
@@ -2503,7 +2565,7 @@ function ReceiptImg({ path, className }) {
     return () => { alive = false; };
   }, [path]);
   if (!url) return <div className={`bg-[var(--line)] animate-pulse ${className}`} />;
-  return <a href={url} target="_blank" rel="noreferrer"><img src={url} alt="فیش" className={className} /></a>;
+  return <a href={url} target="_blank" rel="noreferrer"><img src={url} alt={tr("فیش")} className={className} /></a>;
 }
 
 /* ─────────── کۆکردنەوەی فیشەکان — بە فی و بێ فی ─────────── */
@@ -2537,7 +2599,7 @@ function ReceiptTotals({ rows, data, title, compact }) {
     <>
       <Card className="p-5">
         {title && <SecLbl>{title}</SecLbl>}
-        {curs.length === 0 ? <Empty t="هیچ فیشێک نییە" /> :
+        {curs.length === 0 ? <Empty t={tr("هیچ فیشێک نییە")} /> :
           curs.map((c) => {
             const cc = (data?.currencies || []).find((x) => x.code === c);
             const mid = cc && cc.id !== "usd" ? (cc.buyRate && cc.sellRate ? (cc.buyRate + cc.sellRate) / 2 : (cc.buyRate || cc.sellRate)) : null;
@@ -2549,17 +2611,17 @@ function ReceiptTotals({ rows, data, title, compact }) {
                   {mid && <span className="text-[10px] text-[var(--txt-3)] mr-auto" style={num}>نرخی ڕۆژ {fmt(mid, 3)}</span>}
                 </div>
                 <div className="flex justify-between py-1.5 text-sm">
-                  <span className="text-[var(--txt-2)]">کۆی گشتی (بە فییەوە)</span>
+                  <span className="text-[var(--txt-2)]">{tr("کۆی گشتی (بە فییەوە)")}</span>
                   <span className="font-bold text-[var(--txt)]" style={num}>{fmt(gross[c], 0)}</span>
                 </div>
                 <div className="flex justify-between py-1.5 text-sm">
-                  <span className="text-[var(--txt-2)]">فی</span>
+                  <span className="text-[var(--txt-2)]">{tr("فی")}</span>
                   <span className={`font-bold ${fees[c] ? "text-[var(--verm)]" : "text-[var(--txt-3)]"}`} style={num}>
                     {fees[c] ? `− ${fmt(fees[c], 0)}` : "0"}
                   </span>
                 </div>
                 <div className="flex justify-between pt-3 mt-1.5 border-t-2 border-[var(--line)] items-baseline">
-                  <span className="text-sm font-bold text-[var(--txt)]">گەیشتوو (بێ فی)</span>
+                  <span className="text-sm font-bold text-[var(--txt)]">{tr("گەیشتوو (بێ فی)")}</span>
                   <div className="text-left">
                     <div className="text-2xl font-bold text-[var(--jade)]"><CountUp v={net[c]} /></div>
                     {u(net[c], c) != null && <div className="text-[11px]"><UsdHint v={u(net[c], c)} /></div>}
@@ -2576,7 +2638,7 @@ function ReceiptTotals({ rows, data, title, compact }) {
 
       {!compact && Object.keys(byPlat).length > 1 && (
         <Card className="p-5">
-          <SecLbl>بەپێی پلاتفۆرم</SecLbl>
+          <SecLbl>{tr("بەپێی پلاتفۆرم")}</SecLbl>
           {Object.entries(byPlat).sort((a, b) => b[1].n - a[1].n).map(([pl, v]) => {
             const m = platMeta(pl);
             return (
@@ -2598,7 +2660,7 @@ function ReceiptTotals({ rows, data, title, compact }) {
 
       {!compact && whoList.length > 0 && (
         <Card className="p-5">
-          <SecLbl>وردەکاری بەپێی ناو</SecLbl>
+          <SecLbl>{tr("وردەکاری بەپێی ناو")}</SecLbl>
           {whoList.map(([name, v]) => (
             <div key={name} className="flex items-center justify-between py-2.5 border-b border-[var(--line-soft)] last:border-0">
               <div>
@@ -2668,22 +2730,22 @@ function RejectedReceipts({ rows, title = "فیشە ڕەتکراوەکان" }) {
                       {r.amount ? fmt(r.net_amount ?? r.net ?? r.amount, 0) : "—"}
                     </span>
                     <span className="text-xs text-[var(--txt-3)]">{r.currency || ""}</span>
-                    <Pill tone="red">هەژمار نەکراوە</Pill>
+                    <Pill tone="red">{tr("هەژمار نەکراوە")}</Pill>
                   </div>
                   <div className="mt-1.5 text-xs text-[var(--verm)] bg-[color-mix(in_srgb,var(--verm)_10%,transparent)] rounded-lg px-2.5 py-1.5 leading-relaxed">
-                    <b>هۆکار:</b> {r.reject_reason || r.rejectReason || r.note || "نەزانراو"}
+                    <b>{tr("هۆکار:")}</b> {r.reject_reason || r.rejectReason || r.note || "نەزانراو"}
                   </div>
                   <div className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-0.5 text-[11px] text-[var(--txt-2)]">
-                    {(r.ref_no || r.refNo) && <div style={num}>ژمارەی مامەڵە: <b>{r.ref_no || r.refNo}</b></div>}
-                    {(r.tx_time || r.txTime) && <div>کاتی مامەڵە: <b>{r.tx_time || r.txTime}</b></div>}
-                    {(r.receiver) && <div>وەرگر: <b>{r.receiver}</b></div>}
-                    {(r.sender) && <div>ناردەر: <b>{r.sender}</b></div>}
-                    {(r.bank) && <div>ئەپ/بانک: <b>{r.bank}</b></div>}
-                    {r.created_at && <div style={num}>کاتی ناردن: <b>{new Date(r.created_at).toLocaleString("en-GB")}</b></div>}
+                    {(r.ref_no || r.refNo) && <div style={num}>{tr("ژمارەی مامەڵە:")} <b>{r.ref_no || r.refNo}</b></div>}
+                    {(r.tx_time || r.txTime) && <div>{tr("کاتی مامەڵە:")} <b>{r.tx_time || r.txTime}</b></div>}
+                    {(r.receiver) && <div>{tr("وەرگر:")} <b>{r.receiver}</b></div>}
+                    {(r.sender) && <div>{tr("ناردەر:")} <b>{r.sender}</b></div>}
+                    {(r.bank) && <div>{tr("ئەپ/بانک:")} <b>{r.bank}</b></div>}
+                    {r.created_at && <div style={num}>{tr("کاتی ناردن:")} <b>{new Date(r.created_at).toLocaleString("en-GB")}</b></div>}
                   </div>
                   {(r.dup_of_date || r.dupOfDate) && (
                     <div className="mt-1.5 text-[11px] text-[var(--txt-2)] bg-[var(--line-soft)] rounded-lg px-2.5 py-1.5">
-                      فیشە ڕەسەنەکە: <b style={num}>{new Date(r.dup_of_date || r.dupOfDate).toLocaleString("en-GB")}</b>
+                      {tr("فیشە ڕەسەنەکە:")} <b style={num}>{new Date(r.dup_of_date || r.dupOfDate).toLocaleString("en-GB")}</b>
                       {(r.dup_of_who || r.dupOfWho) && <> · لەلایەن <b>{r.dup_of_who || r.dupOfWho}</b></>}
                     </div>
                   )}
@@ -2702,12 +2764,12 @@ function ReceiptList({ rows, showFrom }) {
   const [view, setView] = useState("list");
   const all = rows || [];
   rows = all.filter((r) => r.counted !== false && r.status !== "dup" && r.status !== "error");
-  if (!all.length) return <Card><Empty t="هیچ فیشێک نییە" /></Card>;
-  if (!rows.length) return <Card><Empty t="هەموو فیشەکان ڕەت کراونەتەوە" /></Card>;
+  if (!all.length) return <Card><Empty t={tr("هیچ فیشێک نییە")} /></Card>;
+  if (!rows.length) return <Card><Empty t={tr("هەموو فیشەکان ڕەت کراونەتەوە")} /></Card>;
   return (
     <div className="space-y-3">
       <div className="flex gap-1 rounded-2xl p-1" style={{ background: "var(--card)", border: "1px solid var(--line)", boxShadow: "var(--shadow-1)" }}>
-        {[["list", "وردەکاری"], ["gallery", "وێنەکان"]].map(([k, lbl]) => (
+        {[["list", tr("وردەکاری")], ["gallery", tr("وێنەکان")]].map(([k, lbl]) => (
           <button key={k} onClick={() => setView(k)}
             className={`flex-1 py-2.5 rounded-lg text-sm ${view === k ? "bg-[var(--jade)] text-white font-semibold" : "text-[var(--txt-2)]"}`}>{lbl}</button>
         ))}
@@ -2722,7 +2784,7 @@ function ReceiptList({ rows, showFrom }) {
               </div>
             </div>
           ))}
-          {rows.filter((r) => r.image_path).length === 0 && <div className="col-span-full"><Empty t="هیچ وێنەیەک نییە" /></div>}
+          {rows.filter((r) => r.image_path).length === 0 && <div className="col-span-full"><Empty t={tr("هیچ وێنەیەک نییە")} /></div>}
         </div>
       ) : rows.map((r) => (
         <Card key={r.id} className={`p-3 ${r.status === "dup" ? "bg-[color-mix(in_srgb,var(--verm)_9%,transparent)] border-[color-mix(in_srgb,var(--verm)_26%,transparent)]" : ""}`}>
@@ -2736,17 +2798,17 @@ function ReceiptList({ rows, showFrom }) {
                 <span className="text-xs text-[var(--txt-2)]">{r.currency}</span>
                 {r.fee > 0 && <span className="text-[11px] text-[var(--txt-3)]" style={num}>بە فی {fmt(r.amount, 0)}</span>}
                 {r.fee_discount > 0 && <span className="text-[10px] text-[var(--jade)] font-semibold" style={num}>داشکاندنی فی {fmt(r.fee_discount, 0)}</span>}
-                {r.status === "dup" && <Pill tone="red">دووبارە</Pill>}
-                {r.status === "suspect" && <Pill tone="amber">گومان</Pill>}
-                {r.direction === "out" && <Pill tone="amber">نێردراو</Pill>}
+                {r.status === "dup" && <Pill tone="red">{tr("دووبارە")}</Pill>}
+                {r.status === "suspect" && <Pill tone="amber">{tr("گومان")}</Pill>}
+                {r.direction === "out" && <Pill tone="amber">{tr("نێردراو")}</Pill>}
                 {(r.platform || detectPlatform(r.bank)) && (() => {
                   const m = platMeta(r.platform || detectPlatform(r.bank));
                   return <span className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border ${m.cls}`}>{m.ku}</span>;
                 })()}
               </div>
               <div className="text-xs text-[var(--txt-2)] mt-0.5">
-                {showFrom && r.customer_name && <>لە <b>{r.customer_name}</b> </>}
-                {r.receiver && <>بۆ <b>{r.receiver}</b></>}
+                {showFrom && r.customer_name && <>{tr("لە")}<b>{r.customer_name}</b> </>}
+                {r.receiver && <>{tr("بۆ")}<b>{r.receiver}</b></>}
               </div>
               <div className="text-[11px] text-[var(--txt-3)] mt-0.5" style={num}>
                 ژمارە {r.ref_no || "—"} · {r.tx_time || new Date(r.created_at).toLocaleString("en-GB")}
@@ -2935,9 +2997,9 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
     <div className="space-y-4">
       {allowDirection && (
         <Card className="p-4">
-          <Lbl>جۆری فیشەکان</Lbl>
+          <Lbl>{tr("جۆری فیشەکان")}</Lbl>
           <div className="flex gap-2">
-            {[["in", "پارە هاتووە (کڕین)"], ["out", "پارە نێردراوە (فرۆشتن)"]].map(([k, t]) => (
+            {[["in", tr("پارە هاتووە (کڕین)")], ["out", tr("پارە نێردراوە (فرۆشتن)")]].map(([k, t]) => (
               <button key={k} onClick={() => setDir(k)}
                 className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition press ${dir === k ? (k === "in" ? "bg-[var(--jade)] text-white" : "bg-rose-700 text-white") : "bg-[var(--line-soft)] text-[var(--txt-2)]"}`}>{t}</button>
             ))}
@@ -2951,7 +3013,7 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
             onChange={(e) => { onFiles(e.target.files); e.target.value = ""; }} />
           <Upload className="w-8 h-8 mx-auto text-[var(--txt-3)] mb-2" />
           <div className="text-sm font-semibold text-[var(--txt)]">{working ? `خوێندنەوە... ${prog || ""}` : "کلیک بکە بۆ هەڵبژاردنی فیشەکان"}</div>
-          <div className="text-xs text-[var(--txt-3)] mt-1">دەتوانیت چەندین وێنە بەیەکەوە هەڵبژێریت</div>
+          <div className="text-xs text-[var(--txt-3)] mt-1">{tr("دەتوانیت چەندین وێنە بەیەکەوە هەڵبژێریت")}</div>
         </label>
       </Card>
 
@@ -2985,7 +3047,7 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
                     {r.fee > 0 && <span className="text-[11px] text-[var(--verm)]" style={num}>فی {fmt(r.fee, 0)} → {fmt(r.net, 0)}</span>}
                   </div>
                   <div className="text-[11px] text-[var(--txt-2)] truncate">
-                    {r.receiver && <>بۆ <b>{r.receiver}</b> · </>}
+                    {r.receiver && <>{tr("بۆ")}<b>{r.receiver}</b> · </>}
                     {r.refNo && <span style={num}>{r.refNo}</span>}
                   </div>
                   {r.note && <div className="text-[10px] text-[var(--txt-2)] mt-0.5">{r.note}</div>}
@@ -2998,17 +3060,17 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
             ))}
           </Card>
 
-          <ReceiptTotals rows={rows} data={data} title="کۆی گشتی" />
+          <ReceiptTotals rows={rows} data={data} title={tr("کۆی گشتی")} />
 
           <Btn kind="gold" className="w-full flex items-center justify-center gap-2" onClick={() => setShare(true)}>
-            <Share2 className="w-4 h-4" /> ناردنی خشتەی وردەکاری
+            <Share2 className="w-4 h-4" /> {tr("ناردنی خشتەی وردەکاری")}
           </Btn>
           {share && (
-            <ShareTable rows={rows} data={data} who={customerName} title="وردەکاری فیشەکان"
+            <ShareTable rows={rows} data={data} who={customerName} title={tr("وردەکاری فیشەکان")}
               flash={flash} onClose={() => setShare(false)} />
           )}
 
-          <RejectedReceipts rows={rows} title="ئەمانە هەژمار ناکرێن" />
+          <RejectedReceipts rows={rows} title={tr("ئەمانە هەژمار ناکرێن")} />
 
           <Btn className="w-full" onClick={send} disabled={sending || (!good.length && !bad.length)}>
             {sending ? "ناردن..." : `ناردنی ${good.length} فیش${bad.length ? ` (+ ${bad.length} ڕەتکراو)` : ""}`}
@@ -3036,11 +3098,11 @@ function ReceiptsHub({ data, usr, batches, reloadBatches, flash, onMakeTx, profi
   const inbox = (batches || []).filter((b) => (tab === "inbox" ? b.status === "new" : b.status !== "new"));
 
   const waN = (batches || []).filter((b) => b.status === "new" && b.source === "whatsapp").length;
-  const TABS = [["inbox", `ئینباکس (${newN})`], ["done", "بەستراوەکان"], ["loc", "لای کێ"], ["add", "ناردنی فیش"], ["wa", "واتساپ"]];
+  const TABS = [["inbox", `ئینباکس (${newN})`], ["done", tr("بەستراوەکان")], ["loc", tr("لای کێ")], ["add", tr("ناردنی فیش")], ["wa", tr("واتساپ")]];
 
   return (
     <div className="space-y-4">
-      <H sub="فیشەکانی کڕیاران و هاوبەشان — پشکنین، کۆکردنەوە، و بەستنەوە بە مامەڵەوە">فیشەکان</H>
+      <H sub="فیشەکانی کڕیاران و هاوبەشان — پشکنین، کۆکردنەوە، و بەستنەوە بە مامەڵەوە">{tr("فیشەکان")}</H>
 
       <div className="flex gap-1 rounded-2xl p-1 overflow-x-auto" style={{ background: "var(--card)", border: "1px solid var(--line)", boxShadow: "var(--shadow-1)" }}>
         {TABS.map(([k, t]) => (
@@ -3061,11 +3123,11 @@ function ReceiptsHub({ data, usr, batches, reloadBatches, flash, onMakeTx, profi
                   <div className="flex gap-1.5 mt-1.5 flex-wrap">
                     {b.source === "whatsapp" && (
                       <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-600 text-white flex items-center gap-1">
-                        <MessageCircle className="w-3 h-3" /> واتساپ
+                        <MessageCircle className="w-3 h-3" /> {tr("واتساپ")}
                       </span>
                     )}
                     <Pill tone={b.direction === "out" ? "amber" : "green"}>{DIR_KU[b.direction || "in"]}</Pill>
-                    {b.status === "new" ? <Pill tone="green">نوێ</Pill> : <Pill tone="slate">بەستراوە</Pill>}
+                    {b.status === "new" ? <Pill tone="green">{tr("نوێ")}</Pill> : <Pill tone="slate">{tr("بەستراوە")}</Pill>}
                     {(b.rejected_n || b.dup_n) > 0 && <Pill tone="red">{b.rejected_n || b.dup_n} ڕەتکراو</Pill>}
                     {b.partner_id && <Pill tone="amber">لای {usr(b.partner_id).name}</Pill>}
                   </div>
@@ -3085,7 +3147,7 @@ function ReceiptsHub({ data, usr, batches, reloadBatches, flash, onMakeTx, profi
         <>
           <div className="flex gap-1 rounded-2xl p-1 overflow-x-auto" style={{ background: "var(--card)", border: "1px solid var(--line)", boxShadow: "var(--shadow-1)" }}>
             <button onClick={() => setLoc("me")}
-              className={`whitespace-nowrap px-4 py-2 rounded-lg text-sm ${loc === "me" ? "bg-slate-900 text-white font-semibold" : "text-[var(--txt-2)]"}`}>لای خۆم</button>
+              className={`whitespace-nowrap px-4 py-2 rounded-lg text-sm ${loc === "me" ? "bg-slate-900 text-white font-semibold" : "text-[var(--txt-2)]"}`}>{tr("لای خۆم")}</button>
             {partners.map((p) => (
               <button key={p.id} onClick={() => setLoc(p.id)}
                 className={`whitespace-nowrap px-4 py-2 rounded-lg text-sm ${loc === p.id ? "bg-[var(--jade)] text-white font-semibold" : "text-[var(--txt-2)]"}`}>{p.name}</button>
@@ -3100,12 +3162,12 @@ function ReceiptsHub({ data, usr, batches, reloadBatches, flash, onMakeTx, profi
 
       {tab === "add" && (
         <Card className="p-5">
-          <SecLbl>ناردنی فیش لە جیاتی کەسێک</SecLbl>
+          <SecLbl>{tr("ناردنی فیش لە جیاتی کەسێک")}</SecLbl>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
             <div>
-              <Lbl>کڕیار</Lbl>
+              <Lbl>{tr("کڕیار")}</Lbl>
               <Sel value={addFor} onChange={(e) => setAddFor(e.target.value)}>
-                <option value="">هەڵبژێرە...</option>
+                <option value="">{tr("هەڵبژێرە...")}</option>
                 {customers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
               </Sel>
             </div>
@@ -3259,13 +3321,13 @@ function ShareTable({ rows, data, who, title, onClose, flash }) {
     <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-end md:items-center justify-center md:p-6" onClick={onClose}>
       <div className="w-full max-w-lg rounded-t-[28px] md:rounded-[24px] max-h-[90vh] overflow-y-auto sheet-in" style={{ background: "var(--card)", boxShadow: "var(--shadow-3)" }} onClick={(e) => e.stopPropagation()}>
         <div className="sticky top-0 z-10 px-5 py-4 flex items-center justify-between backdrop-blur-xl" style={{ background: "color-mix(in srgb, var(--card) 92%, transparent)", borderBottom: "1px solid var(--line-soft)" }}>
-          <div className="font-bold text-[var(--txt)]">ناردنی خشتە</div>
+          <div className="font-bold text-[var(--txt)]">{tr("ناردنی خشتە")}</div>
           <button onClick={onClose} className="p-1.5 text-[var(--txt-3)]"><X className="w-5 h-5" /></button>
         </div>
 
         <div className="p-5 space-y-4">
           <div className="flex gap-1 bg-[var(--line-soft)] rounded-xl p-1">
-            {[["full", "خشتەی تەواو"], ["short", "تەنها کۆکان"], ["rej", "تەنها ڕەتکراوەکان"]].map(([k, t]) => (
+            {[["full", tr("خشتەی تەواو")], ["short", tr("تەنها کۆکان")], ["rej", tr("تەنها ڕەتکراوەکان")]].map(([k, t]) => (
               <button key={k} onClick={() => setMode(k)}
                 className={`flex-1 py-2 rounded-lg text-sm ${mode === k ? "bg-[var(--card)] text-[var(--jade)] font-bold shadow-sm" : "text-[var(--txt-2)]"}`}>{t}</button>
             ))}
@@ -3284,10 +3346,10 @@ function ShareTable({ rows, data, who, title, onClose, flash }) {
                     <thead>
                       <tr className="text-[var(--txt-3)] border-b border-[var(--line)]">
                         <th className="text-right py-1.5 w-6">#</th>
-                        <th className="text-right">بڕ</th>
-                        <th className="text-right">فی</th>
-                        <th className="text-right">گەیشتوو</th>
-                        <th className="text-right">وەرگر</th>
+                        <th className="text-right">{tr("بڕ")}</th>
+                        <th className="text-right">{tr("فی")}</th>
+                        <th className="text-right">{tr("گەیشتوو")}</th>
+                        <th className="text-right">{tr("وەرگر")}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -3307,7 +3369,7 @@ function ShareTable({ rows, data, who, title, onClose, flash }) {
 
               {platList.length > 1 && (
                 <div>
-                  <div className="text-[10px] font-bold text-[var(--txt-3)] uppercase mb-1">بەپێی پلاتفۆرم</div>
+                  <div className="text-[10px] font-bold text-[var(--txt-3)] uppercase mb-1">{tr("بەپێی پلاتفۆرم")}</div>
                   {platList.map(([pl, v]) => (
                     <div key={pl} className="flex justify-between text-xs py-1">
                       <span className="text-[var(--txt-2)]">{platMeta(pl).ku} <span className="text-[var(--txt-3)]">({v.n})</span></span>
@@ -3318,7 +3380,7 @@ function ShareTable({ rows, data, who, title, onClose, flash }) {
               )}
 
               <div>
-                <div className="text-[10px] font-bold text-[var(--txt-3)] uppercase mb-1">بەپێی وەرگر</div>
+                <div className="text-[10px] font-bold text-[var(--txt-3)] uppercase mb-1">{tr("بەپێی وەرگر")}</div>
                 {whoList.map(([n, v]) => (
                   <div key={n} className="flex justify-between text-xs py-1">
                     <span className="text-[var(--txt-2)]">{n} <span className="text-[var(--txt-3)]">({v.n})</span></span>
@@ -3330,10 +3392,10 @@ function ShareTable({ rows, data, who, title, onClose, flash }) {
               {curs.map((c) => (
                 <div key={c} className="bg-[var(--line-soft)] rounded-xl p-3">
                   <div className="text-[10px] font-bold text-[var(--txt-3)] mb-1">{c}</div>
-                  <div className="flex justify-between text-xs py-0.5"><span className="text-[var(--txt-2)]">بە فییەوە</span><span style={num}>{fmt(gross[c], 0)}</span></div>
-                  {fees[c] > 0 && <div className="flex justify-between text-xs py-0.5"><span className="text-[var(--txt-2)]">فی</span><span style={num} className="text-[var(--verm)]">−{fmt(fees[c], 0)}</span></div>}
+                  <div className="flex justify-between text-xs py-0.5"><span className="text-[var(--txt-2)]">{tr("بە فییەوە")}</span><span style={num}>{fmt(gross[c], 0)}</span></div>
+                  {fees[c] > 0 && <div className="flex justify-between text-xs py-0.5"><span className="text-[var(--txt-2)]">{tr("فی")}</span><span style={num} className="text-[var(--verm)]">−{fmt(fees[c], 0)}</span></div>}
                   <div className="flex justify-between pt-1.5 mt-1 border-t border-[var(--line)] items-baseline">
-                    <span className="text-xs font-bold">گەیشتوو</span>
+                    <span className="text-xs font-bold">{tr("گەیشتوو")}</span>
                     <div className="text-left">
                       <div className="text-lg font-bold text-[var(--jade)]" style={num}>{fmt(net[c], 0)}</div>
                       {u(net[c], c) != null && <div className="text-[10px] text-[var(--txt-3)]" style={num}>≈ {fmt(u(net[c], c), 0)} $</div>}
@@ -3384,16 +3446,16 @@ function ShareTable({ rows, data, who, title, onClose, flash }) {
 
           {/* ناردن */}
           <div>
-            <Lbl>ژمارەی واتساپ (ئارەزوومەندانە)</Lbl>
+            <Lbl>{tr("ژمارەی واتساپ (ئارەزوومەندانە)")}</Lbl>
             <Inp type="tel" dir="ltr" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="07701234567" />
-            <div className="text-[11px] text-[var(--txt-3)] mt-1">بەتاڵی بهێڵەرەوە بۆ هەڵبژاردنی کەس لە واتساپ</div>
+            <div className="text-[11px] text-[var(--txt-3)] mt-1">{tr("بەتاڵی بهێڵەرەوە بۆ هەڵبژاردنی کەس لە واتساپ")}</div>
           </div>
 
           <div className="flex gap-2">
             <Btn className="flex-1 flex items-center justify-center gap-1.5" onClick={sendWa}>
-              <MessageCircle className="w-4 h-4" /> ناردن بە واتساپ
+              <MessageCircle className="w-4 h-4" /> {tr("ناردن بە واتساپ")}
             </Btn>
-            <Btn kind="ghost" className="flex-1" onClick={copy}>کۆپیکردن</Btn>
+            <Btn kind="ghost" className="flex-1" onClick={copy}>{tr("کۆپیکردن")}</Btn>
           </div>
         </div>
       </div>
@@ -3411,49 +3473,49 @@ function WhatsAppInfo({ batches, waN }) {
       <Card className="p-5 bg-emerald-600 border-[var(--jade)] text-white">
         <div className="flex items-center gap-2.5 mb-3">
           <MessageCircle className="w-6 h-6" />
-          <div className="font-bold">وەرگرتنی فیش لە واتساپەوە</div>
+          <div className="font-bold">{tr("وەرگرتنی فیش لە واتساپەوە")}</div>
         </div>
         <div className="grid grid-cols-3 gap-3">
           <div>
-            <div className="text-[11px] text-emerald-100">کۆی کۆمەڵەکان</div>
+            <div className="text-[11px] text-emerald-100">{tr("کۆی کۆمەڵەکان")}</div>
             <div className="text-2xl font-bold" style={num}>{wa.length}</div>
           </div>
           <div>
-            <div className="text-[11px] text-emerald-100">ئەمڕۆ</div>
+            <div className="text-[11px] text-emerald-100">{tr("ئەمڕۆ")}</div>
             <div className="text-2xl font-bold" style={num}>{todayN}</div>
           </div>
           <div>
-            <div className="text-[11px] text-emerald-100">چاوەڕوان</div>
+            <div className="text-[11px] text-emerald-100">{tr("چاوەڕوان")}</div>
             <div className="text-2xl font-bold" style={num}>{waN}</div>
           </div>
         </div>
       </Card>
 
       <Card className="p-5">
-        <SecLbl>چۆن کار دەکات</SecLbl>
+        <SecLbl>{tr("چۆن کار دەکات")}</SecLbl>
         <div className="space-y-3 text-sm text-[var(--txt-2)] leading-relaxed">
           <div className="flex gap-3">
-            <span className="w-6 h-6 rounded-full bg-[var(--jade)] text-white flex items-center justify-center text-xs font-bold shrink-0">١</span>
-            <span>کڕیار فیشەکان لە واتساپەوە <b>فۆرۆرد</b> دەکات بۆ ژمارەی کۆمپانیاکە</span>
+            <span className="w-6 h-6 rounded-full bg-[var(--jade)] text-white flex items-center justify-center text-xs font-bold shrink-0">{tr("١")}</span>
+            <span>{tr("کڕیار فیشەکان لە واتساپەوە")} <b>فۆرۆرد</b> {tr("دەکات بۆ ژمارەی کۆمپانیاکە")}</span>
           </div>
           <div className="flex gap-3">
-            <span className="w-6 h-6 rounded-full bg-[var(--jade)] text-white flex items-center justify-center text-xs font-bold shrink-0">٢</span>
-            <span>سیستەمەکە خۆکار وێنەکان دەخوێنێتەوە و دووبارەکان دەدۆزێتەوە</span>
+            <span className="w-6 h-6 rounded-full bg-[var(--jade)] text-white flex items-center justify-center text-xs font-bold shrink-0">{tr("٢")}</span>
+            <span>{tr("سیستەمەکە خۆکار وێنەکان دەخوێنێتەوە و دووبارەکان دەدۆزێتەوە")}</span>
           </div>
           <div className="flex gap-3">
-            <span className="w-6 h-6 rounded-full bg-[var(--jade)] text-white flex items-center justify-center text-xs font-bold shrink-0">٣</span>
-            <span>کۆمەڵەیەکی نوێ لە <b>ئینباکس</b> دەردەکەوێت — تۆ تەنها مامەڵەکەی لێ درووست دەکەیت</span>
+            <span className="w-6 h-6 rounded-full bg-[var(--jade)] text-white flex items-center justify-center text-xs font-bold shrink-0">{tr("٣")}</span>
+            <span>{tr("کۆمەڵەیەکی نوێ لە")} <b>{tr("ئینباکس")}</b> {tr("دەردەکەوێت — تۆ تەنها مامەڵەکەی لێ درووست دەکەیت")}</span>
           </div>
         </div>
         <div className="mt-4 pt-4 border-t border-[var(--line-soft)] text-xs text-[var(--txt-2)] leading-relaxed">
-          <b className="text-[var(--txt)]">تێبینی:</b> فیشەکان کە بە ماوەی ١٥ خولەک بنێردرێن، هەموویان لە یەک کۆمەڵەدا کۆدەبنەوە.
+          <b className="text-[var(--txt)]">{tr("تێبینی:")}</b> فیشەکان کە بە ماوەی ١٥ خولەک بنێردرێن، هەموویان لە یەک کۆمەڵەدا کۆدەبنەوە.
           کڕیارەکە بە ژمارەی مۆبایلەکەی دەناسرێتەوە — بۆیە دڵنیابە ژمارەکەی لە ئەکاونتەکەیدا دروستە.
         </div>
       </Card>
 
       <Card className="p-4 bg-[var(--line-soft)]">
         <div className="text-xs text-[var(--txt-2)] leading-relaxed">
-          <b className="text-[var(--txt)]">نرخ:</b> وەرگرتنی نامە لە کڕیارەکانەوە <b>بەخۆڕاییە</b> — تەنها ئەگەر تۆ وەڵامیان بدەیتەوە پارەی لەسەرە.
+          <b className="text-[var(--txt)]">{tr("نرخ:")}</b> وەرگرتنی نامە لە کڕیارەکانەوە <b>{tr("بەخۆڕاییە")}</b> — تەنها ئەگەر تۆ وەڵامیان بدەیتەوە پارەی لەسەرە.
           سیستەمەکە بە شێوەی بنەڕەت وەڵام نادات.
         </div>
       </Card>
@@ -3498,7 +3560,7 @@ function LocationReceipts({ partnerId, data, title, flash }) {
     })();
   }, [partnerId]);
 
-  if (recs === null) return <Card><Empty t="بارکردن..." /></Card>;
+  if (recs === null) return <Card><Empty t={tr("بارکردن...")} /></Card>;
 
   const t = new Date(), iso = (d) => d.toISOString().slice(0, 10);
   const w = new Date(t); w.setDate(w.getDate() - w.getDay());
@@ -3512,13 +3574,13 @@ function LocationReceipts({ partnerId, data, title, flash }) {
     <div className="space-y-3">
       {title && <div className="font-bold text-[var(--txt)]">{title}</div>}
       <div className="flex gap-1 rounded-2xl p-1 overflow-x-auto" style={{ background: "var(--card)", border: "1px solid var(--line)", boxShadow: "var(--shadow-1)" }}>
-        {[["day", "ئەمڕۆ"], ["week", "هەفتە"], ["month", "مانگ"], ["year", "ساڵ"], ["all", "هەمووی"]].map(([k, lbl]) => (
+        {[["day", tr("ئەمڕۆ")], ["week", tr("هەفتە")], ["month", tr("مانگ")], ["year", tr("ساڵ")], ["all", tr("هەمووی")]].map(([k, lbl]) => (
           <button key={k} onClick={() => setMode(k)}
             className={`flex-1 whitespace-nowrap py-2.5 px-3 rounded-lg text-sm ${mode === k ? "bg-[var(--jade)] text-white font-semibold" : "text-[var(--txt-2)]"}`}>{lbl}</button>
         ))}
       </div>
       <div className="flex gap-1 rounded-2xl p-1" style={{ background: "var(--card)", border: "1px solid var(--line)", boxShadow: "var(--shadow-1)" }}>
-        {[["all", "هەمووی"], ["in", "هاتوو"], ["out", "نێردراو"]].map(([k, lbl]) => (
+        {[["all", tr("هەمووی")], ["in", tr("هاتوو")], ["out", tr("نێردراو")]].map(([k, lbl]) => (
           <button key={k} onClick={() => setDir(k)}
             className={`flex-1 py-2 rounded-lg text-sm ${dir === k ? "bg-slate-900 text-white font-semibold" : "text-[var(--txt-2)]"}`}>{lbl}</button>
         ))}
@@ -3526,7 +3588,7 @@ function LocationReceipts({ partnerId, data, title, flash }) {
       <ReceiptTotals rows={list} data={data} />
 
       <Btn kind="gold" className="w-full flex items-center justify-center gap-2" onClick={() => setShare(true)}>
-        <Share2 className="w-4 h-4" /> ناردنی خشتەی وردەکاری
+        <Share2 className="w-4 h-4" /> {tr("ناردنی خشتەی وردەکاری")}
       </Btn>
       {share && (
         <ShareTable rows={list} data={data} title={title || "فیشەکان"}
@@ -3559,7 +3621,7 @@ function BatchDetail({ id, back, usr, data, onMakeTx, flash, reloadBatches }) {
   };
   useEffect(() => { load(); }, [id]);
 
-  if (!b || !recs) return <Card><Empty t="بارکردن..." /></Card>;
+  if (!b || !recs) return <Card><Empty t={tr("بارکردن...")} /></Card>;
   const good = recs.filter((r) => r.counted !== false && r.status !== "dup" && r.status !== "error");
   const isOut = (b.direction || "in") === "out";
 
@@ -3592,7 +3654,7 @@ function BatchDetail({ id, back, usr, data, onMakeTx, flash, reloadBatches }) {
 
   return (
     <div className="space-y-4">
-      <Back onClick={back} t="گەڕانەوە" />
+      <Back onClick={back} t={tr("گەڕانەوە")} />
       <div className="flex items-start justify-between flex-wrap gap-2">
         <div>
           <h2 className="text-xl font-bold text-[var(--txt)]">{b.customer_name || (b.partner_id ? usr(b.partner_id).name : "—")}</h2>
@@ -3600,18 +3662,18 @@ function BatchDetail({ id, back, usr, data, onMakeTx, flash, reloadBatches }) {
         </div>
         <div className="flex gap-1.5 flex-wrap">
           <Pill tone={isOut ? "amber" : "green"}>{DIR_KU[b.direction || "in"]}</Pill>
-          {b.status === "new" ? <Pill tone="green">چاوەڕوانی مامەڵە</Pill> : <Pill tone="slate">بەستراوە</Pill>}
+          {b.status === "new" ? <Pill tone="green">{tr("چاوەڕوانی مامەڵە")}</Pill> : <Pill tone="slate">{tr("بەستراوە")}</Pill>}
         </div>
       </div>
 
       <ReceiptTotals rows={recs} data={data} />
 
       <Btn kind="gold" className="w-full flex items-center justify-center gap-2" onClick={() => setShare(true)}>
-        <Share2 className="w-4 h-4" /> ناردنی خشتەی وردەکاری
+        <Share2 className="w-4 h-4" /> {tr("ناردنی خشتەی وردەکاری")}
       </Btn>
       {share && (
         <ShareTable rows={recs} data={data} who={b.customer_name || (b.partner_id ? usr(b.partner_id).name : "")}
-          title="وردەکاری فیشەکان" flash={flash} onClose={() => setShare(false)} />
+          title={tr("وردەکاری فیشەکان")} flash={flash} onClose={() => setShare(false)} />
       )}
 
       <RejectedReceipts rows={recs} />
@@ -3620,7 +3682,7 @@ function BatchDetail({ id, back, usr, data, onMakeTx, flash, reloadBatches }) {
       {b.status === "new" && partners.length > 0 && (
         <Card className="p-5">
           <div className="flex items-center justify-between mb-3">
-            <SecLbl>دابەشکردن بەسەر هاوبەشەکان</SecLbl>
+            <SecLbl>{tr("دابەشکردن بەسەر هاوبەشەکان")}</SecLbl>
             <button onClick={() => setSplit(!split)} className="text-xs font-semibold text-[var(--jade)]">
               {split ? "داخستن" : "دەستکاری"}
             </button>
@@ -3628,7 +3690,7 @@ function BatchDetail({ id, back, usr, data, onMakeTx, flash, reloadBatches }) {
 
           {!split ? (
             groupKeys.length <= 1 && !groupKeys[0] ? (
-              <div className="text-sm text-[var(--txt-2)]">هەموو فیشەکان یەکجار وەردەگیرێن — گەر دەتەوێت بەسەر چەند هاوبەشێک دابەشیان بکەیت، «دەستکاری» لێبدە</div>
+              <div className="text-sm text-[var(--txt-2)]">{tr("هەموو فیشەکان یەکجار وەردەگیرێن — گەر دەتەوێت بەسەر چەند هاوبەشێک دابەشیان بکەیت، «دەستکاری» لێبدە")}</div>
             ) : (
               <div className="space-y-2">
                 {groupKeys.map((k) => {
@@ -3654,8 +3716,8 @@ function BatchDetail({ id, back, usr, data, onMakeTx, flash, reloadBatches }) {
           ) : (
             <div className="space-y-2.5">
               <div className="flex gap-1.5 flex-wrap mb-2">
-                <span className="text-xs text-[var(--txt-2)] self-center">هەمووی بۆ:</span>
-                <button onClick={() => setAll("")} className="px-2.5 py-1 rounded-lg bg-[var(--line-soft)] hover:bg-[var(--line)] text-xs font-semibold">قاسەی گشتی</button>
+                <span className="text-xs text-[var(--txt-2)] self-center">{tr("هەمووی بۆ:")}</span>
+                <button onClick={() => setAll("")} className="px-2.5 py-1 rounded-lg bg-[var(--line-soft)] hover:bg-[var(--line)] text-xs font-semibold">{tr("قاسەی گشتی")}</button>
                 {partners.map((p) => (
                   <button key={p.id} onClick={() => setAll(p.id)} className="px-2.5 py-1 rounded-lg bg-[var(--line-soft)] hover:bg-[var(--jade)] hover:text-white text-xs font-semibold transition">{p.name}</button>
                 ))}
@@ -3670,7 +3732,7 @@ function BatchDetail({ id, back, usr, data, onMakeTx, flash, reloadBatches }) {
                   </div>
                   <select value={pick[r.id] ?? ""} onChange={(e) => setPick({ ...pick, [r.id]: e.target.value })}
                     className="border border-[var(--line)] rounded-lg px-2 py-1.5 text-xs bg-[var(--card)] shrink-0 max-w-[130px]">
-                    <option value="">قاسەی گشتی</option>
+                    <option value="">{tr("قاسەی گشتی")}</option>
                     {partners.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                   </select>
                 </div>
@@ -3686,7 +3748,7 @@ function BatchDetail({ id, back, usr, data, onMakeTx, flash, reloadBatches }) {
           {groupKeys.length > 1 ? (
             <>
               <div className="text-sm text-[var(--txt)] mb-3">
-                فیشەکان بەسەر <b>{groupKeys.length}</b> شوێندا دابەش کراون — بۆ هەریەکەیان مامەڵەیەکی جیا درووست بکە:
+                {tr("فیشەکان بەسەر")} <b>{groupKeys.length}</b> {tr("شوێندا دابەش کراون — بۆ هەریەکەیان مامەڵەیەکی جیا درووست بکە:")}
               </div>
               <div className="space-y-2">
                 {groupKeys.map((k) => {
@@ -3707,8 +3769,8 @@ function BatchDetail({ id, back, usr, data, onMakeTx, flash, reloadBatches }) {
             <>
               <div className={`text-sm mb-3 ${isOut ? "text-[var(--verm)]" : "text-[var(--jade)]"}`}>
                 {isOut
-                  ? <>ئەم بڕە نێردراوە: <b style={num}>{fmt(b.total_net, 0)} {b.currency}</b> — فرۆشتنێکی لێ درووست بکە</>
-                  : <>ئەم کەسە ئەم بڕەی ناردووە: <b style={num}>{fmt(b.total_net, 0)} {b.currency}</b> — کڕینێکی لێ درووست بکە</>}
+                  ? <>ئەم بڕە نێردراوە: <b style={num}>{fmt(b.total_net, 0)} {b.currency}</b> {tr("— فرۆشتنێکی لێ درووست بکە")}</>
+                  : <>ئەم کەسە ئەم بڕەی ناردووە: <b style={num}>{fmt(b.total_net, 0)} {b.currency}</b> {tr("— کڕینێکی لێ درووست بکە")}</>}
               </div>
               <Btn kind={isOut ? "danger" : "primary"} className="w-full"
                 onClick={() => onMakeTx({ ...b, partner_id: groupKeys[0] || null })}>
@@ -3721,7 +3783,7 @@ function BatchDetail({ id, back, usr, data, onMakeTx, flash, reloadBatches }) {
       {b.tx_id && (
         <Card className="p-4">
           <div className="text-sm text-[var(--txt-2)]">
-            بەستراوە بە مامەڵەی <b style={num}>#{(data.txs.find((t) => t.id === b.tx_id) || {}).code || "—"}</b>
+            {tr("بەستراوە بە مامەڵەی")} <b style={num}>#{(data.txs.find((t) => t.id === b.tx_id) || {}).code || "—"}</b>
           </div>
         </Card>
       )}
@@ -3742,7 +3804,7 @@ function ReceiptArchive({ customerId, data, flash }) {
       .then(({ data: d }) => setRecs(d || []));
   }, [customerId]);
 
-  if (!recs) return <Card><Empty t="بارکردن..." /></Card>;
+  if (!recs) return <Card><Empty t={tr("بارکردن...")} /></Card>;
   const list = recs.filter((r) => {
     const d = (r.tx_date || r.created_at || "").slice(0, 10);
     if (from && d < from) return false;
@@ -3754,18 +3816,18 @@ function ReceiptArchive({ customerId, data, flash }) {
   return (
     <div className="space-y-3">
       <Card className="p-4 space-y-2.5">
-        <Inp value={q} onChange={(e) => setQ(e.target.value)} placeholder="گەڕان بە ناو، ژمارەی مامەڵە، بڕ..." />
+        <Inp value={q} onChange={(e) => setQ(e.target.value)} placeholder={tr("گەڕان بە ناو، ژمارەی مامەڵە، بڕ...")} />
         <div className="grid grid-cols-2 gap-2.5">
-          <div><Lbl>لە</Lbl><Inp type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
-          <div><Lbl>بۆ</Lbl><Inp type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
+          <div><Lbl>{tr("لە")}</Lbl><Inp type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
+          <div><Lbl>{tr("بۆ")}</Lbl><Inp type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
         </div>
       </Card>
       <ReceiptTotals rows={list} data={data} compact />
 
       <Btn kind="gold" className="w-full flex items-center justify-center gap-2" onClick={() => setShare(true)}>
-        <Share2 className="w-4 h-4" /> ناردنی خشتەی وردەکاری
+        <Share2 className="w-4 h-4" /> {tr("ناردنی خشتەی وردەکاری")}
       </Btn>
-      {share && <ShareTable rows={list} data={data} title="ئەرشیفی فیشەکان" flash={flash} onClose={() => setShare(false)} />}
+      {share && <ShareTable rows={list} data={data} title={tr("ئەرشیفی فیشەکان")} flash={flash} onClose={() => setShare(false)} />}
 
       <RejectedReceipts rows={list} />
       <ReceiptList rows={list} />
@@ -3820,12 +3882,12 @@ function Statement({ u, txs, c, cur, onClose, flash }) {
     <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-end md:items-center justify-center md:p-6" onClick={onClose}>
       <div className="w-full max-w-lg rounded-t-[28px] md:rounded-[24px] max-h-[88vh] overflow-y-auto sheet-in" style={{ background: "var(--card)", boxShadow: "var(--shadow-3)" }} onClick={(ev) => ev.stopPropagation()}>
         <div className="sticky top-0 z-10 px-5 py-4 flex items-center justify-between backdrop-blur-xl" style={{ background: "color-mix(in srgb, var(--card) 92%, transparent)", borderBottom: "1px solid var(--line-soft)" }}>
-          <div className="font-bold text-[var(--txt)]">کەشف حساب</div>
+          <div className="font-bold text-[var(--txt)]">{tr("کەشف حساب")}</div>
           <button onClick={onClose} className="p-1.5 text-[var(--txt-3)]"><X className="w-5 h-5" /></button>
         </div>
         <div className="p-5">
           <div className="flex gap-1 bg-[var(--line-soft)] rounded-xl p-1 mb-4">
-            {[["all", "هەمووی"], ["buy", "کڕینی ئەو"], ["sell", "فرۆشتنی ئەو"]].map(([k, t]) => (
+            {[["all", tr("هەمووی")], ["buy", tr("کڕینی ئەو")], ["sell", tr("فرۆشتنی ئەو")]].map(([k, t]) => (
               <button key={k} onClick={() => setMode(k)}
                 className={`flex-1 py-2 rounded-lg text-sm ${mode === k ? "bg-[var(--card)] text-[var(--jade)] font-bold shadow-sm" : "text-[var(--txt-2)]"}`}>{t}</button>
             ))}
@@ -3839,27 +3901,27 @@ function Statement({ u, txs, c, cur, onClose, flash }) {
               {(sums.sold || sums.bought) && (
                 <div className="grid grid-cols-2 gap-2 mb-3">
                   <div className="bg-[color-mix(in_srgb,var(--jade)_10%,transparent)] rounded-xl p-2.5">
-                    <div className="text-[10px] text-[var(--jade)]/70">فرۆشتوویەتی بە من</div>
+                    <div className="text-[10px] text-[var(--jade)]/70">{tr("فرۆشتوویەتی بە من")}</div>
                     {sums.sold ? Object.entries(sums.sold).map(([cid, v]) => (
                       <div key={cid} className="text-sm font-bold text-[var(--jade)]" style={num}>{fmt(v, 0)} {cur(cid).code}</div>
                     )) : <div className="text-sm text-[var(--txt-3)]">—</div>}
                   </div>
                   <div className="bg-[color-mix(in_srgb,var(--verm)_10%,transparent)] rounded-xl p-2.5">
-                    <div className="text-[10px] text-[var(--verm)]/70">کڕیویەتی لە من</div>
+                    <div className="text-[10px] text-[var(--verm)]/70">{tr("کڕیویەتی لە من")}</div>
                     {sums.bought ? Object.entries(sums.bought).map(([cid, v]) => (
                       <div key={cid} className="text-sm font-bold text-[var(--verm)]" style={num}>{fmt(v, 0)} {cur(cid).code}</div>
                     )) : <div className="text-sm text-[var(--txt-3)]">—</div>}
                   </div>
                 </div>
               )}
-              <div className="text-[11px] font-bold text-[var(--txt-3)] uppercase mb-2">دوا مامەڵەکان</div>
-              {last.length === 0 ? <div className="text-sm text-[var(--txt-3)]">هیچ</div> :
+              <div className="text-[11px] font-bold text-[var(--txt-3)] uppercase mb-2">{tr("دوا مامەڵەکان")}</div>
+              {last.length === 0 ? <div className="text-sm text-[var(--txt-3)]">{tr("هیچ")}</div> :
                 last.map((t) => (
                   <div key={t.id} className="flex justify-between items-center py-1.5 border-b border-[var(--line-soft)] last:border-0 text-sm">
                     <span className="text-[var(--txt-2)]">
                       <span style={num} className="text-xs text-[var(--txt-3)]">{new Date(t.date).toLocaleDateString("en-GB")}</span>
                       <span className="mr-2">{t.type === "buy" ? "فرۆشتنت" : "کڕینت"}</span>
-                      {t.status === "pending" && <Pill tone="amber">چاوەڕوان</Pill>}
+                      {t.status === "pending" && <Pill tone="amber">{tr("چاوەڕوان")}</Pill>}
                     </span>
                     <span className="font-bold" style={num}>{fmt(t.amount, 0)} {cur(t.curId).code}</span>
                   </div>
@@ -3867,23 +3929,23 @@ function Statement({ u, txs, c, cur, onClose, flash }) {
               <div className="mt-3 pt-3 border-t border-[var(--line)] space-y-1.5">
                 {owe.map(([cid, v]) => (
                   <div key={cid} className="flex justify-between text-sm">
-                    <span className="text-[var(--txt-2)]">پارەی تۆ لای من</span>
+                    <span className="text-[var(--txt-2)]">{tr("پارەی تۆ لای من")}</span>
                     <span className="font-bold text-[var(--verm)]" style={num}>{fmt(v, 0)} {cur(cid).code}</span>
                   </div>
                 ))}
                 {due.map(([cid, v]) => (
                   <div key={cid} className="flex justify-between text-sm">
-                    <span className="text-[var(--txt-2)]">قەرزی تۆ</span>
+                    <span className="text-[var(--txt-2)]">{tr("قەرزی تۆ")}</span>
                     <span className="font-bold text-[var(--jade)]" style={num}>{fmt(v, 0)} {cur(cid).code}</span>
                   </div>
                 ))}
-                {!owe.length && !due.length && <div className="text-sm text-[var(--jade)] font-semibold text-center py-1">حیساب پاکە ✅</div>}
+                {!owe.length && !due.length && <div className="text-sm text-[var(--jade)] font-semibold text-center py-1">{tr("حیساب پاکە ✅")}</div>}
               </div>
             </div>
           </div>
           <div className="flex gap-2 mt-4">
-            <Btn className="flex-1" onClick={share}>ناردن</Btn>
-            <Btn kind="ghost" className="flex-1" onClick={copy}>کۆپیکردن</Btn>
+            <Btn className="flex-1" onClick={share}>{tr("ناردن")}</Btn>
+            <Btn kind="ghost" className="flex-1" onClick={copy}>{tr("کۆپیکردن")}</Btn>
           </div>
         </div>
       </div>
@@ -3894,8 +3956,8 @@ function Statement({ u, txs, c, cur, onClose, flash }) {
 /* ══════════════════ ناوەندی بەکارهێنەران ══════════════════ */
 function PeopleHub(p) {
   const [tab, setTab] = useState("customers");
-  const TABS = [["customers", "کڕیاران", Users], ["partners", "هاوبەشان", Handshake], ["investors", "وەبەرهێنەران", TrendingUp],
-    ["money", "پارە و گواستنەوە", ArrowLeftRight], ["office", "نووسینگە", Building2], ["manage", "بەڕێوەبردن", UserCog]];
+  const TABS = [["customers", "کڕیاران", Users], ["partners", "هاوبەشان", Handshake], ["investors", tr("وەبەرهێنەران"), TrendingUp],
+    ["money", "پارە و گواستنەوە", ArrowLeftRight], ["office", tr("نووسینگە"), Building2], ["manage", "بەڕێوەبردن", UserCog]];
   return (
     <div className="space-y-4">
       <div className="flex gap-1 flex-wrap bg-[var(--card)] border border-[var(--line)] rounded-2xl p-1.5">
@@ -3921,7 +3983,7 @@ function AccountMoney({ data, cur, usr, accountMove, accountTransfer, flash }) {
   const [mode, setMode] = useState("move");
   const all = data.users.filter((u) => u.role !== "admin" && !u.deleted);
   const [mv, setMv] = useState({ dir: "in", userId: "", curId: data.currencies[0]?.id, amount: "", note: "" });
-  const [tr, setTr] = useState({ fromId: "", toId: "", curId: data.currencies[0]?.id, amount: "", note: "" });
+  const [xfer, setXfer] = useState({ fromId: "", toId: "", curId: data.currencies[0]?.id, amount: "", note: "" });
   const [hist, setHist] = useState(null);
 
   const load = async () => {
@@ -3944,7 +4006,7 @@ function AccountMoney({ data, cur, usr, accountMove, accountTransfer, flash }) {
   return (
     <div className="space-y-4">
       <div className="flex gap-1 rounded-2xl p-1" style={{ background: "var(--card)", border: "1px solid var(--line)", boxShadow: "var(--shadow-1)" }}>
-        {[["move", "پارە دانان / دەرهێنان"], ["transfer", "گواستنەوەی حساب"]].map(([k, t]) => (
+        {[["move", tr("پارە دانان / دەرهێنان")], ["transfer", tr("گواستنەوەی حساب")]].map(([k, t]) => (
           <button key={k} onClick={() => setMode(k)}
             className={`flex-1 py-2.5 rounded-lg text-sm ${mode === k ? "bg-[var(--jade)] text-white font-semibold" : "text-[var(--txt-2)] hover:bg-[var(--line-soft)]"}`}>{t}</button>
         ))}
@@ -3952,27 +4014,27 @@ function AccountMoney({ data, cur, usr, accountMove, accountTransfer, flash }) {
 
       {mode === "move" ? (
         <Card className="p-5">
-          <SecLbl>پارە داخڵکردن یان دەرهێنان لە حسابی هەر کەسێک</SecLbl>
+          <SecLbl>{tr("پارە داخڵکردن یان دەرهێنان لە حسابی هەر کەسێک")}</SecLbl>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
             <div>
-              <Lbl>جۆر</Lbl>
+              <Lbl>{tr("جۆر")}</Lbl>
               <Sel value={mv.dir} onChange={(e) => setMv({ ...mv, dir: e.target.value })}>
-                <option value="in">وەرگرتن (پارە دێت)</option>
-                <option value="out">دان (پارە دەڕوات)</option>
+                <option value="in">{tr("وەرگرتن (پارە دێت)")}</option>
+                <option value="out">{tr("دان (پارە دەڕوات)")}</option>
               </Sel>
             </div>
             <div>
-              <Lbl>کەس</Lbl>
+              <Lbl>{tr("کەس")}</Lbl>
               <Sel value={mv.userId} onChange={(e) => setMv({ ...mv, userId: e.target.value })}>
-                <option value="">هەڵبژێرە...</option>
+                <option value="">{tr("هەڵبژێرە...")}</option>
                 {all.map((u) => <option key={u.id} value={u.id}>{roleLbl(u)}</option>)}
               </Sel>
             </div>
-            <div><Lbl>دراو</Lbl><Sel value={mv.curId} onChange={(e) => setMv({ ...mv, curId: e.target.value })}>{data.currencies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Sel></div>
-            <div><Lbl>بڕ</Lbl><Inp type="number" value={mv.amount} onChange={(e) => setMv({ ...mv, amount: e.target.value })} placeholder="0" /></div>
-            <div><Lbl>تێبینی</Lbl><Inp value={mv.note} onChange={(e) => setMv({ ...mv, note: e.target.value })} /></div>
+            <div><Lbl>{tr("دراو")}</Lbl><Sel value={mv.curId} onChange={(e) => setMv({ ...mv, curId: e.target.value })}>{data.currencies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Sel></div>
+            <div><Lbl>{tr("بڕ")}</Lbl><Inp type="number" value={mv.amount} onChange={(e) => setMv({ ...mv, amount: e.target.value })} placeholder="0" /></div>
+            <div><Lbl>{tr("تێبینی")}</Lbl><Inp value={mv.note} onChange={(e) => setMv({ ...mv, note: e.target.value })} /></div>
             <div className="flex items-end">
-              <Btn className="w-full" onClick={() => { accountMove(mv); setMv({ ...mv, amount: "", note: "" }); setTimeout(load, 1200); }}>تۆمارکردن</Btn>
+              <Btn className="w-full" onClick={() => { accountMove(mv); setMv({ ...mv, amount: "", note: "" }); setTimeout(load, 1200); }}>{tr("تۆمارکردن")}</Btn>
             </div>
           </div>
           {mv.userId && (
@@ -3986,49 +4048,49 @@ function AccountMoney({ data, cur, usr, accountMove, accountTransfer, flash }) {
         </Card>
       ) : (
         <Card className="p-5">
-          <SecLbl>گواستنەوەی پارە لە حسابێکەوە بۆ حسابێکی تر</SecLbl>
+          <SecLbl>{tr("گواستنەوەی پارە لە حسابێکەوە بۆ حسابێکی تر")}</SecLbl>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
             <div>
-              <Lbl>لە حسابی</Lbl>
-              <Sel value={tr.fromId} onChange={(e) => setTr({ ...tr, fromId: e.target.value })}>
-                <option value="">هەڵبژێرە...</option>
+              <Lbl>{tr("لە حسابی")}</Lbl>
+              <Sel value={xfer.fromId} onChange={(e) => setXfer({ ...xfer, fromId: e.target.value })}>
+                <option value="">{tr("هەڵبژێرە...")}</option>
                 {all.map((u) => <option key={u.id} value={u.id}>{roleLbl(u)}</option>)}
               </Sel>
             </div>
             <div>
-              <Lbl>بۆ حسابی</Lbl>
-              <Sel value={tr.toId} onChange={(e) => setTr({ ...tr, toId: e.target.value })}>
-                <option value="">هەڵبژێرە...</option>
-                {all.filter((u) => u.id !== tr.fromId).map((u) => <option key={u.id} value={u.id}>{roleLbl(u)}</option>)}
+              <Lbl>{tr("بۆ حسابی")}</Lbl>
+              <Sel value={xfer.toId} onChange={(e) => setXfer({ ...xfer, toId: e.target.value })}>
+                <option value="">{tr("هەڵبژێرە...")}</option>
+                {all.filter((u) => u.id !== xfer.fromId).map((u) => <option key={u.id} value={u.id}>{roleLbl(u)}</option>)}
               </Sel>
             </div>
-            <div><Lbl>دراو</Lbl><Sel value={tr.curId} onChange={(e) => setTr({ ...tr, curId: e.target.value })}>{data.currencies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Sel></div>
-            <div><Lbl>بڕ</Lbl><Inp type="number" value={tr.amount} onChange={(e) => setTr({ ...tr, amount: e.target.value })} placeholder="0" /></div>
-            <div><Lbl>تێبینی</Lbl><Inp value={tr.note} onChange={(e) => setTr({ ...tr, note: e.target.value })} /></div>
+            <div><Lbl>{tr("دراو")}</Lbl><Sel value={xfer.curId} onChange={(e) => setXfer({ ...xfer, curId: e.target.value })}>{data.currencies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Sel></div>
+            <div><Lbl>{tr("بڕ")}</Lbl><Inp type="number" value={xfer.amount} onChange={(e) => setXfer({ ...xfer, amount: e.target.value })} placeholder="0" /></div>
+            <div><Lbl>{tr("تێبینی")}</Lbl><Inp value={xfer.note} onChange={(e) => setXfer({ ...xfer, note: e.target.value })} /></div>
             <div className="flex items-end">
-              <Btn kind="gold" className="w-full" onClick={() => { accountTransfer(tr); setTr({ ...tr, amount: "", note: "" }); setTimeout(load, 1200); }}>گواستنەوە</Btn>
+              <Btn kind="gold" className="w-full" onClick={() => { accountTransfer(xfer); setXfer({ ...xfer, amount: "", note: "" }); setTimeout(load, 1200); }}>{tr("گواستنەوە")}</Btn>
             </div>
           </div>
-          {tr.fromId && tr.toId && +tr.amount > 0 && (
+          {xfer.fromId && xfer.toId && +xfer.amount > 0 && (
             <div className="text-sm text-[var(--txt)] mt-3 bg-[color-mix(in_srgb,var(--jade)_10%,transparent)] border border-[color-mix(in_srgb,var(--jade)_26%,transparent)] rounded-xl p-3">
-              <b style={num}>{fmt(+tr.amount, 0)} {cur(tr.curId).code}</b> لە <b>{usr(tr.fromId).name}</b> دەبڕدرێت و دەچێتە حسابی <b>{usr(tr.toId).name}</b>
+              <b style={num}>{fmt(+xfer.amount, 0)} {cur(xfer.curId).code}</b>{tr("لە")}<b>{usr(xfer.fromId).name}</b> {tr("دەبڕدرێت و دەچێتە حسابی")} <b>{usr(xfer.toId).name}</b>
             </div>
           )}
         </Card>
       )}
 
-      <SecLbl>مێژوو</SecLbl>
-      {hist === null ? <Card><Empty t="بارکردن..." /></Card> :
+      <SecLbl>{tr("مێژوو")}</SecLbl>
+      {hist === null ? <Card><Empty t={tr("بارکردن...")} /></Card> :
         hist.length === 0 ? (
           <Card className="p-4">
             <div className="text-sm text-[var(--amber)] bg-[color-mix(in_srgb,var(--amber)_11%,transparent)] border border-[color-mix(in_srgb,var(--amber)_26%,transparent)] rounded-xl p-3">
-              هێشتا هیچ نییە — ئایا خشتەکانی <b>account_moves</b> و <b>account_transfers</b> درووست کراون؟
+              {tr("هێشتا هیچ نییە — ئایا خشتەکانی")} <b>account_moves</b> {tr("و")} <b>account_transfers</b> {tr("درووست کراون؟")}
             </div>
           </Card>
         ) : hist.map((h) => (
           <Card key={h.id} className="p-3.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
             {h.kind === "transfer"
-              ? <><Pill tone="amber">گواستنەوە</Pill>
+              ? <><Pill tone="amber">{tr("گواستنەوە")}</Pill>
                   <span className="text-[var(--txt)]">{h.from_name} <span className="text-[var(--txt-3)]">←</span> {h.to_name}</span></>
               : <><Pill tone={h.dir === "in" ? "green" : "red"}>{h.dir === "in" ? "وەرگرتن" : "دان"}</Pill>
                   <span className="text-[var(--txt)]">{h.user_name}</span></>}
@@ -4050,7 +4112,7 @@ function AccountSafe({ userId, data, calc, cur, usr, accountMove, accountTransfe
   const moves = (data.acct || []).filter((e) => e.userId === userId).slice().reverse();
   const all = data.users.filter((x) => x.role !== "admin" && !x.deleted && x.id !== userId);
   const [mv, setMv] = useState({ dir: "in", curId: data.currencies[0]?.id, amount: "", note: "" });
-  const [tr, setTr] = useState({ toId: "", curId: data.currencies[0]?.id, amount: "", note: "" });
+  const [xfer, setXfer] = useState({ toId: "", curId: data.currencies[0]?.id, amount: "", note: "" });
   const [q, setQ] = useState("");
 
   const rows = data.currencies.map((c) => ({ c, v: bal[c.id] || 0 })).filter((r) => r.v || !compact);
@@ -4059,7 +4121,7 @@ function AccountSafe({ userId, data, calc, cur, usr, accountMove, accountTransfe
   return (
     <div className="space-y-4">
       <div className="flex gap-1 rounded-2xl p-1 overflow-x-auto" style={{ background: "var(--card)", border: "1px solid var(--line)", boxShadow: "var(--shadow-1)" }}>
-        {(readOnly ? [["balance", "قاسە"], ["hist", "مێژوو"]] : [["balance", "قاسە"], ["move", "زیادکردن / کەمکردن"], ["transfer", "گواستنەوە"], ["hist", "مێژوو"]]).map(([k, t]) => (
+        {(readOnly ? [["balance", tr("قاسە")], ["hist", tr("مێژوو")]] : [["balance", tr("قاسە")], ["move", tr("زیادکردن / کەمکردن")], ["transfer", tr("گواستنەوە")], ["hist", tr("مێژوو")]]).map(([k, t]) => (
           <button key={k} onClick={() => setTab(k)}
             style={tab === k ? { background: "linear-gradient(180deg, var(--jade-lt), var(--jade))", color: "#fff", boxShadow: "0 2px 8px -2px rgba(14,122,107,.4)" } : { color: "var(--txt-2)" }}
             className={`flex-1 whitespace-nowrap px-3 py-2.5 rounded-xl text-sm transition-all press ${tab === k ? "font-bold" : "font-medium hover:bg-[var(--line-soft)]"}`}>{t}</button>
@@ -4069,8 +4131,8 @@ function AccountSafe({ userId, data, calc, cur, usr, accountMove, accountTransfe
       {tab === "balance" && (
         <div className="grid md:grid-cols-2 gap-4">
           <Card className="p-5">
-            <SecLbl>قاسە — پارەی لای من</SecLbl>
-            {rows.length === 0 ? <Empty t="بەتاڵە" /> :
+            <SecLbl>{tr("قاسە — پارەی لای من")}</SecLbl>
+            {rows.length === 0 ? <Empty t={tr("بەتاڵە")} /> :
               rows.map(({ c, v }) => (
                 <div key={c.id} className="flex items-center justify-between py-2.5 border-b border-[var(--line-soft)] last:border-0">
                   <span className="text-sm text-[var(--txt-2)] flex items-center gap-2"><CurBadge c={c} size="sm" /> {c.name}</span>
@@ -4083,8 +4145,8 @@ function AccountSafe({ userId, data, calc, cur, usr, accountMove, accountTransfe
           </Card>
 
           <Card className="p-5">
-            <SecLbl>قەرز — حیسابی مامەڵەکان</SecLbl>
-            {data.currencies.filter((c) => debt[c.id]).length === 0 ? <Empty t="حیساب پاکە" /> :
+            <SecLbl>{tr("قەرز — حیسابی مامەڵەکان")}</SecLbl>
+            {data.currencies.filter((c) => debt[c.id]).length === 0 ? <Empty t={tr("حیساب پاکە")} /> :
               data.currencies.filter((c) => debt[c.id]).map((c) => {
                 const v = debt[c.id];
                 return (
@@ -4099,31 +4161,31 @@ function AccountSafe({ userId, data, calc, cur, usr, accountMove, accountTransfe
                   </div>
                 );
               })}
-            <div className="text-[11px] text-[var(--txt-3)] mt-3">لە مامەڵە چاوەڕوانەکانەوە</div>
+            <div className="text-[11px] text-[var(--txt-3)] mt-3">{tr("لە مامەڵە چاوەڕوانەکانەوە")}</div>
           </Card>
         </div>
       )}
 
       {tab === "move" && !readOnly && (
         <Card className="p-5">
-          <SecLbl>زیادکردن یان کەمکردنی پارە</SecLbl>
+          <SecLbl>{tr("زیادکردن یان کەمکردنی پارە")}</SecLbl>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Lbl>جۆر</Lbl>
+              <Lbl>{tr("جۆر")}</Lbl>
               <Sel value={mv.dir} onChange={(e) => setMv({ ...mv, dir: e.target.value })}>
-                <option value="in">زیادکردن (پارە دەخەمە سەری)</option>
-                <option value="out">کەمکردن (پارە دەردەهێنم)</option>
+                <option value="in">{tr("زیادکردن (پارە دەخەمە سەری)")}</option>
+                <option value="out">{tr("کەمکردن (پارە دەردەهێنم)")}</option>
               </Sel>
             </div>
-            <div><Lbl>دراو</Lbl><Sel value={mv.curId} onChange={(e) => setMv({ ...mv, curId: e.target.value })}>{data.currencies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Sel></div>
-            <div><Lbl>بڕ</Lbl><Inp type="number" value={mv.amount} onChange={(e) => setMv({ ...mv, amount: e.target.value })} placeholder="0" /></div>
-            <div><Lbl>تێبینی</Lbl><Inp value={mv.note} onChange={(e) => setMv({ ...mv, note: e.target.value })} /></div>
+            <div><Lbl>{tr("دراو")}</Lbl><Sel value={mv.curId} onChange={(e) => setMv({ ...mv, curId: e.target.value })}>{data.currencies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Sel></div>
+            <div><Lbl>{tr("بڕ")}</Lbl><Inp type="number" value={mv.amount} onChange={(e) => setMv({ ...mv, amount: e.target.value })} placeholder="0" /></div>
+            <div><Lbl>{tr("تێبینی")}</Lbl><Inp value={mv.note} onChange={(e) => setMv({ ...mv, note: e.target.value })} /></div>
           </div>
           {+mv.amount > 0 && (
             <div className="mt-3 text-sm bg-[var(--line-soft)] border border-[var(--line)] rounded-xl p-3">
-              باڵانسی ئێستا <b style={num}>{fmt(bal[mv.curId] || 0, 0)}</b>
+              {tr("باڵانسی ئێستا")} <b style={num}>{fmt(bal[mv.curId] || 0, 0)}</b>
               <span className="mx-2 text-[var(--txt-3)]">←</span>
-              دوای ئەمە <b style={num} className={mv.dir === "in" ? "text-[var(--jade)]" : "text-[var(--verm)]"}>
+              {tr("دوای ئەمە")} <b style={num} className={mv.dir === "in" ? "text-[var(--jade)]" : "text-[var(--verm)]"}>
                 {fmt((bal[mv.curId] || 0) + (mv.dir === "in" ? 1 : -1) * Math.round(+mv.amount), 0)}
               </b> {cur(mv.curId).code}
             </div>
@@ -4136,35 +4198,35 @@ function AccountSafe({ userId, data, calc, cur, usr, accountMove, accountTransfe
 
       {tab === "transfer" && !readOnly && (
         <Card className="p-5">
-          <SecLbl>گواستنەوە بۆ حسابێکی تر</SecLbl>
-          <Inp value={q} onChange={(e) => setQ(e.target.value)} placeholder="گەڕان بە ناو یان ژمارە..." className="mb-2" />
+          <SecLbl>{tr("گواستنەوە بۆ حسابێکی تر")}</SecLbl>
+          <Inp value={q} onChange={(e) => setQ(e.target.value)} placeholder={tr("گەڕان بە ناو یان ژمارە...")} className="mb-2" />
           <div className="max-h-40 overflow-y-auto mb-3 space-y-1">
             {all.filter((x) => !q || (x.name || "").includes(q) || (x.phone || "").includes(q)).map((x) => (
-              <button key={x.id} onClick={() => setTr({ ...tr, toId: x.id })}
-                className={`w-full text-right px-3 py-2 rounded-lg transition ${tr.toId === x.id ? "bg-[var(--jade)] text-white" : "hover:bg-[var(--line-soft)]"}`}>
+              <button key={x.id} onClick={() => setXfer({ ...xfer, toId: x.id })}
+                className={`w-full text-right px-3 py-2 rounded-lg transition ${xfer.toId === x.id ? "bg-[var(--jade)] text-white" : "hover:bg-[var(--line-soft)]"}`}>
                 <div className="text-sm font-semibold">{x.name}</div>
-                <div className={`text-[10px] ${tr.toId === x.id ? "text-emerald-100" : "text-[var(--txt-3)]"}`}>{ROLE_KU[x.role]}</div>
+                <div className={`text-[10px] ${xfer.toId === x.id ? "text-emerald-100" : "text-[var(--txt-3)]"}`}>{ROLE_KU[x.role]}</div>
               </button>
             ))}
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div><Lbl>دراو</Lbl><Sel value={tr.curId} onChange={(e) => setTr({ ...tr, curId: e.target.value })}>{data.currencies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Sel></div>
-            <div><Lbl>بڕ</Lbl><Inp type="number" value={tr.amount} onChange={(e) => setTr({ ...tr, amount: e.target.value })} placeholder="0" /></div>
+            <div><Lbl>{tr("دراو")}</Lbl><Sel value={xfer.curId} onChange={(e) => setXfer({ ...xfer, curId: e.target.value })}>{data.currencies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Sel></div>
+            <div><Lbl>{tr("بڕ")}</Lbl><Inp type="number" value={xfer.amount} onChange={(e) => setXfer({ ...xfer, amount: e.target.value })} placeholder="0" /></div>
           </div>
-          {tr.toId && +tr.amount > 0 && (
+          {xfer.toId && +xfer.amount > 0 && (
             <div className="mt-3 text-sm bg-[color-mix(in_srgb,var(--jade)_10%,transparent)] border border-[color-mix(in_srgb,var(--jade)_26%,transparent)] rounded-xl p-3">
-              <b style={num}>{fmt(+tr.amount, 0)} {cur(tr.curId).code}</b> لە <b>{u.name}</b> دەبڕدرێت و دەچێتە حسابی <b>{usr(tr.toId).name}</b>
+              <b style={num}>{fmt(+xfer.amount, 0)} {cur(xfer.curId).code}</b>{tr("لە")}<b>{u.name}</b> {tr("دەبڕدرێت و دەچێتە حسابی")} <b>{usr(xfer.toId).name}</b>
             </div>
           )}
-          <Btn kind="gold" className="w-full mt-4" disabled={!tr.toId}
-            onClick={() => { accountTransfer({ ...tr, fromId: userId }); setTr({ ...tr, amount: "", note: "" }); }}>
+          <Btn kind="gold" className="w-full mt-4" disabled={!xfer.toId}
+            onClick={() => { accountTransfer({ ...xfer, fromId: userId }); setXfer({ ...xfer, amount: "", note: "" }); }}>
             گواستنەوە
           </Btn>
         </Card>
       )}
 
       {tab === "hist" && (
-        moves.length === 0 ? <Card><Empty t="هیچ جوڵانەوەیەک نییە" /></Card> :
+        moves.length === 0 ? <Card><Empty t={tr("هیچ جوڵانەوەیەک نییە")} /></Card> :
           moves.map((e) => (
             <Card key={e.id} className="p-3.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
               <Pill tone={e.amount >= 0 ? "green" : "red"}>{TY[e.type] || e.type}</Pill>
@@ -4186,8 +4248,8 @@ function Customers({ data, calc, cur, usr, detailId, setDetailId, onSave, settle
   const list = customers.filter((u) => !q || (u.name || "").includes(q) || (u.phone || "").includes(q));
   return (
     <div className="space-y-3">
-      <Inp value={q} onChange={(e) => setQ(e.target.value)} placeholder="گەڕان بە ناو یان ژمارە..." />
-      {list.length === 0 ? <Card><Empty t="هیچ کڕیارێک نەدۆزرایەوە" /></Card> :
+      <Inp value={q} onChange={(e) => setQ(e.target.value)} placeholder={tr("گەڕان بە ناو یان ژمارە...")} />
+      {list.length === 0 ? <Card><Empty t={tr("هیچ کڕیارێک نەدۆزرایەوە")} /></Card> :
         list.map((u) => {
           const cnt = data.txs.filter((t) => !t.deleted && t.cpId === u.id).length;
           const c = calc.cust[u.id];
@@ -4201,9 +4263,9 @@ function Customers({ data, calc, cur, usr, detailId, setDetailId, onSave, settle
                   <div className="text-xs text-[var(--txt-2)] mt-0.5">{cnt} مامەڵە{u.phone && <span style={num}> · {u.phone}</span>}</div>
                 </div>
                 <div className="text-left shrink-0 space-y-0.5">
-                  {owe.map(([cid, v]) => <div key={cid} className="text-xs text-[var(--verm)] font-semibold">قەرزاری ئەوم: <span style={num}>{fmt(v, 0)}</span> {cur(cid).code}</div>)}
-                  {due.map(([cid, v]) => <div key={cid} className="text-xs text-[var(--jade)] font-semibold">لای ئەو: <span style={num}>{fmt(v, 0)}</span> {cur(cid).code}</div>)}
-                  {!owe.length && !due.length && <div className="text-xs text-[var(--txt-3)]">حیساب پاکە</div>}
+                  {owe.map(([cid, v]) => <div key={cid} className="text-xs text-[var(--verm)] font-semibold">{tr("قەرزاری ئەوم:")} <span style={num}>{fmt(v, 0)}</span> {cur(cid).code}</div>)}
+                  {due.map(([cid, v]) => <div key={cid} className="text-xs text-[var(--jade)] font-semibold">{tr("لای ئەو:")} <span style={num}>{fmt(v, 0)}</span> {cur(cid).code}</div>)}
+                  {!owe.length && !due.length && <div className="text-xs text-[var(--txt-3)]">{tr("حیساب پاکە")}</div>}
                 </div>
               </div>
             </Card>
@@ -4223,22 +4285,22 @@ function CustomerDetail({ id, back, data, calc, cur, usr, onSave, settle, flash,
   const [tab, setTab] = useState("history");
   return (
     <div className="space-y-4">
-      <Back onClick={back} t="گەڕانەوە بۆ لیستی کڕیاران" />
+      <Back onClick={back} t={tr("گەڕانەوە بۆ لیستی کڕیاران")} />
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h2 className="text-xl font-bold text-[var(--txt)]">{u.name}</h2>
           {(u.phone || u.address) && <div className="text-xs text-[var(--txt-2)] mt-0.5">{u.phone && <span style={num}>{u.phone}</span>}{u.phone && u.address && " · "}{u.address}</div>}
         </div>
         <Btn kind="ghost" className="flex items-center gap-1.5" onClick={() => setStmt(true)}>
-          <Share2 className="w-4 h-4" /> کەشف حساب
+          <Share2 className="w-4 h-4" /> {tr("کەشف حساب")}
         </Btn>
       </div>
       {stmt && <Statement u={u} txs={base} c={c} cur={cur} flash={flash} onClose={() => setStmt(false)} />}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <Card className="p-4 border-[color-mix(in_srgb,var(--verm)_26%,transparent)] bg-[color-mix(in_srgb,var(--verm)_8%,transparent)]">
-          <div className="text-xs font-semibold text-[var(--verm)] mb-2">پارەی ئەو لای من (قەرزاری ئەوم)</div>
-          {Object.entries(c.owe).filter(([, v]) => v).length === 0 ? <div className="text-sm text-[var(--txt-3)]">هیچ</div> :
+          <div className="text-xs font-semibold text-[var(--verm)] mb-2">{tr("پارەی ئەو لای من (قەرزاری ئەوم)")}</div>
+          {Object.entries(c.owe).filter(([, v]) => v).length === 0 ? <div className="text-sm text-[var(--txt-3)]">{tr("هیچ")}</div> :
             Object.entries(c.owe).filter(([, v]) => v).map(([cid, v]) => (
               <div key={cid} className="flex justify-between py-1">
                 <span className="text-sm text-[var(--txt-2)]">{cur(cid).name}</span>
@@ -4247,8 +4309,8 @@ function CustomerDetail({ id, back, data, calc, cur, usr, onSave, settle, flash,
             ))}
         </Card>
         <Card className="p-4 border-[color-mix(in_srgb,var(--jade)_26%,transparent)] bg-[color-mix(in_srgb,var(--jade)_8%,transparent)]">
-          <div className="text-xs font-semibold text-[var(--jade)] mb-2">پارەی من لای ئەو (قەرزارمە)</div>
-          {Object.entries(c.due).filter(([, v]) => v).length === 0 ? <div className="text-sm text-[var(--txt-3)]">هیچ</div> :
+          <div className="text-xs font-semibold text-[var(--jade)] mb-2">{tr("پارەی من لای ئەو (قەرزارمە)")}</div>
+          {Object.entries(c.due).filter(([, v]) => v).length === 0 ? <div className="text-sm text-[var(--txt-3)]">{tr("هیچ")}</div> :
             Object.entries(c.due).filter(([, v]) => v).map(([cid, v]) => (
               <div key={cid} className="flex justify-between py-1">
                 <span className="text-sm text-[var(--txt-2)]">{cur(cid).name}</span>
@@ -4259,7 +4321,7 @@ function CustomerDetail({ id, back, data, calc, cur, usr, onSave, settle, flash,
       </div>
 
       <div className="flex gap-1 rounded-2xl p-1 overflow-x-auto" style={{ background: "var(--card)", border: "1px solid var(--line)", boxShadow: "var(--shadow-1)" }}>
-        {[["history", "مێژوو"], ["safe", "قاسە"], ["receipts", "فیشەکان"], ["new", "مامەڵەی نوێ"]].map(([k, t]) => (
+        {[["history", tr("مێژوو")], ["safe", tr("قاسە")], ["receipts", tr("فیشەکان")], ["new", tr("مامەڵەی نوێ")]].map(([k, t]) => (
           <button key={k} onClick={() => setTab(k)}
             className={`flex-1 px-4 py-2.5 rounded-lg text-sm ${tab === k ? "bg-[var(--jade)] text-white font-semibold" : "text-[var(--txt-2)] hover:bg-[var(--line-soft)]"}`}>{t}</button>
         ))}
@@ -4271,7 +4333,7 @@ function CustomerDetail({ id, back, data, calc, cur, usr, onSave, settle, flash,
       ) : (
         <>
           <TxFilterBar data={data} f={f} setF={setF} count={list.length} />
-          {list.length === 0 ? <Card><Empty t="هیچ مامەڵەیەک نەدۆزرایەوە" /></Card> :
+          {list.length === 0 ? <Card><Empty t={tr("هیچ مامەڵەیەک نەدۆزرایەوە")} /></Card> :
             list.map((t) => <TxRow key={t.id} t={t} cur={cur} usr={usr} settle={settle} />)}
         </>
       )}
@@ -4286,26 +4348,26 @@ function Partners({ data, calc, cur, usr, transfer, detailId, setDetailId }) {
   const [sel, setSel] = useState(null);
   if (sel) {
     const p = partners.find((x) => x.id === sel);
-    return <div className="space-y-4"><Back onClick={() => setSel(null)} t="گەڕانەوە بۆ لیستی هاوبەشان" /><PartnerDetail p={p} data={data} calc={calc} cur={cur} /></div>;
+    return <div className="space-y-4"><Back onClick={() => setSel(null)} t={tr("گەڕانەوە بۆ لیستی هاوبەشان")} /><PartnerDetail p={p} data={data} calc={calc} cur={cur} /></div>;
   }
   const fr = tf.partnerId ? (usr(tf.partnerId).rate || 0) : 0;
   return (
     <div className="space-y-3">
       <Card className="p-5">
-        <SecLbl>گواستنەوەی پارە</SecLbl>
+        <SecLbl>{tr("گواستنەوەی پارە")}</SecLbl>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-          <div><Lbl>ئاڕاستە</Lbl><Sel value={tf.dir} onChange={(e) => setTf({ ...tf, dir: e.target.value })}><option value="to">بۆ لای هاوبەش</option><option value="back">لە لای هاوبەشەوە</option></Sel></div>
-          <div><Lbl>هاوبەش</Lbl><Sel value={tf.partnerId} onChange={(e) => setTf({ ...tf, partnerId: e.target.value })}><option value="">—</option>{partners.map((p) => {
+          <div><Lbl>{tr("ئاڕاستە")}</Lbl><Sel value={tf.dir} onChange={(e) => setTf({ ...tf, dir: e.target.value })}><option value="to">{tr("بۆ لای هاوبەش")}</option><option value="back">{tr("لە لای هاوبەشەوە")}</option></Sel></div>
+          <div><Lbl>{tr("هاوبەش")}</Lbl><Sel value={tf.partnerId} onChange={(e) => setTf({ ...tf, partnerId: e.target.value })}><option value="">—</option>{partners.map((p) => {
             const b = (calc.partner[p.id] || {})[tf.curId] || 0;
             return <option key={p.id} value={p.id}>{p.name} — {fmt(Math.abs(b), cur(tf.curId).dec)}{b < 0 ? " (قەرز)" : ""}</option>;
           })}</Sel></div>
-          <div><Lbl>دراو</Lbl><Sel value={tf.curId} onChange={(e) => setTf({ ...tf, curId: e.target.value })}>{data.currencies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Sel></div>
-          <div><Lbl>بڕ</Lbl><Inp type="number" value={tf.amount} onChange={(e) => setTf({ ...tf, amount: e.target.value })} placeholder="0" /></div>
-          <div className="flex items-end"><Btn kind="gold" className="w-full" onClick={() => { transfer(tf); setTf({ ...tf, amount: "" }); }}>گواستنەوە</Btn></div>
+          <div><Lbl>{tr("دراو")}</Lbl><Sel value={tf.curId} onChange={(e) => setTf({ ...tf, curId: e.target.value })}>{data.currencies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Sel></div>
+          <div><Lbl>{tr("بڕ")}</Lbl><Inp type="number" value={tf.amount} onChange={(e) => setTf({ ...tf, amount: e.target.value })} placeholder="0" /></div>
+          <div className="flex items-end"><Btn kind="gold" className="w-full" onClick={() => { transfer(tf); setTf({ ...tf, amount: "" }); }}>{tr("گواستنەوە")}</Btn></div>
         </div>
         {tf.dir === "to" && fr > 0 && +tf.amount > 0 && (
           <div className="mt-3 text-sm text-[var(--txt-2)] bg-[var(--line-soft)] border border-[var(--line)] rounded-xl p-3">
-            عمولەی {fr}٪ = <b style={num}>{fmt(Math.round(Math.round(+tf.amount) * fr / 100), 0)}</b> — باڵانسی دوایی: <b style={num}>{fmt(Math.round(+tf.amount) - Math.round(Math.round(+tf.amount) * fr / 100), 0)}</b>
+            عمولەی {fr}٪ = <b style={num}>{fmt(Math.round(Math.round(+tf.amount) * fr / 100), 0)}</b> {tr("— باڵانسی دوایی:")} <b style={num}>{fmt(Math.round(+tf.amount) - Math.round(Math.round(+tf.amount) * fr / 100), 0)}</b>
           </div>
         )}
       </Card>
@@ -4318,7 +4380,7 @@ function Partners({ data, calc, cur, usr, transfer, detailId, setDetailId }) {
               <div className="font-semibold text-[var(--txt)]">{p.name} <span className="text-xs text-[var(--txt-3)] font-normal">· عمولە {p.rate}٪</span></div>
               <div className="text-xs text-[var(--txt-2)] mt-0.5">
                 {Object.entries(bal).filter(([, v]) => v).map(([cid, v]) => `${fmt(v, cur(cid).dec)} ${cur(cid).code}`).join(" · ") || "بەتاڵ"}
-                {hasDebt && <span className="text-[var(--verm)] font-bold"> · قەرز</span>}
+                {hasDebt && <span className="text-[var(--verm)] font-bold"> {tr("· قەرز")}</span>}
               </div>
             </div>
             <ChevronLeft className="w-5 h-5 text-[var(--txt-3)]" />
@@ -4340,8 +4402,8 @@ function PartnerDetail({ p, data, calc, cur }) {
       <h2 className="text-xl font-bold text-[var(--txt)]">{p.name}</h2>
       <div className="grid md:grid-cols-2 gap-4">
         <Card className="p-5">
-          <SecLbl>باڵانس (سالب = قەرز لەسەر تۆ)</SecLbl>
-          {Object.keys(bal).length === 0 ? <Empty t="بەتاڵە" /> :
+          <SecLbl>{tr("باڵانس (سالب = قەرز لەسەر تۆ)")}</SecLbl>
+          {Object.keys(bal).length === 0 ? <Empty t={tr("بەتاڵە")} /> :
             Object.entries(bal).map(([cid, v]) => (
               <div key={cid} className="flex justify-between py-2 border-b border-[var(--line-soft)] last:border-0">
                 <span className="text-sm text-[var(--txt-2)]">{cur(cid).name}</span><Money v={v} dec={cur(cid).dec} />
@@ -4350,17 +4412,17 @@ function PartnerDetail({ p, data, calc, cur }) {
         </Card>
         <Card className="p-5">
           <SecLbl>عمولەی وەرگیراو ({p.rate}٪)</SecLbl>
-          {Object.keys(fees).length === 0 ? <Empty t="هێشتا هیچ" /> :
+          {Object.keys(fees).length === 0 ? <Empty t={tr("هێشتا هیچ")} /> :
             Object.entries(fees).map(([cid, v]) => (
               <div key={cid} className="flex justify-between py-2 border-b border-[var(--line-soft)] last:border-0">
                 <span className="text-sm text-[var(--txt-2)]">{cur(cid).name}</span><Money v={v} dec={cur(cid).dec} pos />
               </div>
             ))}
-          <div className="text-[11px] text-[var(--txt-3)] mt-2">دەستبەجێ لە کاتی تێکردندا کەم کراوەتەوە</div>
+          <div className="text-[11px] text-[var(--txt-3)] mt-2">{tr("دەستبەجێ لە کاتی تێکردندا کەم کراوەتەوە")}</div>
         </Card>
       </div>
       <SecLbl>مێژووی ئاڵووگۆر ({hist.length})</SecLbl>
-      {hist.length === 0 ? <Card><Empty t="هیچ نییە" /></Card> :
+      {hist.length === 0 ? <Card><Empty t={tr("هیچ نییە")} /></Card> :
         hist.map((e) => (
           <Card key={e.id} className="p-3.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
             <Pill tone={e.amount >= 0 ? "green" : "red"}>{e.amount >= 0 ? "هاتنە ژوورەوە" : "چوونە دەرەوە"}</Pill>
@@ -4379,11 +4441,11 @@ function Investors({ data, calc, cur, invUnpaid, invShare, profitAll }) {
   const [sel, setSel] = useState(null);
   if (sel) {
     const u = investors.find((x) => x.id === sel);
-    return <div className="space-y-4"><Back onClick={() => setSel(null)} t="گەڕانەوە بۆ لیستی وەبەرهێنەران" /><InvestorDetail u={u} data={data} calc={calc} cur={cur} invUnpaid={invUnpaid} invShare={invShare} profitAll={profitAll} /></div>;
+    return <div className="space-y-4"><Back onClick={() => setSel(null)} t={tr("گەڕانەوە بۆ لیستی وەبەرهێنەران")} /><InvestorDetail u={u} data={data} calc={calc} cur={cur} invUnpaid={invUnpaid} invShare={invShare} profitAll={profitAll} /></div>;
   }
   return (
     <div className="space-y-3">
-      {investors.length === 0 ? <Card><Empty t="هیچ وەبەرهێنەرێک نییە" /></Card> :
+      {investors.length === 0 ? <Card><Empty t={tr("هیچ وەبەرهێنەرێک نییە")} /></Card> :
         investors.map((u) => {
           const cap = calc.invCap[u.id] || {};
           return (
@@ -4421,20 +4483,20 @@ function InvestorDetail({ u, data, calc, cur, invUnpaid, mine }) {
           <div className="text-xs text-[var(--txt-3)]">{mine ? "کۆی ماڵی من" : `کۆی ماڵی ${u.name}`}</div>
           <span className="text-[11px] bg-slate-800 px-2 py-0.5 rounded-full">ڕێژەی خێر {u.rate}٪</span>
         </div>
-        {rows.length === 0 ? <div className="text-sm text-[var(--txt-3)]">هێشتا هیچ سەرمایەیەک دانەنراوە</div> :
+        {rows.length === 0 ? <div className="text-sm text-[var(--txt-3)]">{tr("هێشتا هیچ سەرمایەیەک دانەنراوە")}</div> :
           rows.map((r) => (
             <div key={r.c.id} className="flex justify-between items-baseline py-2 border-b border-slate-700/60 last:border-0">
               <span className="text-sm text-[var(--txt-3)]">{r.c.name}</span>
               <span className="text-2xl font-bold" style={num}>{fmt(r.tot, 0)}</span>
             </div>
           ))}
-        <div className="text-[11px] text-[var(--txt-3)] mt-3">سەرمایە + خێری نەدراو</div>
+        <div className="text-[11px] text-[var(--txt-3)] mt-3">{tr("سەرمایە + خێری نەدراو")}</div>
       </Card>
 
       <div className="grid md:grid-cols-2 gap-4">
         <Card className="p-5">
           <SecLbl>{mine ? "سەرمایەکەم" : "سەرمایە"}</SecLbl>
-          {rows.filter((r) => r.capV).length === 0 ? <Empty t="سەرمایە دانەنراوە" /> :
+          {rows.filter((r) => r.capV).length === 0 ? <Empty t={tr("سەرمایە دانەنراوە")} /> :
             rows.filter((r) => r.capV).map((r) => (
               <div key={r.c.id} className="flex justify-between py-2 border-b border-[var(--line-soft)] last:border-0">
                 <span className="text-sm text-[var(--txt-2)]">{r.c.name}</span><Money v={r.capV} dec={0} />
@@ -4442,8 +4504,8 @@ function InvestorDetail({ u, data, calc, cur, invUnpaid, mine }) {
             ))}
         </Card>
         <Card className="p-5">
-          <SecLbl>خێری نەدراو</SecLbl>
-          {rows.filter((r) => r.up).length === 0 ? <Empty t="هێشتا هیچ" /> :
+          <SecLbl>{tr("خێری نەدراو")}</SecLbl>
+          {rows.filter((r) => r.up).length === 0 ? <Empty t={tr("هێشتا هیچ")} /> :
             rows.filter((r) => r.up).map((r) => (
               <div key={r.c.id} className="flex justify-between py-2 border-b border-[var(--line-soft)] last:border-0">
                 <span className="text-sm text-[var(--txt-2)]">{r.c.name}</span><Money v={r.up} dec={0} pos />
@@ -4456,7 +4518,7 @@ function InvestorDetail({ u, data, calc, cur, invUnpaid, mine }) {
       </div>
 
       <SecLbl>مێژووی پارە ({hist.length})</SecLbl>
-      {hist.length === 0 ? <Card><Empty t="هیچ نییە" /></Card> :
+      {hist.length === 0 ? <Card><Empty t={tr("هیچ نییە")} /></Card> :
         hist.map((e) => (
           <Card key={e.id} className="p-3.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
             <Pill tone={e.type === "investor_payout" ? "amber" : e.amount >= 0 ? "green" : "red"}>
@@ -4506,15 +4568,15 @@ function Office({ data, cur, usr, officePay, calc, accountMove, accountTransfer,
   const histTot = {};
   hist.forEach((t) => (histTot[t.againstId] = (histTot[t.againstId] || 0) + t.total));
 
-  const TABS = [["pending", `چاوەڕوان (${pending.length})`], ["hist", "مێژووی پارەدان"]];
-  if (officeId) TABS.push(["safe", "قاسەی نووسینگە"]);
+  const TABS = [["pending", `چاوەڕوان (${pending.length})`], ["hist", tr("مێژووی پارەدان")]];
+  if (officeId) TABS.push(["safe", tr("قاسەی نووسینگە")]);
 
   return (
     <div className="space-y-4">
       <div className="flex gap-3 flex-wrap">
-        <S title="پارەی دراوی ئەمڕۆ" m={sums((t) => new Date(t.paidAt) >= d0)} />
-        <S title="ئەم هەفتەیە" m={sums((t) => new Date(t.paidAt) >= w0)} />
-        <S title="ئەم مانگە" m={sums((t) => new Date(t.paidAt) >= m0)} />
+        <S title={tr("پارەی دراوی ئەمڕۆ")} m={sums((t) => new Date(t.paidAt) >= d0)} />
+        <S title={tr("ئەم هەفتەیە")} m={sums((t) => new Date(t.paidAt) >= w0)} />
+        <S title={tr("ئەم مانگە")} m={sums((t) => new Date(t.paidAt) >= m0)} />
       </div>
 
       <div className="flex gap-1 rounded-2xl p-1 overflow-x-auto" style={{ background: "var(--card)", border: "1px solid var(--line)", boxShadow: "var(--shadow-1)" }}>
@@ -4526,15 +4588,15 @@ function Office({ data, cur, usr, officePay, calc, accountMove, accountTransfer,
       </div>
 
       {tab === "pending" && (
-        pending.length === 0 ? <Card><Empty t="هیچ مامەڵەیەکی چاوەڕوان نییە ✓" /></Card> :
+        pending.length === 0 ? <Card><Empty t={tr("هیچ مامەڵەیەکی چاوەڕوان نییە ✓")} /></Card> :
           pending.map((t) => (
             <Card key={t.id} className="p-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
               {t.code && <span className="text-[11px] font-bold text-[var(--txt-3)] bg-[var(--line-soft)] px-2 py-0.5 rounded" style={num}>#{t.code}</span>}
               <span className="font-semibold text-[var(--txt)]">{t.cpId ? usr(t.cpId).name : t.cpName}</span>
-              <span>بدرێتێ: <Money v={t.total} dec={0} /> {cur(t.againstId).code}</span>
+              <span>{tr("بدرێتێ:")} <Money v={t.total} dec={0} /> {cur(t.againstId).code}</span>
               <span className="text-[11px] text-[var(--txt-3)]" style={num}>{new Date(t.date).toLocaleString("en-GB")}</span>
               <Btn className="mr-auto flex items-center gap-1.5" onClick={() => officePay(t)}>
-                <CheckCircle2 className="w-4 h-4" /> پارەم دا
+                <CheckCircle2 className="w-4 h-4" /> {tr("پارەم دا")}
               </Btn>
             </Card>
           ))
@@ -4543,10 +4605,10 @@ function Office({ data, cur, usr, officePay, calc, accountMove, accountTransfer,
       {tab === "hist" && (
         <>
           <Card className="p-4 space-y-2.5">
-            <Inp value={q} onChange={(e) => setQ(e.target.value)} placeholder="گەڕان بە ناو یان کۆد..." />
+            <Inp value={q} onChange={(e) => setQ(e.target.value)} placeholder={tr("گەڕان بە ناو یان کۆد...")} />
             <div className="grid grid-cols-2 gap-2.5">
-              <div><Lbl>لە بەرواری</Lbl><Inp type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
-              <div><Lbl>بۆ بەرواری</Lbl><Inp type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
+              <div><Lbl>{tr("لە بەرواری")}</Lbl><Inp type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
+              <div><Lbl>{tr("بۆ بەرواری")}</Lbl><Inp type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
             </div>
             <div className="flex gap-1.5 flex-wrap pt-1">
               {[["ئەمڕۆ", 0], ["٧ ڕۆژ", 7], ["٣٠ ڕۆژ", 30]].map(([lbl, dd]) => (
@@ -4556,19 +4618,19 @@ function Office({ data, cur, usr, officePay, calc, accountMove, accountTransfer,
                 }} className="px-3 py-1.5 rounded-lg bg-[var(--line-soft)] hover:bg-[var(--line)] text-xs font-semibold text-[var(--txt-2)]">{lbl}</button>
               ))}
               <button onClick={() => { setQ(""); setFrom(""); setTo(""); }}
-                className="px-3 py-1.5 rounded-lg bg-[var(--line-soft)] hover:bg-[var(--line)] text-xs font-semibold text-[var(--txt-2)]">سڕینەوە</button>
+                className="px-3 py-1.5 rounded-lg bg-[var(--line-soft)] hover:bg-[var(--line)] text-xs font-semibold text-[var(--txt-2)]">{tr("سڕینەوە")}</button>
             </div>
             <div className="flex gap-4 flex-wrap text-xs text-[var(--txt-2)] pt-2 border-t border-[var(--line-soft)]">
-              <span><b style={num}>{hist.length}</b> پارەدان</span>
+              <span><b style={num}>{hist.length}</b>{tr("پارەدان")}</span>
               {Object.entries(histTot).map(([cid, v]) => <span key={cid}>{cur(cid).code}: <b style={num}>{fmt(v, 0)}</b></span>)}
             </div>
           </Card>
 
-          {hist.length === 0 ? <Card><Empty t="هیچ نەدۆزرایەوە" /></Card> :
+          {hist.length === 0 ? <Card><Empty t={tr("هیچ نەدۆزرایەوە")} /></Card> :
             hist.map((t) => (
               <Card key={t.id} className="p-3.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
                 {t.code && <span className="text-[11px] font-bold text-[var(--txt-3)]" style={num}>#{t.code}</span>}
-                <Pill tone="green">دراوە</Pill>
+                <Pill tone="green">{tr("دراوە")}</Pill>
                 <span className="font-semibold text-[var(--txt)]">{t.cpId ? usr(t.cpId).name : t.cpName}</span>
                 <span className="font-bold" style={num}>{fmt(t.total, 0)} {cur(t.againstId).code}</span>
                 <span className="text-[11px] text-[var(--txt-3)] mr-auto" style={num}>{new Date(t.paidAt).toLocaleString("en-GB")}</span>
@@ -4594,14 +4656,14 @@ function UsersAdmin({ data, cur, createUser, deleteUser, setUserRate, flash }) {
   return (
     <div className="space-y-4">
       <Card className="p-5">
-        <SecLbl>درووستکردنی ئەکاونتی نوێ</SecLbl>
+        <SecLbl>{tr("درووستکردنی ئەکاونتی نوێ")}</SecLbl>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-          <div><Lbl>ناوی تەواو *</Lbl><Inp value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></div>
-          <div><Lbl>ڕۆڵ *</Lbl><Sel value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}>{roles.map((r) => <option key={r} value={r}>{ROLE_KU[r]}</option>)}</Sel></div>
+          <div><Lbl>{tr("ناوی تەواو *")}</Lbl><Inp value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></div>
+          <div><Lbl>{tr("ڕۆڵ *")}</Lbl><Sel value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}>{roles.map((r) => <option key={r} value={r}>{ROLE_KU[r]}</option>)}</Sel></div>
           {(f.role === "partner" || f.role === "investor") && <div><Lbl>{f.role === "partner" ? "ڕێژەی عمولە ٪" : "ڕێژەی خێر ٪"}</Lbl><Inp type="number" value={f.rate} onChange={(e) => setF({ ...f, rate: e.target.value })} /></div>}
           {f.role === "investor" && (
             <div className="col-span-2 md:col-span-3">
-              <Lbl>لە کام دراوەکاندا شەریکە؟</Lbl>
+              <Lbl>{tr("لە کام دراوەکاندا شەریکە؟")}</Lbl>
               <div className="flex gap-1.5 flex-wrap">
                 <button onClick={() => setF({ ...f, scope: [] })}
                   className={`px-3 py-2 rounded-xl text-xs font-semibold border transition ${!f.scope?.length ? "bg-[var(--jade)] text-white border-emerald-700" : "bg-[var(--card)] border-[var(--line)] text-[var(--txt-2)]"}`}>
@@ -4627,16 +4689,16 @@ function UsersAdmin({ data, cur, createUser, deleteUser, setUserRate, flash }) {
               </div>
             </div>
           )}
-          <div><Lbl>ژمارەی مۆبایل * (لۆگین)</Lbl><Inp type="tel" dir="ltr" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} placeholder="07701234567" /></div>
-          <div><Lbl>وشەی نهێنی * (٦ پیت)</Lbl><Inp type="password" dir="ltr" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} placeholder="••••••" /></div>
-          <div><Lbl>ناونیشان</Lbl><Inp value={f.address} onChange={(e) => setF({ ...f, address: e.target.value })} /></div>
-          <div><Lbl>تێبینی</Lbl><Inp value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} /></div>
+          <div><Lbl>{tr("ژمارەی مۆبایل * (لۆگین)")}</Lbl><Inp type="tel" dir="ltr" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} placeholder="07701234567" /></div>
+          <div><Lbl>{tr("وشەی نهێنی * (٦ پیت)")}</Lbl><Inp type="password" dir="ltr" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} placeholder="••••••" /></div>
+          <div><Lbl>{tr("ناونیشان")}</Lbl><Inp value={f.address} onChange={(e) => setF({ ...f, address: e.target.value })} /></div>
+          <div><Lbl>{tr("تێبینی")}</Lbl><Inp value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} /></div>
         </div>
         <div className="mt-4">
           <Btn className="flex items-center gap-1.5" onClick={() => {
             if (!f.name || !f.phone || !f.password) return flash("ناو، ژمارە، و وشەی نهێنی پێویستن");
             createUser(f); setF({ name: "", role: "customer", rate: "", scope: [], phone: "", address: "", note: "", password: "" });
-          }}><Plus className="w-4 h-4" /> درووستکردن</Btn>
+          }}><Plus className="w-4 h-4" />{tr("درووستکردن")}</Btn>
         </div>
       </Card>
       {list.map((u) => (
@@ -4655,10 +4717,10 @@ function UsersAdmin({ data, cur, createUser, deleteUser, setUserRate, flash }) {
           </div>
           {(u.role === "partner" || u.role === "investor") && (
             <div className="flex items-center gap-1.5 text-sm">
-              <span className="text-[var(--txt-2)] text-xs">ڕێژە</span>
+              <span className="text-[var(--txt-2)] text-xs">{tr("ڕێژە")}</span>
               <input type="number" defaultValue={u.rate} onBlur={(e) => { if (+e.target.value !== u.rate) setUserRate(u, e.target.value); }}
                 className="w-16 border border-[var(--line)] rounded-lg px-2 py-1 text-sm" style={num} />
-              <span className="text-xs">٪</span>
+              <span className="text-xs">{tr("٪")}</span>
             </div>
           )}
           <button onClick={() => deleteUser(u)} className="text-[var(--txt-3)] hover:text-[var(--verm)]"><Trash2 className="w-4 h-4" /></button>
@@ -4720,7 +4782,7 @@ function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare, s
   const investors = data.users.filter((u) => u.role === "investor" && !u.deleted);
 
   const exportCsv = () => {
-    const head = ["کۆد", "جۆر", "بەروار", "لایەن", "دراو", "بڕ", "ڕەیت", "بەرامبەر", "کۆ", "شوێن", "دۆخ", "خێر"];
+    const head = ["کۆد", tr("جۆر"), "بەروار", "لایەن", tr("دراو"), tr("بڕ"), "ڕەیت", "بەرامبەر", "کۆ", "شوێن", tr("دۆخ"), tr("خێر")];
     const rows = txs.map((t) => [t.code || "", t.type === "buy" ? "کڕین" : "فرۆشتن", new Date(t.date).toLocaleString("en-GB"),
       t.cpId ? usr(t.cpId).name : t.cpName, cur(t.curId).code, t.amount, t.rate ? +(1 / t.rate).toFixed(6) : "", cur(t.againstId).code, t.total,
       t.partnerId ? "لای " + usr(t.partnerId).name : "قاسەی گشتی", t.status === "pending" ? "چاوەڕوان" : "تەواو", t.profit ?? ""]);
@@ -4745,32 +4807,32 @@ function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare, s
     </div>
   );
 
-  const TABS = [["pl", "خێر و زەرەر"], ["flow", "هاتوو و تێچوو"], ["inv", "وەبەرهێنەران"]];
+  const TABS = [["pl", tr("خێر و زەرەر")], ["flow", tr("هاتوو و تێچوو")], ["inv", tr("وەبەرهێنەران")]];
 
   return (
     <div className="space-y-4">
       <div className="flex items-start justify-between flex-wrap gap-2">
-        <H sub={`${from} تا ${to}`}>ڕاپۆرت</H>
-        <Btn kind="ghost" onClick={exportCsv}>دەرهێنان بۆ ئێکسڵ</Btn>
+        <H sub={`${from} تا ${to}`}>{tr("ڕاپۆرت")}</H>
+        <Btn kind="ghost" onClick={exportCsv}>{tr("دەرهێنان بۆ ئێکسڵ")}</Btn>
       </div>
 
       <Card className="p-4 space-y-3">
         <div className="flex gap-1.5 flex-wrap">
-          {[["today", "ئەمڕۆ"], ["week", "ئەم هەفتەیە"], ["month", "ئەم مانگە"], ["prev", "مانگی ڕابردوو"], ["year", "ئەمساڵ"]].map(([k, t]) => (
+          {[["today", tr("ئەمڕۆ")], ["week", tr("ئەم هەفتەیە")], ["month", tr("ئەم مانگە")], ["prev", tr("مانگی ڕابردوو")], ["year", tr("ئەمساڵ")]].map(([k, t]) => (
             <button key={k} onClick={() => preset(k)} className="px-3 py-1.5 rounded-lg bg-[var(--line-soft)] hover:bg-[var(--jade)] hover:text-white text-xs font-semibold text-[var(--txt-2)] transition">{t}</button>
           ))}
         </div>
         <div className="grid grid-cols-2 gap-2.5">
-          <div><Lbl>لە</Lbl><Inp type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
-          <div><Lbl>بۆ</Lbl><Inp type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
+          <div><Lbl>{tr("لە")}</Lbl><Inp type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
+          <div><Lbl>{tr("بۆ")}</Lbl><Inp type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
         </div>
       </Card>
 
       {/* پوختەی سەرەکی */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Card className="p-4"><div className="text-xs text-[var(--txt-2)]">مامەڵە</div><div className="text-2xl font-bold" style={num}>{txs.length}</div></Card>
-        <Card className="p-4"><div className="text-xs text-[var(--txt-2)]">کڕین</div><div className="text-2xl font-bold text-[var(--jade)]" style={num}>{txs.filter((t) => t.type === "buy").length}</div></Card>
-        <Card className="p-4"><div className="text-xs text-[var(--txt-2)]">فرۆشتن</div><div className="text-2xl font-bold text-[var(--verm)]" style={num}>{txs.filter((t) => t.type === "sell").length}</div></Card>
+        <Card className="p-4"><div className="text-xs text-[var(--txt-2)]">{tr("مامەڵە")}</div><div className="text-2xl font-bold" style={num}>{txs.length}</div></Card>
+        <Card className="p-4"><div className="text-xs text-[var(--txt-2)]">{tr("کڕین")}</div><div className="text-2xl font-bold text-[var(--jade)]" style={num}>{txs.filter((t) => t.type === "buy").length}</div></Card>
+        <Card className="p-4"><div className="text-xs text-[var(--txt-2)]">{tr("فرۆشتن")}</div><div className="text-2xl font-bold text-[var(--verm)]" style={num}>{txs.filter((t) => t.type === "sell").length}</div></Card>
         <Card accent className="p-4">
           <div className="text-xs text-emerald-100">نەتی خۆم {ratesReady ? "(دۆلار)" : ""}</div>
           <div className="text-2xl font-bold" style={num}>{ratesReady ? fmt(sumUsd(net), 0) : Object.values(net).length ? fmt(Object.values(net)[0], 0) : 0}</div>
@@ -4787,8 +4849,8 @@ function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare, s
 
       {tab === "pl" && (
         <Card className="p-5">
-          <SecLbl>خێر و زەرەر</SecLbl>
-          {allCurs.length === 0 ? <Empty t="هیچ نییە لەم ماوەیەدا" /> : <>
+          <SecLbl>{tr("خێر و زەرەر")}</SecLbl>
+          {allCurs.length === 0 ? <Empty t={tr("هیچ نییە لەم ماوەیەدا")} /> : <>
             <Row label="خێری فرۆشتن" m={profit} tone="pos" />
             <Row label="زەرەری فرۆشتن" m={loss} tone="neg" />
             <Row label="خەرجی" m={exp} tone="neg" />
@@ -4799,7 +4861,7 @@ function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare, s
             </div>
             {ratesReady && (
               <div className="mt-3 bg-[color-mix(in_srgb,var(--jade)_10%,transparent)] rounded-xl p-3 flex justify-between items-center">
-                <span className="text-sm text-[var(--jade)] font-semibold">کۆی نەت بە دۆلار</span>
+                <span className="text-sm text-[var(--jade)] font-semibold">{tr("کۆی نەت بە دۆلار")}</span>
                 <span className="text-xl font-bold text-[var(--jade)]" style={num}>{fmt(sumUsd(net), 0)} $</span>
               </div>
             )}
@@ -4810,22 +4872,22 @@ function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare, s
       {tab === "flow" && (
         <div className="space-y-4">
           <Card className="p-5">
-            <SecLbl>هاتوو و تێچووی قاسە</SecLbl>
-            {Object.keys(flow).length === 0 ? <Empty t="هیچ" /> :
+            <SecLbl>{tr("هاتوو و تێچووی قاسە")}</SecLbl>
+            {Object.keys(flow).length === 0 ? <Empty t={tr("هیچ")} /> :
               Object.entries(flow).map(([cid, fl]) => (
                 <div key={cid} className="py-3 border-b border-[var(--line-soft)] last:border-0">
                   <div className="font-semibold text-[var(--txt)] mb-2">{cur(cid).name}</div>
                   <div className="grid grid-cols-3 gap-2 text-center">
                     <div className="bg-[color-mix(in_srgb,var(--jade)_10%,transparent)] rounded-lg py-2">
-                      <div className="text-[10px] text-[var(--jade)]/70">هاتوو</div>
+                      <div className="text-[10px] text-[var(--jade)]/70">{tr("هاتوو")}</div>
                       <div className="text-sm font-bold text-[var(--jade)]" style={num}>{fmt(fl.inn, 0)}</div>
                     </div>
                     <div className="bg-[color-mix(in_srgb,var(--verm)_10%,transparent)] rounded-lg py-2">
-                      <div className="text-[10px] text-[var(--verm)]/70">تێچوو</div>
+                      <div className="text-[10px] text-[var(--verm)]/70">{tr("تێچوو")}</div>
                       <div className="text-sm font-bold text-[var(--verm)]" style={num}>{fmt(fl.out, 0)}</div>
                     </div>
                     <div className="bg-[var(--line-soft)] rounded-lg py-2">
-                      <div className="text-[10px] text-[var(--txt-2)]">جیاوازی</div>
+                      <div className="text-[10px] text-[var(--txt-2)]">{tr("جیاوازی")}</div>
                       <div className="text-sm font-bold text-[var(--txt)]" style={num}>{fmt(fl.inn - fl.out, 0)}</div>
                     </div>
                   </div>
@@ -4833,8 +4895,8 @@ function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare, s
               ))}
           </Card>
           <Card className="p-5">
-            <SecLbl>قەبارەی مامەڵەکان</SecLbl>
-            {Object.keys(vol).length === 0 ? <Empty t="هیچ" /> :
+            <SecLbl>{tr("قەبارەی مامەڵەکان")}</SecLbl>
+            {Object.keys(vol).length === 0 ? <Empty t={tr("هیچ")} /> :
               Object.entries(vol).map(([cid, v]) => (
                 <div key={cid} className="flex items-center justify-between py-2.5 border-b border-[var(--line-soft)] last:border-0">
                   <div>
@@ -4842,8 +4904,8 @@ function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare, s
                     <div className="text-xs text-[var(--txt-3)]" style={num}>{v.n} مامەڵە</div>
                   </div>
                   <div className="text-left text-sm">
-                    <div className="text-[var(--jade)]">کڕدراو <b style={num}>{fmt(v.buy, 0)}</b></div>
-                    <div className="text-[var(--verm)]">فرۆشراو <b style={num}>{fmt(v.sell, 0)}</b></div>
+                    <div className="text-[var(--jade)]">{tr("کڕدراو")}<b style={num}>{fmt(v.buy, 0)}</b></div>
+                    <div className="text-[var(--verm)]">{tr("فرۆشراو")}<b style={num}>{fmt(v.sell, 0)}</b></div>
                   </div>
                 </div>
               ))}
@@ -4853,8 +4915,8 @@ function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare, s
 
       {tab === "inv" && (
         <Card className="p-5">
-          <SecLbl>دابەشکردنی خێر</SecLbl>
-          {investors.length === 0 || Object.keys(pm).length === 0 ? <Empty t="هیچ خێرێک نییە لەم ماوەیەدا" /> :
+          <SecLbl>{tr("دابەشکردنی خێر")}</SecLbl>
+          {investors.length === 0 || Object.keys(pm).length === 0 ? <Empty t={tr("هیچ خێرێک نییە لەم ماوەیەدا")} /> :
             investors.map((u) => {
               const rows = Object.entries(pm).map(([cid, tot]) => {
                 const cap = (calc.invCap[u.id] || {})[cid] || 0;
@@ -4938,7 +5000,7 @@ function Backup({ data, calc, cur, saveBackup, downloadBackup, flash, sumUsd, my
 
   return (
     <div className="space-y-4">
-      <H sub="داتاکەت لە سێرڤەری Supabase پارێزراوە — لێرەش وێنەی زاپاسی لێ دەگیرێت">پاراستنی داتا</H>
+      <H sub="داتاکەت لە سێرڤەری Supabase پارێزراوە — لێرەش وێنەی زاپاسی لێ دەگیرێت">{tr("پاراستنی داتا")}</H>
 
       <Card className={`p-4 ${okAll ? "border-[color-mix(in_srgb,var(--jade)_34%,transparent)] bg-[color-mix(in_srgb,var(--jade)_8%,transparent)]" : "border-[color-mix(in_srgb,var(--amber)_34%,transparent)] bg-[color-mix(in_srgb,var(--amber)_9%,transparent)]"}`}>
         <div className="flex items-center gap-2 mb-3">
@@ -4965,31 +5027,31 @@ function Backup({ data, calc, cur, saveBackup, downloadBackup, flash, sumUsd, my
       </div>
 
       <Card className="p-5">
-        <SecLbl>باکئەپ</SecLbl>
+        <SecLbl>{tr("باکئەپ")}</SecLbl>
         <div className="text-sm text-[var(--txt-2)] mb-3 leading-relaxed">
-          هەر ٦ کاتژمێرێک جارێک خۆی وێنەیەکی تەواوی هەموو داتاکە هەڵدەگرێت. دەتوانیت خۆشت ئێستا یەکێک درووست بکەیت، یان فایلێک دابەزێنیت و لە کۆمپیوتەرەکەت هەڵیبگریت.
+          {tr("هەر ٦ کاتژمێرێک جارێک خۆی وێنەیەکی تەواوی هەموو داتاکە هەڵدەگرێت. دەتوانیت خۆشت ئێستا یەکێک درووست بکەیت، یان فایلێک دابەزێنیت و لە کۆمپیوتەرەکەت هەڵیبگریت.")}
         </div>
         <div className="flex gap-2 flex-wrap">
           <Btn onClick={async () => { setBusy(true); await saveBackup("manual"); await load(); setBusy(false); }} disabled={busy}>
             {busy ? "..." : "درووستکردنی باکئەپ ئێستا"}
           </Btn>
-          <Btn kind="ghost" className="flex items-center gap-1.5" onClick={downloadBackup}><Download className="w-4 h-4" /> دابەزاندنی فایل</Btn>
+          <Btn kind="ghost" className="flex items-center gap-1.5" onClick={downloadBackup}><Download className="w-4 h-4" /> {tr("دابەزاندنی فایل")}</Btn>
         </div>
       </Card>
 
       <Card className="p-5">
-        <SecLbl>باکئەپە هەڵگیراوەکان</SecLbl>
-        {list === null ? <Empty t="بارکردن..." /> :
+        <SecLbl>{tr("باکئەپە هەڵگیراوەکان")}</SecLbl>
+        {list === null ? <Empty t={tr("بارکردن...")} /> :
           list.length === 0 ? (
             <div className="text-sm text-[var(--amber)] bg-[color-mix(in_srgb,var(--amber)_11%,transparent)] border border-[color-mix(in_srgb,var(--amber)_26%,transparent)] rounded-xl p-3">
-              هێشتا هیچ باکئەپێک نییە — ئایا خشتەی <b>backups</b> لە Supabase درووست کراوە؟
+              {tr("هێشتا هیچ باکئەپێک نییە — ئایا خشتەی")} <b>backups</b> {tr("لە Supabase درووست کراوە؟")}
             </div>
           ) : list.map((b) => (
             <div key={b.id} className="flex items-center justify-between py-2.5 border-b border-[var(--line-soft)] last:border-0">
               <div>
                 <div className="text-sm text-[var(--txt)]" style={num}>{new Date(b.created_at).toLocaleString("en-GB")}</div>
                 <div className="text-[11px] text-[var(--txt-3)]">
-                  {b.kind === "auto" ? "ئۆتۆماتیکی" : "دەستی"} · <span style={num}>{b.counts?.txs ?? "?"}</span> مامەڵە · <span style={num}>{b.counts?.ledger ?? "?"}</span> تۆمار
+                  {b.kind === "auto" ? "ئۆتۆماتیکی" : "دەستی"} · <span style={num}>{b.counts?.txs ?? "?"}</span> {tr("مامەڵە ·")} <span style={num}>{b.counts?.ledger ?? "?"}</span> {tr("تۆمار")}
                 </div>
               </div>
               <Pill tone={b.kind === "auto" ? "slate" : "green"}>{b.kind === "auto" ? "خۆکار" : "دەستی"}</Pill>
@@ -4999,7 +5061,7 @@ function Backup({ data, calc, cur, saveBackup, downloadBackup, flash, sumUsd, my
 
       <Card className="p-4 bg-[var(--line-soft)]">
         <div className="text-xs text-[var(--txt-2)] leading-relaxed">
-          <b className="text-[var(--txt)]">ئامۆژگاری:</b> بۆ کۆمپانیایەک کە ملیۆنان دۆلار ئاڵووگۆڕ دەکات، پێشنیار دەکەم پلانی <b>Supabase Pro</b> وەربگریت ($25/مانگ) — باکئەپی خۆکاری ڕۆژانەی هەیە لەگەڵ توانای گەڕاندنەوەی هەر خولەکێک، و پڕۆژەکەشت هەرگیز ناوەستێت. هەروەها مانگی جارێک فایلێکی باکئەپ دابەزێنە و لە شوێنێکی جیا هەڵیبگرە.
+          <b className="text-[var(--txt)]">{tr("ئامۆژگاری:")}</b> بۆ کۆمپانیایەک کە ملیۆنان دۆلار ئاڵووگۆڕ دەکات، پێشنیار دەکەم پلانی <b>Supabase Pro</b> {tr("وەربگریت ($25/مانگ) — باکئەپی خۆکاری ڕۆژانەی هەیە لەگەڵ توانای گەڕاندنەوەی هەر خولەکێک، و پڕۆژەکەشت هەرگیز ناوەستێت. هەروەها مانگی جارێک فایلێکی باکئەپ دابەزێنە و لە شوێنێکی جیا هەڵیبگرە.")}
         </div>
       </Card>
     </div>
@@ -5025,18 +5087,18 @@ function WorldRates({ data, cur }) {
   return (
     <Card className="p-5">
       <div className="flex items-center justify-between mb-1">
-        <SecLbl>نرخی جیهانی</SecLbl>
-        <button onClick={load} className="text-[11px] font-semibold" style={{ color: "var(--brass)" }}>نوێکردنەوە</button>
+        <SecLbl>{tr("نرخی جیهانی")}</SecLbl>
+        <button onClick={load} className="text-[11px] font-semibold" style={{ color: "var(--brass)" }}>{tr("نوێکردنەوە")}</button>
       </div>
       <div className="text-[11px] mb-3 leading-relaxed" style={{ color: "var(--txt-3)" }}>
-        نرخی بازاڕی جیهانی — تەنها بۆ زانیاری. نرخی مامەڵەکانت لە «نرخی ئەمڕۆ»وە دێت.
+        {tr("نرخی بازاڕی جیهانی — تەنها بۆ زانیاری. نرخی مامەڵەکانت لە «نرخی ئەمڕۆ»وە دێت.")}
       </div>
 
-      {rates === null ? <Empty t="بارکردن..." /> :
+      {rates === null ? <Empty t={tr("بارکردن...")} /> :
         Object.keys(rates).length === 0 ? (
           <div className="text-sm rounded-xl p-3"
             style={{ background: "color-mix(in srgb, var(--amber) 11%, transparent)", color: "var(--amber)" }}>
-            نەتوانرا نرخەکان وەربگیرێن
+            {tr("نەتوانرا نرخەکان وەربگیرێن")}
           </div>
         ) : (
           <>
@@ -5133,7 +5195,7 @@ function Insights({ data, calc, cur, usr, profitIn, ownProfitIn, sumUsd, ratesRe
         v: +r[key],
       })),
     });
-    return [mk("buy_rate", "کڕین", "var(--jade)"), mk("sell_rate", "فرۆشتن", "var(--verm)")].filter((s2) => s2.pts.length);
+    return [mk("buy_rate", tr("کڕین"), "var(--jade)"), mk("sell_rate", tr("فرۆشتن"), "var(--verm)")].filter((s2) => s2.pts.length);
   })();
 
   /* ── هێڵی کاتی چالاکی ── */
@@ -5209,11 +5271,11 @@ function Insights({ data, calc, cur, usr, profitIn, ownProfitIn, sumUsd, ratesRe
     };
   })();
 
-  const TABS = [["trend", "ڕەوت"], ["fc", "پێشبینین"], ["rates", "مێژووی نرخ"], ["report", "ڕاپۆرتی ڕۆژ"], ["log", "چالاکی"]];
+  const TABS = [["trend", tr("ڕەوت")], ["fc", tr("پێشبینین")], ["rates", tr("مێژووی نرخ")], ["report", tr("ڕاپۆرتی ڕۆژ")], ["log", tr("چالاکی")]];
 
   return (
     <div className="space-y-4">
-      <H sub="ڕەوتی خێر، مێژووی نرخەکان، و کورتەی ڕۆژ">ڕەوت و شیکاری</H>
+      <H sub="ڕەوتی خێر، مێژووی نرخەکان، و کورتەی ڕۆژ">{tr("ڕەوت و شیکاری")}</H>
 
       <div className="flex gap-1 rounded-2xl p-1 overflow-x-auto"
         style={{ background: "var(--card)", border: "1px solid var(--line)", boxShadow: "var(--shadow-1)" }}>
@@ -5227,7 +5289,7 @@ function Insights({ data, calc, cur, usr, profitIn, ownProfitIn, sumUsd, ratesRe
       {tab === "trend" && (
         <>
           <div className="flex gap-1.5 flex-wrap">
-            {[[7, "٧ ڕۆژ"], [14, "١٤ ڕۆژ"], [30, "٣٠ ڕۆژ"]].map(([d, l]) => (
+            {[[7, tr("٧ ڕۆژ")], [14, tr("١٤ ڕۆژ")], [30, tr("٣٠ ڕۆژ")]].map(([d, l]) => (
               <button key={d} onClick={() => setSpan(d)}
                 style={span === d ? { background: "var(--brass)", color: "#fff" } : { background: "var(--line-soft)", color: "var(--txt-2)" }}
                 className="px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all press">{l}</button>
@@ -5243,7 +5305,7 @@ function Insights({ data, calc, cur, usr, profitIn, ownProfitIn, sumUsd, ratesRe
               <div className="mt-1.5"><Spark data={dayProfit.map((d) => d.v)} w={110} h={26} /></div>
             </Card>
             <Card className="p-4 fade-up" style={{ animationDelay: "60ms" }}>
-              <div className="text-[11px]" style={{ color: "var(--txt-2)" }}>مامەڵەکان</div>
+              <div className="text-[11px]" style={{ color: "var(--txt-2)" }}>{tr("مامەڵەکان")}</div>
               <div className="text-2xl font-bold mt-0.5" style={{ ...num, color: "var(--txt)" }}>{totTx}</div>
               <div className="mt-1.5"><Spark data={dayVol.map((d) => d.v)} w={110} h={26} color="var(--brass)" /></div>
             </Card>
@@ -5254,29 +5316,29 @@ function Insights({ data, calc, cur, usr, profitIn, ownProfitIn, sumUsd, ratesRe
             <Bars rows={dayProfit} />
             {best?.v > 0 && (
               <div className="text-[11px] mt-3 pt-3" style={{ color: "var(--txt-3)", borderTop: "1px solid var(--line-soft)" }}>
-                باشترین ڕۆژ: <b style={{ ...num, color: "var(--jade)" }}>{fmt(best.v, 0)}</b> لە {best.k}
+                {tr("باشترین ڕۆژ:")} <b style={{ ...num, color: "var(--jade)" }}>{fmt(best.v, 0)}</b> لە {best.k}
               </div>
             )}
           </Card>
 
           <Card className="p-5">
-            <SecLbl>ژمارەی مامەڵەکان</SecLbl>
+            <SecLbl>{tr("ژمارەی مامەڵەکان")}</SecLbl>
             <Bars rows={dayVol} h={110} />
           </Card>
 
           <div className="grid md:grid-cols-2 gap-4">
             {buySell.length > 0 && (
-              <Card className="p-5"><SecLbl>کڕین بەرامبەر فرۆشتن</SecLbl><Donut rows={buySell} /></Card>
+              <Card className="p-5"><SecLbl>{tr("کڕین بەرامبەر فرۆشتن")}</SecLbl><Donut rows={buySell} /></Card>
             )}
             {safeSplit.length > 0 && (
-              <Card className="p-5"><SecLbl>دابەشکردنی قاسە</SecLbl><Donut rows={safeSplit} /></Card>
+              <Card className="p-5"><SecLbl>{tr("دابەشکردنی قاسە")}</SecLbl><Donut rows={safeSplit} /></Card>
             )}
           </div>
         </>
       )}
 
       {tab === "fc" && (
-        fc === null ? <Card><Empty t="داتای پێویست نییە — لانیکەم ٣ ڕۆژ مامەڵە پێویستە" /></Card> : <>
+        fc === null ? <Card><Empty t={tr("داتای پێویست نییە — لانیکەم ٣ ڕۆژ مامەڵە پێویستە")} /></Card> : <>
           <Card dark className="p-5">
             <div className="text-[11px] mb-1" style={{ color: "rgba(255,255,255,.5)" }}>
               بەپێی ڕەوتی {span} ڕۆژی ڕابردوو
@@ -5309,7 +5371,7 @@ function Insights({ data, calc, cur, usr, profitIn, ownProfitIn, sumUsd, ratesRe
           </div>
 
           <Card className="p-5">
-            <SecLbl>٧ ڕۆژی داهاتوو</SecLbl>
+            <SecLbl>{tr("٧ ڕۆژی داهاتوو")}</SecLbl>
             <Bars rows={fc.proj.map((v, i) => {
               const d = new Date(); d.setDate(d.getDate() + i + 1);
               return { k: `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`, v };
@@ -5318,7 +5380,7 @@ function Insights({ data, calc, cur, usr, profitIn, ownProfitIn, sumUsd, ratesRe
 
           <Card className="p-4">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-semibold" style={{ color: "var(--txt-2)" }}>دڵنیایی پێشبینین</span>
+              <span className="text-xs font-semibold" style={{ color: "var(--txt-2)" }}>{tr("دڵنیایی پێشبینین")}</span>
               <span className="text-sm font-bold" style={{ ...num, color: fc.fit > .6 ? "var(--jade)" : fc.fit > .3 ? "var(--amber)" : "var(--verm)" }}>
                 {(fc.fit * 100).toFixed(0)}٪
               </span>
@@ -5334,7 +5396,7 @@ function Insights({ data, calc, cur, usr, profitIn, ownProfitIn, sumUsd, ratesRe
               {fc.fit > .6 ? "ڕەوتەکە جێگیرە — پێشبینینەکە بەهێزە"
                 : fc.fit > .3 ? "ڕەوتەکە هەڵکشانی هەیە — بە ئاگاداری وەریبگرە"
                 : "مامەڵەکان زۆر جیاوازن — پێشبینینەکە تەنها ئاماژەیەکە"}
-              <br />ئەمە خەمڵاندنێکە بەپێی ڕابردوو، نەک دڵنیایی.
+              <br />{tr("ئەمە خەمڵاندنێکە بەپێی ڕابردوو، نەک دڵنیایی.")}
             </div>
           </Card>
         </>
@@ -5356,11 +5418,11 @@ function Insights({ data, calc, cur, usr, profitIn, ownProfitIn, sumUsd, ratesRe
           </div>
           <Card className="p-5">
             <SecLbl>مێژووی نرخی {cur(activeCur).name} — ١ دۆلار بە چەند</SecLbl>
-            {hist === null ? <Empty t="بارکردن..." /> :
+            {hist === null ? <Empty t={tr("بارکردن...")} /> :
               rateSeries.length === 0 ? (
                 <div className="text-sm rounded-xl p-3.5"
                   style={{ background: "color-mix(in srgb, var(--amber) 11%, transparent)", color: "var(--amber)" }}>
-                  هێشتا مێژوویەک نییە — هەر جارێک نرخ بگۆڕیت، لێرە تۆمار دەبێت
+                  {tr("هێشتا مێژوویەک نییە — هەر جارێک نرخ بگۆڕیت، لێرە تۆمار دەبێت")}
                 </div>
               ) : <>
                 <LineChart series={rateSeries} />
@@ -5391,11 +5453,11 @@ function Insights({ data, calc, cur, usr, profitIn, ownProfitIn, sumUsd, ratesRe
           <Card dark className="p-5">
             <div className="flex items-center justify-between mb-3">
               <div>
-                <div className="text-[11px]" style={{ color: "rgba(255,255,255,.5)" }}>ڕاپۆرتی ئەمڕۆ</div>
+                <div className="text-[11px]" style={{ color: "rgba(255,255,255,.5)" }}>{tr("ڕاپۆرتی ئەمڕۆ")}</div>
                 <div className="text-lg font-bold" style={num}>{new Date().toLocaleDateString("en-GB")}</div>
               </div>
               <div className="text-left">
-                <div className="text-[11px]" style={{ color: "rgba(255,255,255,.5)" }}>مامەڵە</div>
+                <div className="text-[11px]" style={{ color: "rgba(255,255,255,.5)" }}>{tr("مامەڵە")}</div>
                 <div className="text-2xl font-bold" style={num}>{rep.t.length}</div>
               </div>
             </div>
@@ -5410,8 +5472,8 @@ function Insights({ data, calc, cur, usr, profitIn, ownProfitIn, sumUsd, ratesRe
           </Card>
 
           <Card className="p-5">
-            <SecLbl>خێری ئەمڕۆ</SecLbl>
-            {Object.keys(rep.prof).length === 0 ? <Empty t="هێشتا هیچ خێرێک نییە" /> :
+            <SecLbl>{tr("خێری ئەمڕۆ")}</SecLbl>
+            {Object.keys(rep.prof).length === 0 ? <Empty t={tr("هێشتا هیچ خێرێک نییە")} /> :
               Object.entries(rep.prof).map(([cid, v]) => (
                 <div key={cid} className="flex items-center justify-between py-2.5 border-b last:border-0" style={{ borderColor: "var(--line-soft)" }}>
                   <span className="text-sm flex items-center gap-2" style={{ color: "var(--txt-2)" }}><CurBadge c={cur(cid)} size="sm" /> {cur(cid).name}</span>
@@ -5422,7 +5484,7 @@ function Insights({ data, calc, cur, usr, profitIn, ownProfitIn, sumUsd, ratesRe
 
           {Object.keys(rep.vol).length > 0 && (
             <Card className="p-5">
-              <SecLbl>قەبارەی ئەمڕۆ</SecLbl>
+              <SecLbl>{tr("قەبارەی ئەمڕۆ")}</SecLbl>
               {Object.entries(rep.vol).map(([cid, v]) => (
                 <div key={cid} className="flex items-center justify-between py-2.5 border-b last:border-0" style={{ borderColor: "var(--line-soft)" }}>
                   <span className="text-sm flex items-center gap-2" style={{ color: "var(--txt-2)" }}><CurBadge c={cur(cid)} size="sm" /> {cur(cid).name}</span>
@@ -5438,16 +5500,16 @@ function Insights({ data, calc, cur, usr, profitIn, ownProfitIn, sumUsd, ratesRe
           <div className="flex gap-2">
             <Btn kind="gold" className="flex-1 flex items-center justify-center gap-2"
               onClick={() => { const t = repText(); if (navigator.share) navigator.share({ text: t }).catch(() => {}); else window.open(`https://wa.me/?text=${encodeURIComponent(t)}`, "_blank"); }}>
-              <MessageCircle className="w-4 h-4" /> ناردن بە واتساپ
+              <MessageCircle className="w-4 h-4" /> {tr("ناردن بە واتساپ")}
             </Btn>
             <Btn kind="ghost" className="flex-1"
-              onClick={() => navigator.clipboard.writeText(repText()).then(() => flash("کۆپی کرا ✓"))}>کۆپیکردن</Btn>
+              onClick={() => navigator.clipboard.writeText(repText()).then(() => flash("کۆپی کرا ✓"))}>{tr("کۆپیکردن")}</Btn>
           </div>
         </>
       )}
 
       {tab === "log" && (
-        Object.keys(dayGroups).length === 0 ? <Card><Empty t="هیچ چالاکییەک نییە" /></Card> :
+        Object.keys(dayGroups).length === 0 ? <Card><Empty t={tr("هیچ چالاکییەک نییە")} /></Card> :
           Object.entries(dayGroups).map(([day, items]) => (
             <div key={day}>
               <div className="flex items-center gap-2.5 mb-2.5 mt-4 first:mt-0">
@@ -5513,12 +5575,12 @@ function DayClose({ data, calc, cur, usr, closeDay, sumUsd }) {
 
   return (
     <div className="space-y-4">
-      <H sub="لە کۆتایی ڕۆژدا پارەی ڕاستەقینە بژمێرە و بەراوردی بکە لەگەڵ حیسابی سیستەم">بەستنی ڕۆژ</H>
+      <H sub="لە کۆتایی ڕۆژدا پارەی ڕاستەقینە بژمێرە و بەراوردی بکە لەگەڵ حیسابی سیستەم">{tr("بەستنی ڕۆژ")}</H>
 
       {closedToday && (
         <Card className="p-4 border-[color-mix(in_srgb,var(--jade)_34%,transparent)] bg-[color-mix(in_srgb,var(--jade)_9%,transparent)]">
           <div className="flex items-center gap-2 text-sm text-[var(--jade)] font-semibold">
-            <CheckCircle2 className="w-4 h-4" /> ئەمڕۆ بەسترابووەتەوە — دەتوانیت دووبارە بیکەیتەوە
+            <CheckCircle2 className="w-4 h-4" /> {tr("ئەمڕۆ بەسترابووەتەوە — دەتوانیت دووبارە بیکەیتەوە")}
           </div>
         </Card>
       )}
@@ -5526,9 +5588,9 @@ function DayClose({ data, calc, cur, usr, closeDay, sumUsd }) {
       {step === "count" ? (
         <>
           <Card className="p-5">
-            <SecLbl>پارەی لای خۆت بژمێرە</SecLbl>
+            <SecLbl>{tr("پارەی لای خۆت بژمێرە")}</SecLbl>
             <div className="text-xs text-[var(--txt-2)] mb-4">
-              تەنها ئەو پارەیە کە لای خۆتە — ئەوەی لای هاوبەشەکانە لێرە نایەت
+              {tr("تەنها ئەو پارەیە کە لای خۆتە — ئەوەی لای هاوبەشەکانە لێرە نایەت")}
             </div>
             {lines.map((l) => (
               <div key={l.cur} className="py-3 border-b border-[var(--line-soft)] last:border-0">
@@ -5536,16 +5598,16 @@ function DayClose({ data, calc, cur, usr, closeDay, sumUsd }) {
                   <CurBadge c={l.c} size="sm" />
                   <span className="text-sm font-semibold text-[var(--txt)]">{l.name}</span>
                   <span className="text-xs text-[var(--txt-3)] mr-auto">
-                    حیسابی سیستەم: <b style={num} className="text-[var(--txt)]">{fmt(l.expected, 0)}</b>
+                    {tr("حیسابی سیستەم:")} <b style={num} className="text-[var(--txt)]">{fmt(l.expected, 0)}</b>
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Inp type="number" dir="ltr" placeholder="ژماردنی ڕاستەقینە..."
+                  <Inp type="number" dir="ltr" placeholder={tr("ژماردنی ڕاستەقینە...")}
                     value={counts[l.cur] ?? ""} onChange={(e) => setCounts({ ...counts, [l.cur]: e.target.value })}
                     className={`flex-1 ${l.counted !== null && l.diff !== 0 ? "border-[var(--brass)] bg-[color-mix(in_srgb,var(--amber)_11%,transparent)]" : l.counted !== null ? "border-[var(--jade)] bg-[color-mix(in_srgb,var(--jade)_10%,transparent)]" : ""}`} />
                   <div className="w-28 text-left shrink-0">
                     {l.counted === null ? <span className="text-xs text-[var(--txt-3)]">—</span> :
-                      l.diff === 0 ? <span className="text-sm font-bold text-[var(--jade)]">✓ ڕێکە</span> :
+                      l.diff === 0 ? <span className="text-sm font-bold text-[var(--jade)]">{tr("✓ ڕێکە")}</span> :
                         <span className={`text-sm font-bold ${l.diff > 0 ? "text-[var(--jade)]" : "text-[var(--verm)]"}`} style={num}>
                           {l.diff > 0 ? "+" : ""}{fmt(l.diff, 0)}
                         </span>}
@@ -5580,13 +5642,13 @@ function DayClose({ data, calc, cur, usr, closeDay, sumUsd }) {
           )}
 
           <Card className="p-5">
-            <div><Lbl>تێبینی (بۆچی جیاوازی هەیە؟)</Lbl><Inp value={note} onChange={(e) => setNote(e.target.value)} placeholder="نموونە: خەرجی تۆمار نەکراو..." /></div>
+            <div><Lbl>{tr("تێبینی (بۆچی جیاوازی هەیە؟)")}</Lbl><Inp value={note} onChange={(e) => setNote(e.target.value)} placeholder={tr("نموونە: خەرجی تۆمار نەکراو...")} /></div>
             {diffs.length > 0 && (
               <label className="flex items-start gap-2.5 mt-4 cursor-pointer">
                 <input type="checkbox" checked={adjust} onChange={(e) => setAdjust(e.target.checked)} className="mt-0.5 w-4 h-4 accent-[var(--jade)]" />
                 <span className="text-sm text-[var(--txt)]">
-                  <b>قاسەکە ڕاست بکەرەوە</b>
-                  <div className="text-xs text-[var(--txt-2)] mt-0.5">تۆمارێکی ڕاستکردنەوە زیاد دەکرێت تا حیسابی سیستەم بگونجێت لەگەڵ پارەی ڕاستەقینە</div>
+                  <b>{tr("قاسەکە ڕاست بکەرەوە")}</b>
+                  <div className="text-xs text-[var(--txt-2)] mt-0.5">{tr("تۆمارێکی ڕاستکردنەوە زیاد دەکرێت تا حیسابی سیستەم بگونجێت لەگەڵ پارەی ڕاستەقینە")}</div>
                 </span>
               </label>
             )}
@@ -5597,7 +5659,7 @@ function DayClose({ data, calc, cur, usr, closeDay, sumUsd }) {
         </>
       ) : (
         <Card className="p-5">
-          <SecLbl>دڵنیابوونەوە</SecLbl>
+          <SecLbl>{tr("دڵنیابوونەوە")}</SecLbl>
           <div className="space-y-1.5 mb-4">
             {entered.map((l) => (
               <div key={l.cur} className="flex justify-between items-center py-2 border-b border-[var(--line-soft)] text-sm">
@@ -5613,22 +5675,22 @@ function DayClose({ data, calc, cur, usr, closeDay, sumUsd }) {
           </div>
           {diffs.length > 0 && adjust && (
             <div className="text-xs text-[var(--amber)] bg-[color-mix(in_srgb,var(--amber)_11%,transparent)] border border-[color-mix(in_srgb,var(--amber)_26%,transparent)] rounded-xl p-3 mb-4">
-              تۆمارێکی ڕاستکردنەوە زیاد دەکرێت بۆ گونجاندنی قاسە لەگەڵ ژماردنەکەت
+              {tr("تۆمارێکی ڕاستکردنەوە زیاد دەکرێت بۆ گونجاندنی قاسە لەگەڵ ژماردنەکەت")}
             </div>
           )}
           <div className="flex gap-2">
-            <Btn className="flex-1" onClick={submit}>پشتڕاستکردنەوە</Btn>
-            <Btn kind="ghost" className="flex-1" onClick={() => setStep("count")}>گەڕانەوە</Btn>
+            <Btn className="flex-1" onClick={submit}>{tr("پشتڕاستکردنەوە")}</Btn>
+            <Btn kind="ghost" className="flex-1" onClick={() => setStep("count")}>{tr("گەڕانەوە")}</Btn>
           </div>
         </Card>
       )}
 
-      <SecLbl>مێژووی بەستنەکان</SecLbl>
-      {hist === null ? <Card><Empty t="بارکردن..." /></Card> :
+      <SecLbl>{tr("مێژووی بەستنەکان")}</SecLbl>
+      {hist === null ? <Card><Empty t={tr("بارکردن...")} /></Card> :
         hist.length === 0 ? (
           <Card className="p-4">
             <div className="text-sm text-[var(--amber)] bg-[color-mix(in_srgb,var(--amber)_11%,transparent)] border border-[color-mix(in_srgb,var(--amber)_26%,transparent)] rounded-xl p-3">
-              هێشتا هیچ بەستنێک نییە — ئایا خشتەی <b>day_closes</b> لە Supabase درووست کراوە؟
+              {tr("هێشتا هیچ بەستنێک نییە — ئایا خشتەی")} <b>day_closes</b> {tr("لە Supabase درووست کراوە؟")}
             </div>
           </Card>
         ) : hist.map((h) => (
@@ -5644,8 +5706,8 @@ function DayClose({ data, calc, cur, usr, closeDay, sumUsd }) {
               </div>
               <div className="text-left shrink-0">
                 {h.has_diff
-                  ? <Pill tone="amber">جیاوازی هەبووە</Pill>
-                  : <Pill tone="green">ڕێک بووە</Pill>}
+                  ? <Pill tone="amber">{tr("جیاوازی هەبووە")}</Pill>
+                  : <Pill tone="green">{tr("ڕێک بووە")}</Pill>}
               </div>
             </div>
             {h.has_diff && Array.isArray(h.lines) && (
@@ -5670,8 +5732,8 @@ function DayClose({ data, calc, cur, usr, closeDay, sumUsd }) {
 function Audit({ data }) {
   return (
     <div className="space-y-3">
-      <H>تۆماری گۆڕانکاری</H>
-      {data.audit.length === 0 ? <Card><Empty t="هێشتا هیچ" /></Card> :
+      <H>{tr("تۆماری گۆڕانکاری")}</H>
+      {data.audit.length === 0 ? <Card><Empty t={tr("هێشتا هیچ")} /></Card> :
         data.audit.slice(0, 150).map((a) => (
           <Card key={a.id} className="p-3.5 flex items-center gap-3 text-sm">
             <History className="w-4 h-4 text-[var(--txt-3)] shrink-0" />
@@ -5691,10 +5753,10 @@ function CustomerPortal({ user, c, base, data, cur, usr, flash, reloadBatches })
   const owe = Object.entries(c.owe).filter(([, v]) => v);
   const due = Object.entries(c.due).filter(([, v]) => v);
 
-  const TABS = [["account", "ئەکاونتم"], ["send", "ناردنی فیش"], ["archive", "فیشەکانم"]];
+  const TABS = [["account", tr("ئەکاونتم")], ["send", tr("ناردنی فیش")], ["archive", tr("فیشەکانم")]];
   return (
     <div className="space-y-4">
-      <H sub={`بەخێربێیت، ${user.name}`}>ئەکاونتی من</H>
+      <H sub={`بەخێربێیت، ${user.name}`}>{tr("ئەکاونتی من")}</H>
 
       <div className="flex gap-1 rounded-2xl p-1" style={{ background: "var(--card)", border: "1px solid var(--line)", boxShadow: "var(--shadow-1)" }}>
         {TABS.map(([k, t]) => (
@@ -5708,7 +5770,7 @@ function CustomerPortal({ user, c, base, data, cur, usr, flash, reloadBatches })
         <>
           <Card className="p-4 bg-[var(--line-soft)]">
             <div className="text-sm text-[var(--txt-2)] leading-relaxed">
-              سکرینشۆتی ئەو فیشانە هەڵبژێرە کە پارەت پێ ناردووە. سیستەمەکە خۆی دەیانخوێنێتەوە، کۆیان دەکاتەوە، و دووبارەکان دەدۆزێتەوە.
+              {tr("سکرینشۆتی ئەو فیشانە هەڵبژێرە کە پارەت پێ ناردووە. سیستەمەکە خۆی دەیانخوێنێتەوە، کۆیان دەکاتەوە، و دووبارەکان دەدۆزێتەوە.")}
             </div>
           </Card>
           <ReceiptUploader customerId={user.id} customerName={user.name} uploaderId={user.id} data={data}
@@ -5721,8 +5783,8 @@ function CustomerPortal({ user, c, base, data, cur, usr, flash, reloadBatches })
       {tab === "account" && (<>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <Card className="p-4 border-[color-mix(in_srgb,var(--jade)_26%,transparent)] bg-[color-mix(in_srgb,var(--jade)_8%,transparent)]">
-          <div className="text-xs font-semibold text-[var(--jade)] mb-2">پارەی من لای ئەوان</div>
-          {owe.length === 0 ? <div className="text-sm text-[var(--txt-3)]">هیچ</div> :
+          <div className="text-xs font-semibold text-[var(--jade)] mb-2">{tr("پارەی من لای ئەوان")}</div>
+          {owe.length === 0 ? <div className="text-sm text-[var(--txt-3)]">{tr("هیچ")}</div> :
             owe.map(([cid, v]) => (
               <div key={cid} className="flex justify-between py-1">
                 <span className="text-sm text-[var(--txt-2)]">{cur(cid).name}</span>
@@ -5731,8 +5793,8 @@ function CustomerPortal({ user, c, base, data, cur, usr, flash, reloadBatches })
             ))}
         </Card>
         <Card className="p-4 border-[color-mix(in_srgb,var(--verm)_26%,transparent)] bg-[color-mix(in_srgb,var(--verm)_8%,transparent)]">
-          <div className="text-xs font-semibold text-[var(--verm)] mb-2">قەرزی من</div>
-          {due.length === 0 ? <div className="text-sm text-[var(--txt-3)]">هیچ</div> :
+          <div className="text-xs font-semibold text-[var(--verm)] mb-2">{tr("قەرزی من")}</div>
+          {due.length === 0 ? <div className="text-sm text-[var(--txt-3)]">{tr("هیچ")}</div> :
             due.map(([cid, v]) => (
               <div key={cid} className="flex justify-between py-1">
                 <span className="text-sm text-[var(--txt-2)]">{cur(cid).name}</span>
@@ -5741,9 +5803,9 @@ function CustomerPortal({ user, c, base, data, cur, usr, flash, reloadBatches })
             ))}
         </Card>
       </div>
-      <SecLbl>مامەڵەکانم</SecLbl>
+      <SecLbl>{tr("مامەڵەکانم")}</SecLbl>
       <TxFilterBar data={data} f={f} setF={setF} count={list.length} />
-      {list.length === 0 ? <Card><Empty t="هیچ مامەڵەیەک نەدۆزرایەوە" /></Card> :
+      {list.length === 0 ? <Card><Empty t={tr("هیچ مامەڵەیەک نەدۆزرایەوە")} /></Card> :
         list.map((t) => <TxRow key={t.id} t={t} cur={cur} usr={usr} flip lite />)}
       </>)}
     </div>
@@ -5759,9 +5821,9 @@ function PartnerPortal({ user, data, calc, cur, usr, flash, reloadBatches, accou
   data.ledger.forEach((e) => { if (e.partnerId === user.id && e.type === "partner_fee") fees[e.curId] = (fees[e.curId] || 0) + Math.abs(e.amount); });
   return (
     <div className="space-y-4">
-      <H sub={`بەخێربێیت، ${user.name}`}>ئەکاونتی من</H>
+      <H sub={`بەخێربێیت، ${user.name}`}>{tr("ئەکاونتی من")}</H>
       <div className="flex gap-1 rounded-2xl p-1" style={{ background: "var(--card)", border: "1px solid var(--line)", boxShadow: "var(--shadow-1)" }}>
-        {[["balance", "باڵانس"], ["safe", "قاسە"], ["receipts", "فیشەکان"], ["send", "ناردنی فیش"], ["history", "مێژوو"]].map(([k, t]) => (
+        {[["balance", tr("باڵانس")], ["safe", tr("قاسە")], ["receipts", tr("فیشەکان")], ["send", tr("ناردنی فیش")], ["history", tr("مێژوو")]].map(([k, t]) => (
           <button key={k} onClick={() => setTab(k)}
             style={tab === k ? { background: "linear-gradient(180deg, var(--jade-lt), var(--jade))", color: "#fff", boxShadow: "0 2px 8px -2px rgba(14,122,107,.4)" } : { color: "var(--txt-2)" }}
             className={`flex-1 whitespace-nowrap px-2 py-2.5 rounded-xl text-sm transition-all press ${tab === k ? "font-bold" : "font-medium hover:bg-[var(--line-soft)]"}`}>{t}</button>
@@ -5771,8 +5833,8 @@ function PartnerPortal({ user, data, calc, cur, usr, flash, reloadBatches, accou
       {tab === "balance" && (
         <div className="grid md:grid-cols-2 gap-4">
           <Card className="p-5">
-            <SecLbl>باڵانسی لای من</SecLbl>
-            {Object.keys(bal).length === 0 ? <Empty t="بەتاڵە" /> :
+            <SecLbl>{tr("باڵانسی لای من")}</SecLbl>
+            {Object.keys(bal).length === 0 ? <Empty t={tr("بەتاڵە")} /> :
               Object.entries(bal).map(([cid, v]) => (
                 <div key={cid} className="flex justify-between py-2 border-b border-[var(--line-soft)] last:border-0">
                   <span className="text-sm text-[var(--txt-2)]">{cur(cid).name}</span><Money v={v} dec={0} />
@@ -5781,7 +5843,7 @@ function PartnerPortal({ user, data, calc, cur, usr, flash, reloadBatches, accou
           </Card>
           <Card className="p-5">
             <SecLbl>عمولەی وەرگیراو ({user.rate}٪)</SecLbl>
-            {Object.keys(fees).length === 0 ? <Empty t="هێشتا هیچ" /> :
+            {Object.keys(fees).length === 0 ? <Empty t={tr("هێشتا هیچ")} /> :
               Object.entries(fees).map(([cid, v]) => (
                 <div key={cid} className="flex justify-between py-2 border-b border-[var(--line-soft)] last:border-0">
                   <span className="text-sm text-[var(--txt-2)]">{cur(cid).name}</span><Money v={v} dec={0} pos />
@@ -5798,8 +5860,7 @@ function PartnerPortal({ user, data, calc, cur, usr, flash, reloadBatches, accou
         <>
           <Card className="p-4 bg-[var(--line-soft)]">
             <div className="text-sm text-[var(--txt-2)] leading-relaxed">
-              فیشی ئەو پارەیە بنێرە کە لە ئەکاونتی تۆوە نێردراوە یان بۆ تۆ هاتووە.
-              سیستەمەکە خۆی دەیخوێنێتەوە و دووبارەکان دەدۆزێتەوە.
+              {tr("فیشی ئەو پارەیە بنێرە کە لە ئەکاونتی تۆوە نێردراوە یان بۆ تۆ هاتووە. سیستەمەکە خۆی دەیخوێنێتەوە و دووبارەکان دەدۆزێتەوە.")}
             </div>
           </Card>
           <ReceiptUploader partnerId={user.id} customerName={null} uploaderId={user.id}
@@ -5809,12 +5870,12 @@ function PartnerPortal({ user, data, calc, cur, usr, flash, reloadBatches, accou
       )}
 
       {tab === "history" && (
-        hist.length === 0 ? <Card><Empty t="هیچ نییە" /></Card> :
+        hist.length === 0 ? <Card><Empty t={tr("هیچ نییە")} /></Card> :
           hist.map((e) => (
             <Card key={e.id} className="p-3.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
               <Pill tone={e.amount >= 0 ? "green" : "red"}>{e.amount >= 0 ? "هاتنە ژوورەوە" : "چوونە دەرەوە"}</Pill>
               <span><Money v={e.amount} dec={0} /> {cur(e.curId).code}</span>
-              {e.type === "partner_fee" && <span className="text-[var(--txt-2)]">عمولە</span>}
+              {e.type === "partner_fee" && <span className="text-[var(--txt-2)]">{tr("عمولە")}</span>}
               <span className="text-[11px] text-[var(--txt-3)] mr-auto" style={num}>{new Date(e.date).toLocaleString("en-GB")}</span>
             </Card>
           ))
@@ -5842,11 +5903,11 @@ function Portal({ user, data, calc, cur, usr, officePay, settle, invUnpaid, flas
     data.ledger.forEach((e) => { if (e.partnerId === user.id && e.type === "partner_fee") fees[e.curId] = (fees[e.curId] || 0) + Math.abs(e.amount); });
     return (
       <div className="space-y-4">
-        <H sub={`بەخێربێیت، ${user.name}`}>ئەکاونتی من</H>
+        <H sub={`بەخێربێیت، ${user.name}`}>{tr("ئەکاونتی من")}</H>
         <div className="grid md:grid-cols-2 gap-4">
           <Card className="p-5">
-            <SecLbl>باڵانسی لای من</SecLbl>
-            {Object.keys(bal).length === 0 ? <Empty t="بەتاڵە" /> :
+            <SecLbl>{tr("باڵانسی لای من")}</SecLbl>
+            {Object.keys(bal).length === 0 ? <Empty t={tr("بەتاڵە")} /> :
               Object.entries(bal).map(([cid, v]) => (
                 <div key={cid} className="flex justify-between py-2 border-b border-[var(--line-soft)] last:border-0">
                   <span className="text-sm text-[var(--txt-2)]">{cur(cid).name}</span><Money v={v} dec={cur(cid).dec} />
@@ -5855,7 +5916,7 @@ function Portal({ user, data, calc, cur, usr, officePay, settle, invUnpaid, flas
           </Card>
           <Card className="p-5">
             <SecLbl>عمولەی وەرگیراو ({user.rate}٪)</SecLbl>
-            {Object.keys(fees).length === 0 ? <Empty t="هێشتا هیچ" /> :
+            {Object.keys(fees).length === 0 ? <Empty t={tr("هێشتا هیچ")} /> :
               Object.entries(fees).map(([cid, v]) => (
                 <div key={cid} className="flex justify-between py-2 border-b border-[var(--line-soft)] last:border-0">
                   <span className="text-sm text-[var(--txt-2)]">{cur(cid).name}</span><Money v={v} dec={cur(cid).dec} pos />
@@ -5863,13 +5924,13 @@ function Portal({ user, data, calc, cur, usr, officePay, settle, invUnpaid, flas
               ))}
           </Card>
         </div>
-        <SecLbl>مێژووی ئاڵووگۆر</SecLbl>
-        {hist.length === 0 ? <Card><Empty t="هیچ نییە" /></Card> :
+        <SecLbl>{tr("مێژووی ئاڵووگۆر")}</SecLbl>
+        {hist.length === 0 ? <Card><Empty t={tr("هیچ نییە")} /></Card> :
           hist.map((e) => (
             <Card key={e.id} className="p-3.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
               <Pill tone={e.amount >= 0 ? "green" : "red"}>{e.amount >= 0 ? "هاتنە ژوورەوە" : "چوونە دەرەوە"}</Pill>
               <span><Money v={e.amount} dec={cur(e.curId).dec} /> {cur(e.curId).code}</span>
-              {e.type === "partner_fee" && <span className="text-[var(--txt-2)]">عمولە</span>}
+              {e.type === "partner_fee" && <span className="text-[var(--txt-2)]">{tr("عمولە")}</span>}
               <span className="text-[11px] text-[var(--txt-3)] mr-auto" style={num}>{new Date(e.date).toLocaleString("en-GB")}</span>
             </Card>
           ))}
@@ -5880,7 +5941,7 @@ function Portal({ user, data, calc, cur, usr, officePay, settle, invUnpaid, flas
   if (user.role === "investor") {
     return (
       <div className="space-y-4">
-        <H sub={`بەخێربێیت، ${user.name}`}>ئەکاونتی من</H>
+        <H sub={`بەخێربێیت، ${user.name}`}>{tr("ئەکاونتی من")}</H>
         <InvestorDetail u={user} data={data} calc={calc} cur={cur} invUnpaid={invUnpaid} mine />
       </div>
     );

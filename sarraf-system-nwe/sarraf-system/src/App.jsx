@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Vault, ArrowLeftRight, ListOrdered, Users, Handshake,
   TrendingUp, Building2, UserCog, PieChart, History, Plus, Trash2, Pencil,
   CheckCircle2, AlertTriangle, Eye, LogOut, Wallet, ChevronLeft, Coins,
-  Receipt, TrendingDown, ScanLine, Upload, XCircle, SlidersHorizontal, MoreHorizontal, X, Share2, Database, Download, ClipboardCheck, RotateCcw, MessageCircle, Moon, Sun, WifiOff, Wifi, EyeOff
+  Receipt, TrendingDown, ScanLine, Upload, XCircle, SlidersHorizontal, Search, MoreHorizontal, Zap, ArrowDownLeft, ArrowUpRight, X, Share2, Database, Download, ClipboardCheck, RotateCcw, MessageCircle, Moon, Sun, WifiOff, Wifi, EyeOff
 } from "lucide-react";
 
 /* ══════════════════ یارمەتیدەرەکان ══════════════════ */
@@ -2166,256 +2166,277 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
   };
 
   return (
-    <div className="space-y-4">
-      <H>{e ? `ئیدیتی مامەڵە #${e.code}` : "مامەڵەی نوێ"}</H>
+    <div className="space-y-4 pb-4">
+      <H sub={f.direct ? tr("کڕین و فرۆشتن لە یەک کاتدا") : null}>
+        {e ? `${tr("ئیدیت")} #${e.code}` : tr("مامەڵەی نوێ")}
+      </H>
+
       {batch && (
-        <Card className="p-4 border-[color-mix(in_srgb,var(--pos)_40%,transparent)] bg-[color-mix(in_srgb,var(--pos)_9%,transparent)]">
+        <Card className="p-4" style={{ borderColor: "rgba(var(--ac-gl),.3)", background: "rgba(var(--ac-gl),.06)" }}>
           <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="text-sm font-bold text-[var(--pos)]">لە فیشەکانی {batch.customer_name}</div>
-              <div className="text-xs text-[var(--pos)] mt-1" style={num}>
-                {batch.n} فیش · بێ فی {fmt(batch.total_net, 0)} {batch.currency}
-                {batch.total_fee > 0 && ` · بە فی ${fmt(batch.total_gross, 0)}`}
+            <div className="min-w-0">
+              <div className="text-[13px] font-semibold" style={{ color: "var(--ac)" }}>
+                {tr("لە فیشەکانی")} {batch.customer_name}
               </div>
-              <div className="text-[11px] text-[var(--pos)] mt-1">{tr("بڕەکە خۆی دانراوە — تەنها نرخ و شوێنی دانان پڕ بکەرەوە")}</div>
+              <div className="text-[11.5px] mt-1" style={{ ...num, color: "var(--txt-2)" }}>
+                {batch.n} {tr("فیش")} · {fmt(batch.total_net, 0)} {batch.currency}
+              </div>
             </div>
-            <button onClick={onClearBatch} className="p-1.5 text-[var(--pos)]/60 hover:text-[var(--pos)]"><X className="w-4 h-4" /></button>
+            <button onClick={onClearBatch} className="p-1.5 tap shrink-0" style={{ color: "var(--txt-3)" }}>
+              <X className="w-4 h-4" />
+            </button>
           </div>
         </Card>
       )}
-      <Card className="p-5 space-y-5">
-        <div className="flex gap-2">
-          {["buy", "sell"].map((t) => {
-            const locked = !!batch;                       // لە فیشەوە: جۆر قوفڵە
-            const active = f.type === t;
-            if (locked && !active) return null;
-            return (
-              <button key={t} disabled={locked}
-                onClick={() => !locked && setF({ ...f, type: t, manualRate: false, quote: "", status: "completed" })}
-                className={`flex-1 py-2.5 rounded-[var(--r-sm)] font-bold text-sm transition ${active ? (t === "buy" ? "bg-[var(--pos)] text-white shadow-sm" : "bg-rose-700 text-white shadow-sm") : "bg-[var(--line)] text-[var(--txt-2)] hover:bg-[var(--line)]"} ${locked ? "cursor-default" : ""}`}>
-                {t === "buy" ? "کڕین" : "فرۆشتن"}{locked && " (لە فیشەکانەوە)"}
+
+      {/* جۆری مامەڵە */}
+      <div className="flex gap-2">
+        {["buy", "sell"].map((k) => {
+          const locked = !!batch, on = f.type === k;
+          if (locked && !on) return null;
+          return (
+            <button key={k} disabled={locked}
+              onClick={() => !locked && setF({ ...f, type: k, manualRate: false, quote: "", status: "completed" })}
+              className="flex-1 py-3.5 rounded-[var(--r-sm)] text-[14px] font-semibold tap flex items-center justify-center gap-2"
+              style={on
+                ? { background: k === "buy" ? "rgba(52,211,153,.14)" : "rgba(251,113,133,.14)",
+                    color: k === "buy" ? "var(--pos)" : "var(--neg)",
+                    border: `1px solid ${k === "buy" ? "rgba(52,211,153,.3)" : "rgba(251,113,133,.3)"}` }
+                : { background: "var(--surf-2)", color: "var(--txt-3)", border: "1px solid var(--line)" }}>
+              {k === "buy" ? <ArrowDownLeft className="w-4 h-4" /> : <ArrowUpRight className="w-4 h-4" />}
+              {k === "buy" ? tr("کڕین") : tr("فرۆشتن")}
+            </button>
+          );
+        })}
+      </div>
+
+      {!batch && !e && (
+        <button onClick={() => setF({ ...f, direct: !f.direct, partnerId: "" })}
+          className="w-full flex items-center gap-3 p-3.5 rounded-[var(--r-sm)] tap text-start"
+          style={f.direct
+            ? { background: "rgba(251,191,36,.1)", border: "1px solid rgba(251,191,36,.3)" }
+            : { background: "var(--surf-2)", border: "1px solid var(--line)" }}>
+          <span className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
+            style={{ background: f.direct ? "rgba(251,191,36,.18)" : "var(--surf-3)" }}>
+            <Zap className="w-4 h-4" style={{ color: f.direct ? "var(--warn)" : "var(--txt-3)" }} />
+          </span>
+          <span className="flex-1">
+            <span className="text-[13.5px] font-semibold block" style={{ color: f.direct ? "var(--warn)" : "var(--txt)" }}>
+              {tr("مامەڵەی ڕاستەوخۆ")}
+            </span>
+            <span className="text-[11px]" style={{ color: "var(--txt-3)" }}>
+              {tr("بێ هەڵگرتن · بێ عمولە · خێر ١٠٠٪ هی خۆم")}
+            </span>
+          </span>
+          <span className="w-5 h-5 rounded-full shrink-0 flex items-center justify-center"
+            style={{ border: `2px solid ${f.direct ? "var(--warn)" : "var(--line-2)"}`,
+                     background: f.direct ? "var(--warn)" : "transparent" }}>
+            {f.direct && <CheckCircle2 className="w-3 h-3 text-white" />}
+          </span>
+        </button>
+      )}
+
+      {/* بڕ — خانەی گەورە */}
+      <Card className="p-5">
+        <div className="text-center">
+          <div className="text-[12px] mb-2" style={{ color: "var(--txt-3)" }}>{tr("بڕ")}</div>
+          <input type="number" inputMode="decimal" value={f.amount}
+            onChange={(ev) => setF({ ...f, amount: ev.target.value })} placeholder="0"
+            className="w-full text-center bg-transparent outline-none"
+            style={{ ...num, fontSize: 40, fontWeight: 600, letterSpacing: "-.03em", color: "var(--txt)", border: 0 }} />
+          <div className="flex gap-2 justify-center mt-3 flex-wrap">
+            {data.currencies.map((c) => (
+              <button key={c.id} onClick={() => setF({ ...f, curId: c.id, manualRate: false, quote: "" })}
+                className="px-3 py-1.5 rounded-full text-[12px] font-semibold tap flex items-center gap-1.5"
+                style={f.curId === c.id
+                  ? { background: "var(--surf-3)", color: "var(--txt)", border: "1px solid var(--line-2)" }
+                  : { color: "var(--txt-3)" }}>
+                <CurBadge c={c} size="sm" /> {c.code}
               </button>
-            );
-          })}
-        </div>
-
-        {!batch && (
-          <label className="flex items-start gap-2.5 cursor-pointer bg-[var(--line)] border border-[var(--line)] rounded-[var(--r-sm)] p-3">
-            <input type="checkbox" checked={f.direct}
-              onChange={(ev) => setF({ ...f, direct: ev.target.checked, partnerId: "" })}
-              className="mt-0.5 w-4 h-4 accent-[var(--pos)]" />
-            <span className="text-sm text-[var(--txt)]">
-              <b>{tr("مامەڵەی ڕاستەوخۆ")}</b>
-              <div className="text-xs text-[var(--txt-2)] mt-0.5">{tr("پارەکە لای هیچ کەس هەڵناگیرێت — ڕاستەوخۆ دەکڕدرێت و دەفرۆشرێت، بێ عمولە")}</div>
-            </span>
-          </label>
-        )}
-
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-          <div><Lbl>{tr("دراو")}</Lbl><Sel value={f.curId} onChange={(ev) => setF({ ...f, curId: ev.target.value, manualRate: false, quote: "" })}>{data.currencies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Sel></div>
-          <div><Lbl>{tr("بڕ")}</Lbl><Inp type="number" value={f.amount} onChange={(ev) => setF({ ...f, amount: ev.target.value })} placeholder="0" /></div>
-          <div><Lbl>{tr("بەرامبەر دراوی")}</Lbl><Sel value={f.againstId} onChange={(ev) => setF({ ...f, againstId: ev.target.value, manualRate: false, quote: "" })}>{data.currencies.filter((c) => c.id !== f.curId).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Sel></div>
-        </div>
-
-        {f.direct ? (
-          <div className="bg-violet-50/60 border border-violet-200 rounded-[var(--r-sm)] p-4 space-y-3">
-            <div className="text-xs font-bold text-violet-900">{tr("ڕەیتی کڕین و فرۆشتن")}</div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <div className="text-[11px] font-semibold text-[var(--pos)] mb-1">{tr("بە چەند دەیکڕم")}</div>
-                <Inp type="number" step="any" dir="ltr" value={f.buyQuote}
-                  onChange={(ev) => setF({ ...f, buyQuote: ev.target.value })}
-                  className="text-center font-bold text-base" placeholder={autoQuote ? String(autoQuote) : "7.20"} />
-              </div>
-              <div>
-                <div className="text-[11px] font-semibold text-[var(--neg)] mb-1">{tr("بە چەند دەیفرۆشم")}</div>
-                <Inp type="number" step="any" dir="ltr" value={f.sellQuote}
-                  onChange={(ev) => setF({ ...f, sellQuote: ev.target.value })}
-                  className="text-center font-bold text-base" placeholder="7.15" />
-              </div>
-            </div>
-            {bq > 0 && sq > 0 && amtR > 0 && (
-              <div className="bg-[var(--surf)] rounded-[var(--r-sm)] p-3 space-y-1.5">
-                <div className="flex justify-between text-sm">
-                  <span className="text-[var(--txt-2)]">{tr("دەدەم (کڕین)")}</span>
-                  <span className="font-bold text-[var(--neg)]" style={num}>{fmt(dBuyTotal, 0)} {cur(f.againstId).code}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-[var(--txt-2)]">{tr("وەردەگرم (فرۆشتن)")}</span>
-                  <span className="font-bold text-[var(--pos)]" style={num}>{fmt(dSellTotal, 0)} {cur(f.againstId).code}</span>
-                </div>
-                <div className="flex justify-between pt-2 mt-1 border-t border-[var(--line)]">
-                  <span className="text-sm font-bold text-[var(--txt)]">{tr("خێر")}</span>
-                  <span className={`text-xl font-bold ${dProfit >= 0 ? "text-[var(--pos)]" : "text-[var(--neg)]"}`} style={num}>
-                    {dProfit > 0 ? "+" : ""}{fmt(dProfit, 0)} {cur(f.againstId).code}
-                  </span>
-                </div>
-                {dProfit < 0 && <div className="text-[11px] text-[var(--neg)] font-semibold">{tr("ئاگاداری: بە زەرەر دەفرۆشیت")}</div>}
-              </div>
-            )}
-            {autoQuote && (
-              <div className="text-[11px] text-[var(--txt-2)] flex items-center gap-2">
-                <span style={num}>نرخی ڕۆژ: {fmt(autoQuote, 3)}</span>
-                <button onClick={() => setF({ ...f, buyQuote: autoQuote, sellQuote: autoQuote })}
-                  className="text-[var(--pos)] font-semibold underline">بەکارهێنانی نرخی ڕۆژ</button>
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-3 border-t border-violet-200">
-              <div>
-                <Lbl>{tr("لە کێ دەیکڕم؟")}</Lbl>
-                <Sel value={f.fromId} onChange={(ev) => setF({ ...f, fromId: ev.target.value, fromName: "" })}>
-                  <option value="">{tr("— ناوێکی ئازاد —")}</option>
-                  {customers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
-                </Sel>
-                {!f.fromId && <Inp className="mt-1.5" value={f.fromName} onChange={(ev) => setF({ ...f, fromName: ev.target.value })} placeholder={tr("ناوی فرۆشیار...")} />}
-                <Sel className="mt-1.5" value={f.buyStatus} onChange={(ev) => setF({ ...f, buyStatus: ev.target.value })}>
-                  <option value="completed">{tr("پارەم داوە")}</option>
-                  <option value="pending">{tr("چاوەڕوانی پارەدان")}</option>
-                </Sel>
-              </div>
-              <div>
-                <Lbl>{tr("بە کێ دەیفرۆشم؟")}</Lbl>
-                <Sel value={f.toId} onChange={(ev) => setF({ ...f, toId: ev.target.value, toName: "" })}>
-                  <option value="">{tr("— ناوێکی ئازاد —")}</option>
-                  {customers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
-                </Sel>
-                {!f.toId && <Inp className="mt-1.5" value={f.toName} onChange={(ev) => setF({ ...f, toName: ev.target.value })} placeholder={tr("ناوی کڕیار...")} />}
-                <Sel className="mt-1.5" value={f.sellStatus} onChange={(ev) => setF({ ...f, sellStatus: ev.target.value })}>
-                  <option value="completed">{tr("پارەم وەرگرتووە")}</option>
-                  <option value="pending">{tr("چاوەڕوانی وەرگرتن")}</option>
-                </Sel>
-              </div>
-            </div>
-            <div className="text-[11px] text-violet-800 bg-violet-100/60 rounded-lg p-2.5">
-              {tr("دوو مامەڵە تۆمار دەکرێت: کڕینێک و فرۆشتنێک · بە پارەی خۆت · خێرەکەی ١٠٠٪ هی خۆتە")}
-            </div>
+            ))}
           </div>
-        ) : (
-        <div className="bg-[var(--line)] border border-[var(--line)] rounded-[var(--r-sm)] p-4">
-          <div className="flex items-center justify-between flex-wrap gap-3">
-            <div>
-              <div className="text-xs text-[var(--txt-2)]">{tr("کۆی گشتی")}</div>
-              <div className="text-2xl"><Money v={total} dec={cur(f.againstId).dec} /> <span className="text-sm text-[var(--txt-2)]">{cur(f.againstId).code}</span></div>
-            </div>
-            <div className="text-left">
-              <div className="text-xs text-[var(--txt-2)] mb-1">
-                یەک {cur(f.againstId).code} چەند {cur(f.curId).code}ە؟
-              </div>
-              <Inp type="number" step="any" dir="ltr" value={f.quote}
-                onChange={(ev) => setF({ ...f, quote: ev.target.value, manualRate: true })}
-                className="w-36 text-center font-bold text-lg" style={offDay ? { borderColor: "var(--ac)", background: "color-mix(in srgb, var(--ac) 9%, var(--surf))" } : {}} />
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between flex-wrap gap-2 mt-3 pt-3 border-t border-[var(--line)] text-xs">
-            <span className="text-[var(--txt-2)]">
-              {tr("نرخی ڕۆژ:")} <b style={num} className="text-[var(--txt)]">{autoQuote ? fmt(autoQuote, 3) : "دانەنراوە"}</b>
-              {quote > 0 && amtR > 0 && (
-                <span className="text-[var(--txt-3)] mr-2" style={num}>
-                  · {fmt(amtR, 0)} ÷ {fmt(quote, 3)} = {fmt(total, 0)}
-                </span>
-              )}
-            </span>
-            {offDay && (
-              <div className="flex items-center gap-2">
-                <span className="text-[var(--warn)] font-semibold">{tr("نرخێکی تایبەت بەکاردێت")}</span>
-                <button onClick={() => setF({ ...f, manualRate: false, quote: autoQuote })}
-                  className="text-[var(--pos)] font-semibold underline">گەڕانەوە بۆ نرخی ڕۆژ</button>
-              </div>
-            )}
-          </div>
-
-          {(av !== null || estProfit !== null) && (
-            <div className="flex gap-5 flex-wrap text-sm mt-3 pt-3 border-t border-[var(--line)]">
-              {av !== null && av > 0 && <span className="text-[var(--txt-2)]">{tr("مامناوەندی کڕین:")} <span style={num}>{fmt(1 / av, 3)}</span></span>}
-              {estProfit !== null && <span className="text-[var(--txt-2)]">{tr("خێری خەمڵێنراو:")} <Money v={estProfit} dec={cur(f.againstId).dec} pos /></span>}
-            </div>
-          )}
-        </div>
-        )}
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div className={f.direct ? "hidden" : ""}>
-            <Lbl>{f.type === "buy" ? "لە کوێ دای دەنێیت؟" : "لە کوێوە دەفرۆشیت؟"}</Lbl>
-            <Sel value={f.partnerId} onChange={(ev) => setF({ ...f, partnerId: ev.target.value })}>
-              {!cur(f.curId).external && <option value="">قاسەی گشتی — {fmt(calc.atMe[f.curId] || 0, 0)} {cur(f.curId).code}</option>}
-              {cur(f.curId).external && <option value="">{tr("— تەرەفێک هەڵبژێرە —")}</option>}
-              {partners.map((p) => {
-                const b = (calc.partner[p.id] || {})[f.curId] || 0;
-                return <option key={p.id} value={p.id}>{p.name} — {fmt(Math.abs(b), cur(f.curId).dec)} {cur(f.curId).code}{b < 0 ? " (قەرز)" : ""}</option>;
-              })}
-            </Sel>
-          </div>
-          <div>
-            <Lbl>{tr("دۆخی پارە")}</Lbl>
-            <Sel value={f.status} onChange={(ev) => setF({ ...f, status: ev.target.value })}>
-              {f.type === "buy"
-                ? <><option value="completed">{tr("پارەم داوە")}</option><option value="pending">{tr("چاوەڕوانی پارە (نووسینگە دەیدات)")}</option></>
-                : <><option value="completed">{tr("پارەم وەرگرتووە")}</option><option value="pending">{tr("چاوەڕوانی وەرگرتنی پارە")}</option></>}
-            </Sel>
-          </div>
-        </div>
-
-        {batch && (
-          <div>
-            <Lbl>{tr("لایەنی بەرامبەر")}</Lbl>
-            <div className="flex items-center gap-2 border border-[var(--line)] bg-[var(--line)] rounded-[var(--r-sm)] px-3 py-2.5">
-              <Users className="w-4 h-4 text-[var(--txt-3)]" />
-              <span className="text-sm font-semibold text-[var(--txt)]">{batch.customer_name || usr(batch.customer_id).name || "—"}</span>
-              <span className="text-[11px] text-[var(--txt-3)] mr-auto">{tr("لە فیشەکانەوە — ناگۆڕدرێت")}</span>
-            </div>
-          </div>
-        )}
-        {!lockCp && !batch && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div>
-              <Lbl>{tr("لایەنی بەرامبەر")}</Lbl>
-              <Sel value={f.cpMode} onChange={(ev) => setF({ ...f, cpMode: ev.target.value, cpId: "", cpName: "" })}>
-                <option value="acc">{tr("کڕیارێکی تۆمارکراو")}</option><option value="free">{tr("ئۆزەر (بێ ئەکاونت)")}</option>
-              </Sel>
-            </div>
-            <div>
-              <Lbl>{f.cpMode === "acc" ? "کڕیار هەڵبژێرە" : "ناوی کەسەکە"}</Lbl>
-              {f.cpMode === "acc"
-                ? <Sel value={f.cpId} onChange={(ev) => setF({ ...f, cpId: ev.target.value })}><option value="">—</option>{customers.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</Sel>
-                : <Inp value={f.cpName} onChange={(ev) => setF({ ...f, cpName: ev.target.value })} placeholder={tr("ناو...")} />}
-            </div>
-          </div>
-        )}
-
-        {cur(f.curId).external && !f.partnerId && !f.direct && (
-          <div className="flex items-start gap-2 text-[var(--warn)] bg-[color-mix(in_srgb,var(--warn)_11%,transparent)] border border-[color-mix(in_srgb,var(--warn)_26%,transparent)] rounded-[var(--r-sm)] p-3 text-sm">
-            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
-            {cur(f.curId).name} لە قاسەی گشتیدا هەڵناگیرێت — دەبێت تەرەفێک هەڵبژێریت
-          </div>
-        )}
-        {f.type === "sell" && av === null && amtR > 0 && (
-          <div className="flex items-start gap-2 text-[var(--txt-2)] bg-[var(--line)] border border-[var(--line)] rounded-[var(--r-sm)] p-3 text-sm">
-            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-[var(--warn)]" />
-            هیچ کڕینێکی پێشووی ئەم دراوە نییە بەرامبەر {cur(f.againstId).code} — بۆیە خێری ئەم فرۆشتنە ناژمێردرێت.
-          </div>
-        )}
-        {feeRate > 0 && f.type === "buy" && +f.amount > 0 && (
-          <div className="text-sm bg-[var(--line)] border border-[var(--line)] rounded-[var(--r-sm)] p-3 text-[var(--txt-2)]">
-            عمولەی {usr(f.partnerId).name} ({feeRate}٪): <b style={num}>{fmt(Math.round(amtR * feeRate / 100), 0)}</b> {cur(f.curId).code} — دەستبەجێ کەم دەکرێتەوە، باڵانسی دوایی: <b style={num}>{fmt(amtR - Math.round(amtR * feeRate / 100), 0)}</b>
-          </div>
-        )}
-        {willBeNeg && (
-          <div className="flex items-start gap-2 text-[var(--warn)] bg-[color-mix(in_srgb,var(--warn)_11%,transparent)] border border-[color-mix(in_srgb,var(--warn)_26%,transparent)] rounded-[var(--r-sm)] p-3 text-sm">
-            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" /> {tr("دوای ئەم فرۆشتنە باڵانسەکە دەبێتە سالب — قەرزار دەبیت و لە تێکردنی داهاتوودا ئۆتۆماتیکی دەبڕدرێتەوە.")}
-          </div>
-        )}
-
-        <div><Lbl>{tr("تێبینی")}</Lbl><Inp value={f.note} onChange={(ev) => setF({ ...f, note: ev.target.value })} /></div>
-
-        <div className="flex gap-2">
-          <Btn kind={f.direct ? "gold" : f.type === "buy" ? "primary" : "danger"} onClick={submit} disabled={sending || busy}>
-            {sending || busy ? "تۆمارکردن..." : e ? "پاشەکەوتی ئیدیت" : f.direct ? "تۆمارکردنی مامەڵەی ڕاستەوخۆ" : f.type === "buy" ? "تۆمارکردنی کڕین" : "تۆمارکردنی فرۆشتن"}
-          </Btn>
-          {e && <Btn kind="ghost" onClick={onCancel}>{tr("پاشگەزبوونەوە")}</Btn>}
         </div>
       </Card>
+
+      {/* ڕەیت + ئەنجام */}
+      {f.direct ? (
+        <Card className="p-5 space-y-4" style={{ borderColor: "rgba(251,191,36,.2)" }}>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Lbl>{tr("بە چەند دەیکڕم")}</Lbl>
+              <Inp type="number" step="any" dir="ltr" value={f.buyQuote}
+                onChange={(ev) => setF({ ...f, buyQuote: ev.target.value })}
+                className="!text-center !text-[17px] !font-semibold" placeholder={autoQuote ? String(autoQuote) : "7.20"} />
+            </div>
+            <div>
+              <Lbl>{tr("بە چەند دەیفرۆشم")}</Lbl>
+              <Inp type="number" step="any" dir="ltr" value={f.sellQuote}
+                onChange={(ev) => setF({ ...f, sellQuote: ev.target.value })}
+                className="!text-center !text-[17px] !font-semibold" placeholder="7.15" />
+            </div>
+          </div>
+          {bq > 0 && sq > 0 && amtR > 0 && (
+            <div className="rounded-[var(--r-sm)] p-4 space-y-2" style={{ background: "var(--surf-3)" }}>
+              <div className="flex justify-between text-[13px]">
+                <span style={{ color: "var(--txt-2)" }}>{tr("دەدەم (کڕین)")}</span>
+                <span className="font-semibold" style={{ ...num, color: "var(--neg)" }}>{fmt(dBuyTotal, 0)}</span>
+              </div>
+              <div className="flex justify-between text-[13px]">
+                <span style={{ color: "var(--txt-2)" }}>{tr("وەردەگرم (فرۆشتن)")}</span>
+                <span className="font-semibold" style={{ ...num, color: "var(--pos)" }}>{fmt(dSellTotal, 0)}</span>
+              </div>
+              <div className="flex justify-between items-baseline pt-2.5" style={{ borderTop: "1px solid var(--line)" }}>
+                <span className="text-[13px] font-semibold" style={{ color: "var(--txt)" }}>{tr("خێر")}</span>
+                <span className="text-[24px] font-semibold"
+                  style={{ ...num, color: dProfit >= 0 ? "var(--pos)" : "var(--neg)" }}>
+                  {dProfit > 0 ? "+" : ""}{fmt(dProfit, 0)} <span className="text-[12px] font-normal">{cur(f.againstId).code}</span>
+                </span>
+              </div>
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-3 pt-1">
+            <div>
+              <Lbl>{tr("لە کێ دەیکڕم؟")}</Lbl>
+              <Sel value={f.fromId} onChange={(ev) => setF({ ...f, fromId: ev.target.value, fromName: "" })}>
+                <option value="">{tr("— ناوێکی ئازاد —")}</option>
+                {customers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+              </Sel>
+              {!f.fromId && <Inp className="mt-2" value={f.fromName} onChange={(ev) => setF({ ...f, fromName: ev.target.value })} placeholder={tr("ناوی فرۆشیار...")} />}
+            </div>
+            <div>
+              <Lbl>{tr("بە کێ دەیفرۆشم؟")}</Lbl>
+              <Sel value={f.toId} onChange={(ev) => setF({ ...f, toId: ev.target.value, toName: "" })}>
+                <option value="">{tr("— ناوێکی ئازاد —")}</option>
+                {customers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+              </Sel>
+              {!f.toId && <Inp className="mt-2" value={f.toName} onChange={(ev) => setF({ ...f, toName: ev.target.value })} placeholder={tr("ناوی کڕیار...")} />}
+            </div>
+          </div>
+        </Card>
+      ) : (
+        <Card className="p-5">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex-1">
+              <Lbl>{tr("ڕەیت")} — 1 {cur(f.againstId).code}</Lbl>
+              <Inp type="number" step="any" dir="ltr" value={f.quote}
+                onChange={(ev) => setF({ ...f, quote: ev.target.value, manualRate: true })}
+                className="!text-center !text-[19px] !font-semibold"
+                style={offDay ? { borderColor: "var(--warn)", background: "rgba(251,191,36,.07)" } : {}} />
+            </div>
+            <div className="text-end shrink-0">
+              <div className="text-[11px]" style={{ color: "var(--txt-3)" }}>{tr("کۆی گشتی")}</div>
+              <div className="text-[26px] font-semibold" style={{ ...num, color: "var(--txt)", letterSpacing: "-.02em" }}>
+                {fmt(total, 0)}
+              </div>
+              <div className="text-[11px]" style={{ color: "var(--txt-3)" }}>{cur(f.againstId).code}</div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 mt-3 text-[11.5px]" style={{ color: "var(--txt-3)" }}>
+            <span style={num}>{tr("نرخی ڕۆژ:")} {autoQuote ? fmt(autoQuote, 3) : "—"}</span>
+            {offDay && (
+              <button onClick={() => setF({ ...f, manualRate: false, quote: autoQuote })}
+                className="font-semibold tap" style={{ color: "var(--ac)" }}>{tr("گەڕانەوە")}</button>
+            )}
+            {estProfit !== null && (
+              <span className="ms-auto font-semibold" style={{ color: estProfit >= 0 ? "var(--pos)" : "var(--neg)" }}>
+                {tr("خێر")} {fmt(estProfit, 0)}
+              </span>
+            )}
+          </div>
+        </Card>
+      )}
+
+      {/* وردەکاری */}
+      <Card className="p-5 space-y-4">
+        {!f.direct && (
+          <>
+            <div>
+              <Lbl>{f.type === "buy" ? tr("لە کوێ دای دەنێیت؟") : tr("لە کوێوە دەفرۆشیت؟")}</Lbl>
+              <Sel value={f.partnerId} onChange={(ev) => setF({ ...f, partnerId: ev.target.value })}>
+                {!cur(f.curId).external && <option value="">{tr("قاسەی گشتی")} — {fmt(calc.atMe[f.curId] || 0, 0)}</option>}
+                {cur(f.curId).external && <option value="">{tr("— تەرەفێک هەڵبژێرە —")}</option>}
+                {partners.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name} — {fmt((calc.partner[p.id] || {})[f.curId] || 0, 0)}</option>
+                ))}
+              </Sel>
+              {feeRate > 0 && f.type === "buy" && amtR > 0 && (
+                <div className="text-[11.5px] mt-2" style={{ color: "var(--warn)" }}>
+                  {tr("عمولە")} {feeRate}٪ = <b style={num}>{fmt(Math.round(amtR * feeRate / 100), 0)}</b> · {tr("باڵانسی دوایی")} <b style={num}>{fmt(amtR - Math.round(amtR * feeRate / 100), 0)}</b>
+                </div>
+              )}
+              {cur(f.curId).external && !f.partnerId && (
+                <div className="text-[11.5px] mt-2 flex items-center gap-1.5" style={{ color: "var(--warn)" }}>
+                  <AlertTriangle className="w-3.5 h-3.5" /> {cur(f.curId).name} {tr("لە قاسەی گشتیدا هەڵناگیرێت")}
+                </div>
+              )}
+              {willBeNeg && (
+                <div className="text-[11.5px] mt-2 flex items-center gap-1.5" style={{ color: "var(--neg)" }}>
+                  <AlertTriangle className="w-3.5 h-3.5" /> {tr("باڵانسەکە دەبێتە سالب")}
+                </div>
+              )}
+            </div>
+
+            <div>
+              <Lbl>{tr("دۆخی پارە")}</Lbl>
+              <div className="flex gap-2">
+                {(f.type === "buy"
+                  ? [["completed", tr("پارەم داوە")], ["pending", tr("چاوەڕوانی پارە")]]
+                  : [["completed", tr("پارەم وەرگرتووە")], ["pending", tr("چاوەڕوانی وەرگرتن")]]
+                ).map(([k, l]) => (
+                  <button key={k} onClick={() => setF({ ...f, status: k })}
+                    className="flex-1 py-2.5 rounded-[var(--r-sm)] text-[12.5px] font-medium tap"
+                    style={f.status === k
+                      ? { background: "var(--surf-3)", color: "var(--txt)", border: "1px solid var(--line-2)" }
+                      : { color: "var(--txt-3)", border: "1px solid var(--line)" }}>{l}</button>
+                ))}
+              </div>
+            </div>
+
+            {batch ? (
+              <div>
+                <Lbl>{tr("لایەنی بەرامبەر")}</Lbl>
+                <div className="flex items-center gap-2.5 px-4 py-3 rounded-[var(--r-sm)]"
+                  style={{ background: "var(--surf-3)", border: "1px solid var(--line)" }}>
+                  <Users className="w-4 h-4 shrink-0" style={{ color: "var(--txt-3)" }} />
+                  <span className="text-[14px] font-medium" style={{ color: "var(--txt)" }}>
+                    {batch.customer_name || usr(batch.customer_id).name}
+                  </span>
+                  <span className="text-[10.5px] ms-auto" style={{ color: "var(--txt-3)" }}>{tr("ناگۆڕدرێت")}</span>
+                </div>
+              </div>
+            ) : !lockCp && (
+              <div>
+                <Lbl>{tr("لایەنی بەرامبەر")}</Lbl>
+                <Sel value={f.cpMode} onChange={(ev) => setF({ ...f, cpMode: ev.target.value, cpId: "", cpName: "" })} className="mb-2">
+                  <option value="acc">{tr("کڕیارێکی تۆمارکراو")}</option>
+                  <option value="free">{tr("ئۆزەر (بێ ئەکاونت)")}</option>
+                </Sel>
+                {f.cpMode === "acc"
+                  ? <Sel value={f.cpId} onChange={(ev) => setF({ ...f, cpId: ev.target.value })}>
+                      <option value="">{tr("هەڵبژێرە...")}</option>
+                      {customers.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                    </Sel>
+                  : <Inp value={f.cpName} onChange={(ev) => setF({ ...f, cpName: ev.target.value })} placeholder={tr("ناو...")} />}
+              </div>
+            )}
+          </>
+        )}
+
+        <div>
+          <Lbl>{tr("تێبینی")}</Lbl>
+          <Inp value={f.note} onChange={(ev) => setF({ ...f, note: ev.target.value })} />
+        </div>
+      </Card>
+
+      <div className="flex gap-2 sticky bottom-24 md:bottom-4">
+        <Btn kind={f.direct ? "gold" : f.type === "buy" ? "primary" : "danger"}
+          onClick={submit} disabled={sending || busy} className="flex-1 !py-4 !text-[15px]">
+          {sending || busy ? "..." : e ? tr("پاشەکەوتی ئیدیت")
+            : f.direct ? tr("تۆمارکردنی مامەڵەی ڕاستەوخۆ")
+            : f.type === "buy" ? tr("تۆمارکردنی کڕین") : tr("تۆمارکردنی فرۆشتن")}
+        </Btn>
+        {e && <Btn kind="ghost" onClick={onCancel} className="!py-4">{tr("پاشگەزبوونەوە")}</Btn>}
+      </div>
     </div>
   );
 }
@@ -2452,43 +2473,52 @@ function TxFilterBar({ data, f, setF, count, total }) {
     setF({ ...f, from: x.toISOString().slice(0, 10), to });
   };
   return (
-    <Card className="p-3 md:p-4">
+    <div className="space-y-2">
       <div className="flex gap-2 items-center">
-        <Inp value={f.q} onChange={(e) => setF({ ...f, q: e.target.value })} placeholder={tr("گەڕان بە کۆد، ناو، دراو...")} className="flex-1" />
+        <div className="flex-1 relative">
+          <Search className="w-4 h-4 absolute start-4 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: "var(--txt-3)" }} />
+          <input value={f.q} onChange={(e) => setF({ ...f, q: e.target.value })} placeholder={tr("گەڕان...")}
+            className="w-full ps-11 pe-4 py-3 text-[14px] outline-none" style={fieldSty}
+            onFocus={onFoc} onBlur={onBlr} />
+        </div>
         <button onClick={() => setOpen(!open)}
-          className={`shrink-0 px-3 py-2.5 rounded-[var(--r-sm)] border text-sm font-semibold flex items-center gap-1.5 transition ${active ? "bg-[var(--pos)] text-white border-emerald-700" : "bg-[var(--surf)] border-[var(--line)] text-[var(--txt-2)]"}`}>
-          <SlidersHorizontal className="w-4 h-4" /> {tr("فلتەر")}
+          className="w-[46px] h-[46px] rounded-[var(--r-sm)] shrink-0 flex items-center justify-center tap"
+          style={active
+            ? { background: "linear-gradient(170deg, var(--ac), var(--ac-2))", color: "#fff", boxShadow: "0 4px 14px -4px rgba(var(--ac-gl),.5)" }
+            : { background: "var(--surf-2)", border: "1px solid var(--line)", color: "var(--txt-2)" }}>
+          <SlidersHorizontal className="w-[18px] h-[18px]" />
         </button>
       </div>
+
       {open && (
-        <div className="mt-3 pt-3 border-t border-[var(--line)] space-y-3">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+        <Card className="p-4 space-y-3 drop">
+          <div className="grid grid-cols-2 gap-2.5">
             <div><Lbl>{tr("جۆر")}</Lbl><Sel value={f.type} onChange={(e) => setF({ ...f, type: e.target.value })}>
               <option value="all">{tr("هەمووی")}</option><option value="buy">{tr("کڕین")}</option><option value="sell">{tr("فرۆشتن")}</option></Sel></div>
             <div><Lbl>{tr("دۆخ")}</Lbl><Sel value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })}>
               <option value="all">{tr("هەمووی")}</option><option value="pending">{tr("چاوەڕوان")}</option><option value="completed">{tr("تەواوکراو")}</option></Sel></div>
             <div><Lbl>{tr("دراو")}</Lbl><Sel value={f.cur} onChange={(e) => setF({ ...f, cur: e.target.value })}>
               <option value="all">{tr("هەمووی")}</option>{data.currencies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Sel></div>
-            <div className="flex items-end"><Btn kind="ghost" className="w-full" onClick={() => setF(emptyFilter)}>سڕینەوەی فلتەر</Btn></div>
+            <div className="flex items-end"><Btn kind="ghost" className="w-full !py-3" onClick={() => setF(emptyFilter)}>{tr("سڕینەوە")}</Btn></div>
           </div>
           <div className="grid grid-cols-2 gap-2.5">
             <div><Lbl>{tr("لە بەرواری")}</Lbl><Inp type="date" value={f.from} onChange={(e) => setF({ ...f, from: e.target.value })} /></div>
             <div><Lbl>{tr("بۆ بەرواری")}</Lbl><Inp type="date" value={f.to} onChange={(e) => setF({ ...f, to: e.target.value })} /></div>
           </div>
           <div className="flex gap-1.5 flex-wrap">
-            {[["ئەمڕۆ", 0], ["٧ ڕۆژ", 7], ["٣٠ ڕۆژ", 30], ["٩٠ ڕۆژ", 90]].map(([t, d]) => (
-              <button key={t} onClick={() => quick(d)} className="px-3 py-1.5 rounded-lg bg-[var(--line)] hover:bg-[var(--line)] text-xs font-semibold text-[var(--txt-2)]">{t}</button>
+            {[[tr("ئەمڕۆ"), 0], [tr("٧ ڕۆژ"), 7], [tr("٣٠ ڕۆژ"), 30], [tr("٩٠ ڕۆژ"), 90]].map(([t, d]) => (
+              <button key={t} onClick={() => quick(d)} className="px-3.5 py-1.5 rounded-full text-[12px] font-medium tap"
+                style={{ background: "var(--glass-2)", color: "var(--txt-2)" }}>{t}</button>
             ))}
           </div>
-        </div>
+          {count != null && total && (
+            <div className="flex gap-4 flex-wrap pt-2.5 text-[11.5px]" style={{ borderTop: "1px solid var(--line)", color: "var(--txt-3)" }}>
+              {Object.entries(total).map(([c, v]) => <span key={c}>{c}: <b style={{ ...num, color: "var(--txt-2)" }}>{fmt(v, 0)}</b></span>)}
+            </div>
+          )}
+        </Card>
       )}
-      {(count != null) && (
-        <div className="mt-2.5 pt-2.5 border-t border-[var(--line)] flex gap-4 flex-wrap text-xs text-[var(--txt-2)]">
-          <span><b style={num}>{count}</b>{tr("مامەڵە")}</span>
-          {total && Object.entries(total).map(([c, v]) => <span key={c}>{c}: <b style={num}>{fmt(v, 0)}</b></span>)}
-        </div>
-      )}
-    </Card>
+    </div>
   );
 }
 
@@ -2496,76 +2526,150 @@ function TxFilterBar({ data, f, setF, count, total }) {
 function TxList({ data, cur, usr, onEdit, onDel, settle, unsettle }) {
   const base = [...data.txs].filter((t) => !t.deleted).reverse();
   const [list, f, setF] = useTxFilter(base, cur, usr);
+
+  // گروپکردن بەپێی ڕۆژ
+  const groups = {};
+  list.forEach((t) => { const k = dOnly(t.date); (groups[k] = groups[k] || []).push(t); });
+  const today = new Date().toISOString().slice(0, 10);
+  const yest = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  const dayLabel = (k) => k === today ? tr("ئەمڕۆ") : k === yest ? tr("دوێنێ")
+    : new Date(k).toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short" });
+
   const total = {};
   list.forEach((t) => { total[cur(t.againstId).code || "?"] = (total[cur(t.againstId).code || "?"] || 0) + t.total; });
+
   return (
-    <div className="space-y-3">
-      <H>{tr("مامەڵەکان")}</H>
+    <div className="space-y-4">
+      <H sub={`${list.length} ${tr("مامەڵە")}`}>{tr("مامەڵەکان")}</H>
       <TxFilterBar data={data} f={f} setF={setF} count={list.length} total={total} />
-      {list.length === 0 ? <Card><Empty t={tr("هیچ مامەڵەیەک نەدۆزرایەوە")} /></Card> :
-        list.map((t) => <TxRow key={t.id} t={t} cur={cur} usr={usr} onEdit={onEdit} onDel={onDel} settle={settle} unsettle={unsettle} />)}
+      {list.length === 0 ? <Card className="p-2"><Empty t={tr("هیچ مامەڵەیەک نەدۆزرایەوە")} /></Card> :
+        Object.entries(groups).map(([day, items], gi) => (
+          <div key={day} className="rise" style={{ animationDelay: `${Math.min(gi, 6) * 45}ms` }}>
+            <div className="flex items-center gap-3 mb-1.5 px-1">
+              <span className="text-[11.5px] font-semibold" style={{ color: "var(--txt-3)" }}>{dayLabel(day)}</span>
+              <span className="flex-1 h-px" style={{ background: "var(--line)" }} />
+              <span className="text-[11px]" style={{ color: "var(--txt-3)" }}>{items.length}</span>
+            </div>
+            <Card className="px-1 py-1">
+              {items.map((t, i) => (
+                <div key={t.id} style={i ? { borderTop: "1px solid var(--line)" } : {}}>
+                  <TxRow t={t} cur={cur} usr={usr} onEdit={onEdit} onDel={onDel} settle={settle} unsettle={unsettle} />
+                </div>
+              ))}
+            </Card>
+          </div>
+        ))}
     </div>
   );
 }
 
 /* flip = بینینی مامەڵەکە لە ڕوانگەی لایەنی بەرامبەرەوە / lite = بێ وردەکاری ناوخۆیی */
 function TxRow({ t, cur, usr, onEdit, onDel, flip, lite, settle, unsettle }) {
+  const [open, setOpen] = useState(false);
   const name = t.cpId ? usr(t.cpId).name : t.cpName;
   const shown = flip ? (t.type === "buy" ? "sell" : "buy") : t.type;
   const pend = t.status === "pending";
-  const pendLbl = flip
-    ? (t.type === "buy" ? "چاوەڕوانی وەرگرتنی پارە" : "چاوەڕوانی پارەدان")
-    : (t.type === "buy" ? "پارە نەدراوە" : "پارە وەرنەگیراوە");
+  const isBuy = shown === "buy";
+
   return (
-    <Card className={`p-3.5 ${pend ? "border-[color-mix(in_srgb,var(--warn)_34%,transparent)] bg-[color-mix(in_srgb,var(--warn)_9%,transparent)]" : ""}`}>
-      <div className="flex items-start justify-between gap-3">
+    <div className="rounded-[var(--r-sm)]" style={{ background: open ? "var(--surf-2)" : "transparent" }}>
+      <div onClick={() => setOpen(!open)} className="flex items-center gap-3 py-3 px-2 cursor-pointer tap">
+        <span className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
+          style={{ background: t.direct ? "rgba(251,191,36,.13)" : isBuy ? "rgba(52,211,153,.12)" : "rgba(251,113,133,.12)" }}>
+          {t.direct
+            ? <Zap className="w-[17px] h-[17px]" style={{ color: "var(--warn)" }} />
+            : isBuy
+              ? <ArrowDownLeft className="w-[18px] h-[18px]" style={{ color: "var(--pos)" }} />
+              : <ArrowUpRight className="w-[18px] h-[18px]" style={{ color: "var(--neg)" }} />}
+        </span>
+
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            {t.direct
-              ? <Pill tone="amber">{tr("ڕاستەوخۆ")}</Pill>
-              : <Pill tone={shown === "buy" ? "green" : "red"}>{shown === "buy" ? "کڕین" : "فرۆشتن"}</Pill>}
-            <span className="font-bold text-[var(--txt)]" style={num}>{fmt(t.amount, 0)}</span>
-            <span className="text-sm text-[var(--txt-2)]">{cur(t.curId).code}</span>
-            <span className="text-[var(--txt-3)] mx-0.5">←</span>
-            <span className="font-bold text-[var(--txt)]" style={num}>{fmt(t.total, 0)}</span>
-            <span className="text-sm text-[var(--txt-2)]">{cur(t.againstId).code}</span>
+          <div className="flex items-center gap-2">
+            <span className="text-[14px] font-medium truncate" style={{ color: "var(--txt)" }}>
+              {lite ? (isBuy ? tr("کڕین") : tr("فرۆشتن")) : (name || (isBuy ? tr("کڕین") : tr("فرۆشتن")))}
+            </span>
+            {pend && <span className="w-1.5 h-1.5 rounded-full shrink-0 breathe" style={{ background: "var(--warn)" }} />}
           </div>
-          <div className="flex items-center gap-x-3 gap-y-1 flex-wrap mt-1.5 text-xs text-[var(--txt-2)]">
-            {t.code && <span className="font-bold text-[var(--txt-3)]" style={num}>#{t.code}</span>}
-            {!lite && name && <span className="text-[var(--txt)] font-semibold">{name}</span>}
-<span style={num}>ڕەیت {t.rate ? fmt(1 / t.rate, 3) : "—"}</span>
-            {!lite && t.partnerId && <span className="text-[var(--warn)]">لای {usr(t.partnerId).name}</span>}
-            {!lite && t.direct && t.buyRate && <span style={num} className="text-[var(--txt-2)]">کڕی {fmt(1 / t.buyRate, 3)}</span>}
-            {!lite && t.profit != null && <span>{tr("خێر")}<b className="text-[var(--pos)]" style={num}>{fmt(t.profit, 0)}</b></span>}
-            {!lite && t.edited && <span className="text-[var(--txt-3)]">{tr("(ئیدیت)")}</span>}
-            <span className="text-[var(--txt-3)]" style={num}>{new Date(t.date).toLocaleDateString("en-GB")}</span>
+          <div className="text-[11.5px] mt-0.5 truncate" style={{ color: "var(--txt-3)" }}>
+            <span style={num}>{fmt(t.amount, 0)}</span> {cur(t.curId).code}
+            {t.partnerId && !lite ? " · " + usr(t.partnerId).name : ""}
           </div>
-          {pend && <div className="mt-2"><Pill tone="amber">{pendLbl}</Pill></div>}
         </div>
-        {(onEdit || onDel) && (
-          <div className="flex flex-col gap-1 shrink-0">
-            {onEdit && <button onClick={() => onEdit(t)} className="p-2 rounded-lg text-[var(--txt-3)] hover:text-[var(--pos)] hover:bg-[color-mix(in_srgb,var(--pos)_10%,transparent)]"><Pencil className="w-4 h-4" /></button>}
-            {onDel && <button onClick={() => onDel(t)} className="p-2 rounded-lg text-[var(--txt-3)] hover:text-[var(--neg)] hover:bg-[color-mix(in_srgb,var(--neg)_10%,transparent)]"><Trash2 className="w-4 h-4" /></button>}
+
+        <div className="text-end shrink-0">
+          <div className="text-[15px] font-semibold" style={{ ...num, color: isBuy ? "var(--pos)" : "var(--neg)" }}>
+            {isBuy ? "−" : "+"}{fmt(t.total, 0)}
           </div>
-        )}
+          <div className="text-[10.5px] mt-0.5" style={{ color: "var(--txt-3)" }}>{cur(t.againstId).code}</div>
+        </div>
       </div>
-      {pend && settle && (
-        <div className="mt-2.5 pt-2.5 border-t border-[color-mix(in_srgb,var(--warn)_26%,transparent)]/70">
-          <button onClick={() => settle(t)} className="flex items-center gap-1.5 text-sm font-semibold text-[var(--pos)] hover:text-[var(--pos)]">
-            <CheckCircle2 className="w-4 h-4" /> {t.type === "buy" ? "پارەکەم دا" : "پارەکەم وەرگرت"}
-          </button>
+
+      {open && (
+        <div className="px-3 pb-3 drop">
+          <div className="rounded-[var(--r-sm)] p-3.5 space-y-2.5" style={{ background: "var(--surf-3)" }}>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2.5">
+              {t.code ? <D k={tr("کۆد")} v={"#" + t.code} /> : null}
+              <D k={tr("ڕەیت")} v={t.rate ? fmt(1 / t.rate, 3) : "—"} />
+              {t.direct && t.buyRate ? <D k={tr("بە چەند دەیکڕم")} v={fmt(1 / t.buyRate, 3)} /> : null}
+              {!lite && t.profit != null ? <D k={tr("خێر")} v={fmt(t.profit, 0)} tone={t.profit >= 0 ? "pos" : "neg"} /> : null}
+              {!lite && t.partnerId ? <D k={tr("لای")} v={usr(t.partnerId).name} /> : null}
+              <D k={tr("بەروار")} v={new Date(t.date).toLocaleDateString("en-GB")} />
+              <D k={tr("کات")} v={new Date(t.date).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })} />
+            </div>
+
+            {pend ? (
+              <div className="pt-2.5" style={{ borderTop: "1px solid var(--line)" }}>
+                <Pill tone="amber">
+                  {flip ? (t.type === "buy" ? tr("چاوەڕوانی وەرگرتنی پارە") : tr("چاوەڕوانی پارەدان"))
+                        : (t.type === "buy" ? tr("پارە نەدراوە") : tr("پارە وەرنەگیراوە"))}
+                </Pill>
+              </div>
+            ) : null}
+
+            <div className="flex gap-2 pt-2.5 flex-wrap" style={{ borderTop: "1px solid var(--line)" }}>
+              {pend && settle ? (
+                <button onClick={(e) => { e.stopPropagation(); settle(t); }}
+                  className="flex items-center gap-1.5 text-[12.5px] font-semibold px-3.5 py-2 rounded-full tap"
+                  style={{ background: "rgba(52,211,153,.14)", color: "var(--pos)" }}>
+                  <CheckCircle2 className="w-3.5 h-3.5" /> {t.type === "buy" ? tr("پارەکەم دا") : tr("پارەکەم وەرگرت")}
+                </button>
+              ) : null}
+              {!pend && t.paidAt && unsettle ? (
+                <button onClick={(e) => { e.stopPropagation(); unsettle(t); }}
+                  className="flex items-center gap-1.5 text-[12px] px-3 py-2 rounded-full tap"
+                  style={{ color: "var(--txt-3)" }}>
+                  <RotateCcw className="w-3.5 h-3.5" /> {tr("هەڵوەشاندنەوەی پارەدان")}
+                </button>
+              ) : null}
+              {onEdit ? (
+                <button onClick={(e) => { e.stopPropagation(); onEdit(t); }}
+                  className="flex items-center gap-1.5 text-[12px] px-3 py-2 rounded-full tap"
+                  style={{ background: "var(--glass-2)", color: "var(--txt-2)" }}>
+                  <Pencil className="w-3.5 h-3.5" /> {tr("ئیدیت")}
+                </button>
+              ) : null}
+              {onDel ? (
+                <button onClick={(e) => { e.stopPropagation(); onDel(t); }}
+                  className="flex items-center gap-1.5 text-[12px] px-3 py-2 rounded-full tap"
+                  style={{ color: "var(--neg)" }}>
+                  <Trash2 className="w-3.5 h-3.5" /> {tr("سڕینەوە")}
+                </button>
+              ) : null}
+            </div>
+          </div>
         </div>
       )}
-      {!pend && t.paidAt && unsettle && (
-        <div className="mt-2.5 pt-2.5 border-t border-[var(--line)]">
-          <button onClick={() => unsettle(t)} className="flex items-center gap-1.5 text-xs text-[var(--txt-3)] hover:text-[var(--warn)]">
-            <RotateCcw className="w-3.5 h-3.5" /> {tr("هەڵوەشاندنەوەی پارەدان")}
-          </button>
-        </div>
-      )}
-    </Card>
+    </div>
   );
-}/* ══════════════════ فیشەکان ══════════════════ */
+}
+
+const D = ({ k, v, tone }) => (
+  <div>
+    <div className="text-[10.5px]" style={{ color: "var(--txt-3)" }}>{k}</div>
+    <div className="text-[13px] font-semibold mt-0.5"
+      style={{ ...num, color: tone === "pos" ? "var(--pos)" : tone === "neg" ? "var(--neg)" : "var(--txt)" }}>{v}</div>
+  </div>
+);
 
 async function prepImage(file) {
   const bmp = await createImageBitmap(file);
@@ -4534,62 +4638,57 @@ function InvestorDetail({ u, data, calc, cur, invUnpaid, mine }) {
     const up = invUnpaid(u.id, c.id);
     return { c, capV, up, tot: capV + up };
   }).filter((r) => r.capV || r.up);
+  const main = rows[0];
 
   return (
-    <div className="space-y-4">
-      {!mine && <h2 className="text-xl font-bold text-[var(--txt)]">{u.name}</h2>}
+    <div className="space-y-5">
+      {!mine && <h2 className="text-[22px] font-semibold" style={{ color: "var(--txt)" }}>{u.name}</h2>}
 
-      {/* کۆی گشتی */}
-      <Card dark className="p-5">
-        <div className="flex items-center justify-between mb-3">
-          <div className="text-xs text-[var(--txt-3)]">{mine ? "کۆی ماڵی من" : `کۆی ماڵی ${u.name}`}</div>
-          <span className="text-[11px] bg-slate-800 px-2 py-0.5 rounded-full">ڕێژەی خێر {u.rate}٪</span>
-        </div>
-        {rows.length === 0 ? <div className="text-sm text-[var(--txt-3)]">{tr("هێشتا هیچ سەرمایەیەک دانەنراوە")}</div> :
-          rows.map((r) => (
-            <div key={r.c.id} className="flex justify-between items-baseline py-2 border-b border-slate-700/60 last:border-0">
-              <span className="text-sm text-[var(--txt-3)]">{r.c.name}</span>
-              <span className="text-2xl font-bold" style={num}>{fmt(r.tot, 0)}</span>
-            </div>
-          ))}
-        <div className="text-[11px] text-[var(--txt-3)] mt-3">{tr("سەرمایە + خێری نەدراو")}</div>
-      </Card>
+      <div className="relative pt-4 pb-1 aura">
+        <Hero label={mine ? tr("کۆی ماڵی من") : tr("کۆی ماڵی") + " " + u.name}
+          value={main ? fmt(main.tot, 0) : "0"}
+          unit={main ? cur(main.c.id).code : ""}
+          sub={`${tr("ڕێژەی خێر")} ${u.rate}٪ · ${(u.scope || []).length === 0 ? tr("لە هەموو دراوەکاندا") : (u.scope || []).map((x) => cur(x).code).join("، ")}`} />
+      </div>
 
-      <div className="grid md:grid-cols-2 gap-4">
-        <Card className="p-5">
-          <SecLbl>{mine ? "سەرمایەکەم" : "سەرمایە"}</SecLbl>
-          {rows.filter((r) => r.capV).length === 0 ? <Empty t={tr("سەرمایە دانەنراوە")} /> :
+      <div className="grid grid-cols-2 gap-3">
+        <Card className="p-4">
+          <div className="text-[11px] mb-2" style={{ color: "var(--txt-3)" }}>{tr("سەرمایە")}</div>
+          {rows.filter((r) => r.capV).length === 0 ? <div style={{ color: "var(--txt-3)" }}>—</div> :
             rows.filter((r) => r.capV).map((r) => (
-              <div key={r.c.id} className="flex justify-between py-2 border-b border-[var(--line)] last:border-0">
-                <span className="text-sm text-[var(--txt-2)]">{r.c.name}</span><Money v={r.capV} dec={0} />
+              <div key={r.c.id} className="text-[19px] font-semibold" style={{ ...num, color: "var(--txt)" }}>
+                {fmt(r.capV, 0)} <span className="text-[11px] font-normal" style={{ color: "var(--txt-3)" }}>{r.c.code}</span>
               </div>
             ))}
         </Card>
-        <Card className="p-5">
-          <SecLbl>{tr("خێری نەدراو")}</SecLbl>
-          {rows.filter((r) => r.up).length === 0 ? <Empty t={tr("هێشتا هیچ")} /> :
+        <Card className="p-4">
+          <div className="text-[11px] mb-2" style={{ color: "var(--txt-3)" }}>{tr("خێری نەدراو")}</div>
+          {rows.filter((r) => r.up).length === 0 ? <div style={{ color: "var(--txt-3)" }}>—</div> :
             rows.filter((r) => r.up).map((r) => (
-              <div key={r.c.id} className="flex justify-between py-2 border-b border-[var(--line)] last:border-0">
-                <span className="text-sm text-[var(--txt-2)]">{r.c.name}</span><Money v={r.up} dec={0} pos />
+              <div key={r.c.id} className="text-[19px] font-semibold" style={{ ...num, color: "var(--pos)" }}>
+                {fmt(r.up, 0)} <span className="text-[11px] font-normal" style={{ color: "var(--txt-3)" }}>{r.c.code}</span>
               </div>
             ))}
-          <div className="text-[11px] text-[var(--txt-3)] mt-2">
-            {mine ? "ئەمە ئەو خێرەیە کە هێشتا وەرتنەگرتووە" : "لە بەشی «قاسە و خەرجی» دەتوانیت پارەکەی بدەیت"}
-          </div>
         </Card>
       </div>
 
-      <SecLbl>مێژووی پارە ({hist.length})</SecLbl>
-      {hist.length === 0 ? <Card><Empty t={tr("هیچ نییە")} /></Card> :
-        hist.map((e) => (
-          <Card key={e.id} className="p-3.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-            <Pill tone={e.type === "investor_payout" ? "amber" : e.amount >= 0 ? "green" : "red"}>
-              {e.type === "investor_payout" ? (mine ? "وەرگرتنی خێر" : "پارەدانی خێر") : e.amount >= 0 ? "پارە دانان" : "پارە دەرهێنان"}
-            </Pill>
-            <span><Money v={Math.abs(e.amount)} dec={0} /> {cur(e.curId).code}</span>
-            <span className="text-[11px] text-[var(--txt-3)] mr-auto" style={num}>{new Date(e.date).toLocaleString("en-GB")}</span>
-          </Card>
-        ))}
+      <Card className="px-4 py-2">
+        <div className="pt-2"><SecLbl>{tr("مێژووی پارە")} ({hist.length})</SecLbl></div>
+        {hist.length === 0 ? <Empty t={tr("هیچ نییە")} /> :
+          hist.map((e) => (
+            <Row key={e.id}
+              icon={<span className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
+                style={{ background: e.type === "investor_payout" ? "rgba(251,191,36,.12)" : e.amount >= 0 ? "rgba(52,211,153,.12)" : "rgba(251,113,133,.12)" }}>
+                {e.type === "investor_payout" ? <TrendingUp className="w-4 h-4" style={{ color: "var(--warn)" }} />
+                  : e.amount >= 0 ? <ArrowDownLeft className="w-4 h-4" style={{ color: "var(--pos)" }} />
+                  : <ArrowUpRight className="w-4 h-4" style={{ color: "var(--neg)" }} />}
+              </span>}
+              title={e.type === "investor_payout" ? (mine ? tr("وەرگرتنی خێر") : tr("پارەدانی خێر"))
+                : e.amount >= 0 ? tr("پارە دانان") : tr("پارە دەرهێنان")}
+              sub={new Date(e.date).toLocaleString("en-GB")}
+              right={fmt(Math.abs(e.amount), 0)} rightSub={cur(e.curId).code} />
+          ))}
+      </Card>
     </div>
   );
 }
@@ -5814,24 +5913,77 @@ function CustomerPortal({ user, c, base, data, cur, usr, flash, reloadBatches })
   const [tab, setTab] = useState("account");
   const owe = Object.entries(c.owe).filter(([, v]) => v);
   const due = Object.entries(c.due).filter(([, v]) => v);
+  const net = owe.reduce((s, [, v]) => s + v, 0) - due.reduce((s, [, v]) => s + v, 0);
+  const mainCur = (owe[0] || due[0] || [])[0];
 
-  const TABS = [["account", tr("ئەکاونتم")], ["send", tr("ناردنی فیش")], ["archive", tr("فیشەکانم")]];
   return (
-    <div className="space-y-4">
-      <H sub={`بەخێربێیت، ${user.name}`}>{tr("ئەکاونتی من")}</H>
+    <div className="space-y-5">
+      {tab === "account" && (
+        <>
+          {/* ژمارەی سەرەکی */}
+          <div className="relative pt-4 pb-1 aura">
+            <Hero
+              label={net >= 0 ? tr("پارەی من لای ئەوان") : tr("قەرزی من")}
+              value={mainCur ? fmt(Math.abs(net), 0) : "0"}
+              unit={mainCur ? cur(mainCur).code : ""}
+              tone={net > 0 ? "pos" : net < 0 ? "neg" : "txt"}
+              sub={!mainCur ? tr("حیساب پاکە ✅") : null} />
+          </div>
 
-      <div className="flex gap-1 rounded-[var(--r)] p-1" style={{ background: "var(--surf)", border: "1px solid var(--line)", boxShadow: "var(--sh-1)" }}>
-        {TABS.map(([k, t]) => (
-          <button key={k} onClick={() => setTab(k)}
-            style={tab === k ? { background: "linear-gradient(180deg, var(--ac), var(--pos))", color: "#fff", boxShadow: "0 2px 8px -2px rgba(14,122,107,.4)" } : { color: "var(--txt-2)" }}
-            className={`flex-1 py-2.5 rounded-[var(--r-sm)] text-sm transition-all tap ${tab === k ? "font-bold" : "font-medium hover:bg-[var(--line)]"}`}>{t}</button>
-        ))}
-      </div>
+          {/* کرداری خێرا */}
+          <div className="flex justify-center gap-8 px-2">
+            <Quick icon={Upload} label={tr("ناردنی فیش")} onClick={() => setTab("send")} active />
+            <Quick icon={ScanLine} label={tr("فیشەکانم")} onClick={() => setTab("archive")} />
+            <Quick icon={History} label={tr("مامەڵەکانم")} onClick={() => setTab("history")} />
+          </div>
+
+          {/* دوو باڵانس */}
+          {(owe.length > 0 || due.length > 0) && (
+            <div className="grid grid-cols-2 gap-3">
+              <Card className="p-4">
+                <div className="text-[11px] mb-2" style={{ color: "var(--txt-3)" }}>{tr("پارەی من لای ئەوان")}</div>
+                {owe.length === 0 ? <div className="text-[15px]" style={{ color: "var(--txt-3)" }}>—</div> :
+                  owe.map(([cid, v]) => (
+                    <div key={cid} className="text-[19px] font-semibold" style={{ ...num, color: "var(--pos)" }}>
+                      {fmt(v, 0)} <span className="text-[11px] font-normal" style={{ color: "var(--txt-3)" }}>{cur(cid).code}</span>
+                    </div>
+                  ))}
+              </Card>
+              <Card className="p-4">
+                <div className="text-[11px] mb-2" style={{ color: "var(--txt-3)" }}>{tr("قەرزی من")}</div>
+                {due.length === 0 ? <div className="text-[15px]" style={{ color: "var(--txt-3)" }}>—</div> :
+                  due.map(([cid, v]) => (
+                    <div key={cid} className="text-[19px] font-semibold" style={{ ...num, color: "var(--neg)" }}>
+                      {fmt(v, 0)} <span className="text-[11px] font-normal" style={{ color: "var(--txt-3)" }}>{cur(cid).code}</span>
+                    </div>
+                  ))}
+              </Card>
+            </div>
+          )}
+
+          {/* دوا مامەڵەکان */}
+          <Card className="px-1 py-1">
+            <div className="flex items-center justify-between px-3 pt-3 pb-1">
+              <SecLbl>{tr("دوا مامەڵەکان")}</SecLbl>
+              <button onClick={() => setTab("history")} className="text-[12px] font-semibold tap" style={{ color: "var(--ac)" }}>
+                {tr("هەمووی")}
+              </button>
+            </div>
+            {base.length === 0 ? <Empty t={tr("هێشتا هیچ")} /> :
+              base.slice(0, 5).map((t, i) => (
+                <div key={t.id} style={i ? { borderTop: "1px solid var(--line)" } : {}}>
+                  <TxRow t={t} cur={cur} usr={usr} flip lite />
+                </div>
+              ))}
+          </Card>
+        </>
+      )}
 
       {tab === "send" && (
         <>
-          <Card className="p-4 bg-[var(--line)]">
-            <div className="text-sm text-[var(--txt-2)] leading-relaxed">
+          <Back onClick={() => setTab("account")} t={tr("گەڕانەوە")} />
+          <Card className="p-4">
+            <div className="text-[13px] leading-relaxed" style={{ color: "var(--txt-2)" }}>
               {tr("سکرینشۆتی ئەو فیشانە هەڵبژێرە کە پارەت پێ ناردووە. سیستەمەکە خۆی دەیانخوێنێتەوە، کۆیان دەکاتەوە، و دووبارەکان دەدۆزێتەوە.")}
             </div>
           </Card>
@@ -5840,36 +5992,27 @@ function CustomerPortal({ user, c, base, data, cur, usr, flash, reloadBatches })
         </>
       )}
 
-      {tab === "archive" && <ReceiptArchive customerId={user.id} data={data} flash={flash} />}
+      {tab === "archive" && (
+        <>
+          <Back onClick={() => setTab("account")} t={tr("گەڕانەوە")} />
+          <ReceiptArchive customerId={user.id} data={data} flash={flash} />
+        </>
+      )}
 
-      {tab === "account" && (<>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <Card className="p-4 border-[color-mix(in_srgb,var(--pos)_26%,transparent)] bg-[color-mix(in_srgb,var(--pos)_8%,transparent)]">
-          <div className="text-xs font-semibold text-[var(--pos)] mb-2">{tr("پارەی من لای ئەوان")}</div>
-          {owe.length === 0 ? <div className="text-sm text-[var(--txt-3)]">{tr("هیچ")}</div> :
-            owe.map(([cid, v]) => (
-              <div key={cid} className="flex justify-between py-1">
-                <span className="text-sm text-[var(--txt-2)]">{cur(cid).name}</span>
-                <span className="text-lg font-bold text-[var(--pos)]" style={num}>{fmt(v, 0)}</span>
-              </div>
-            ))}
-        </Card>
-        <Card className="p-4 border-[color-mix(in_srgb,var(--neg)_26%,transparent)] bg-[color-mix(in_srgb,var(--neg)_8%,transparent)]">
-          <div className="text-xs font-semibold text-[var(--neg)] mb-2">{tr("قەرزی من")}</div>
-          {due.length === 0 ? <div className="text-sm text-[var(--txt-3)]">{tr("هیچ")}</div> :
-            due.map(([cid, v]) => (
-              <div key={cid} className="flex justify-between py-1">
-                <span className="text-sm text-[var(--txt-2)]">{cur(cid).name}</span>
-                <span className="text-lg font-bold text-[var(--neg)]" style={num}>{fmt(v, 0)}</span>
-              </div>
-            ))}
-        </Card>
-      </div>
-      <SecLbl>{tr("مامەڵەکانم")}</SecLbl>
-      <TxFilterBar data={data} f={f} setF={setF} count={list.length} />
-      {list.length === 0 ? <Card><Empty t={tr("هیچ مامەڵەیەک نەدۆزرایەوە")} /></Card> :
-        list.map((t) => <TxRow key={t.id} t={t} cur={cur} usr={usr} flip lite />)}
-      </>)}
+      {tab === "history" && (
+        <>
+          <Back onClick={() => setTab("account")} t={tr("گەڕانەوە")} />
+          <TxFilterBar data={data} f={f} setF={setF} count={list.length} />
+          {list.length === 0 ? <Card className="p-2"><Empty t={tr("هیچ مامەڵەیەک نەدۆزرایەوە")} /></Card> :
+            <Card className="px-1 py-1">
+              {list.map((t, i) => (
+                <div key={t.id} style={i ? { borderTop: "1px solid var(--line)" } : {}}>
+                  <TxRow t={t} cur={cur} usr={usr} flip lite />
+                </div>
+              ))}
+            </Card>}
+        </>
+      )}
     </div>
   );
 }
@@ -5881,66 +6024,80 @@ function PartnerPortal({ user, data, calc, cur, usr, flash, reloadBatches, accou
   const hist = data.ledger.filter((e) => e.partnerId === user.id).slice().reverse();
   const fees = {};
   data.ledger.forEach((e) => { if (e.partnerId === user.id && e.type === "partner_fee") fees[e.curId] = (fees[e.curId] || 0) + Math.abs(e.amount); });
+  const rows = data.currencies.map((c) => ({ c, v: bal[c.id] || 0 })).filter((r) => r.v);
+  const main = rows[0];
+
   return (
-    <div className="space-y-4">
-      <H sub={`بەخێربێیت، ${user.name}`}>{tr("ئەکاونتی من")}</H>
-      <div className="flex gap-1 rounded-[var(--r)] p-1" style={{ background: "var(--surf)", border: "1px solid var(--line)", boxShadow: "var(--sh-1)" }}>
-        {[["balance", tr("باڵانس")], ["safe", tr("قاسە")], ["receipts", tr("فیشەکان")], ["send", tr("ناردنی فیش")], ["history", tr("مێژوو")]].map(([k, t]) => (
-          <button key={k} onClick={() => setTab(k)}
-            style={tab === k ? { background: "linear-gradient(180deg, var(--ac), var(--pos))", color: "#fff", boxShadow: "0 2px 8px -2px rgba(14,122,107,.4)" } : { color: "var(--txt-2)" }}
-            className={`flex-1 whitespace-nowrap px-2 py-2.5 rounded-[var(--r-sm)] text-sm transition-all tap ${tab === k ? "font-bold" : "font-medium hover:bg-[var(--line)]"}`}>{t}</button>
-        ))}
-      </div>
-
+    <div className="space-y-5">
       {tab === "balance" && (
-        <div className="grid md:grid-cols-2 gap-4">
-          <Card className="p-5">
-            <SecLbl>{tr("باڵانسی لای من")}</SecLbl>
-            {Object.keys(bal).length === 0 ? <Empty t={tr("بەتاڵە")} /> :
-              Object.entries(bal).map(([cid, v]) => (
-                <div key={cid} className="flex justify-between py-2 border-b border-[var(--line)] last:border-0">
-                  <span className="text-sm text-[var(--txt-2)]">{cur(cid).name}</span><Money v={v} dec={0} />
-                </div>
-              ))}
-          </Card>
-          <Card className="p-5">
-            <SecLbl>عمولەی وەرگیراو ({user.rate}٪)</SecLbl>
-            {Object.keys(fees).length === 0 ? <Empty t={tr("هێشتا هیچ")} /> :
-              Object.entries(fees).map(([cid, v]) => (
-                <div key={cid} className="flex justify-between py-2 border-b border-[var(--line)] last:border-0">
-                  <span className="text-sm text-[var(--txt-2)]">{cur(cid).name}</span><Money v={v} dec={0} pos />
-                </div>
-              ))}
-          </Card>
-        </div>
-      )}
-
-      {tab === "safe" && <AccountSafe userId={user.id} data={data} calc={calc} cur={cur} usr={usr} flash={flash} readOnly />}
-      {tab === "receipts" && <PartnerReceipts partnerId={user.id} data={data} flash={flash} />}
-
-      {tab === "send" && (
         <>
-          <Card className="p-4 bg-[var(--line)]">
-            <div className="text-sm text-[var(--txt-2)] leading-relaxed">
-              {tr("فیشی ئەو پارەیە بنێرە کە لە ئەکاونتی تۆوە نێردراوە یان بۆ تۆ هاتووە. سیستەمەکە خۆی دەیخوێنێتەوە و دووبارەکان دەدۆزێتەوە.")}
-            </div>
-          </Card>
-          <ReceiptUploader partnerId={user.id} customerName={null} uploaderId={user.id}
-            data={data} direction="out" allowDirection flash={flash}
-            onDone={() => { reloadBatches && reloadBatches(); setTab("receipts"); }} />
+          <div className="relative pt-4 pb-1 aura">
+            <Hero label={tr("باڵانسی لای من")}
+              value={main ? fmt(main.v, 0) : "0"}
+              unit={main ? cur(main.c.id).code : ""}
+              tone={main && main.v < 0 ? "neg" : "txt"}
+              sub={main && main.v < 0 ? tr("· قەرز") : null} />
+          </div>
+
+          <div className="flex justify-center gap-8">
+            <Quick icon={Upload} label={tr("ناردنی فیش")} onClick={() => setTab("send")} active />
+            <Quick icon={ScanLine} label={tr("فیشەکان")} onClick={() => setTab("receipts")} />
+            <Quick icon={Vault} label={tr("قاسە")} onClick={() => setTab("safe")} />
+            <Quick icon={History} label={tr("مێژوو")} onClick={() => setTab("history")} />
+          </div>
+
+          {rows.length > 1 && (
+            <Card className="px-4 py-2">
+              <div className="pt-2"><SecLbl>{tr("باڵانسی لای من")}</SecLbl></div>
+              {rows.map(({ c, v }) => (
+                <Row key={c.id} icon={<CurBadge c={c} size="sm" />} title={c.name}
+                  right={fmt(v, 0)} tone={v < 0 ? "neg" : null} rightSub={v < 0 ? tr("قەرز") : null} />
+              ))}
+            </Card>
+          )}
+
+          {Object.keys(fees).length > 0 && (
+            <Card className="px-4 py-2">
+              <div className="pt-2"><SecLbl>{tr("عمولەی وەرگیراو")} ({user.rate}٪)</SecLbl></div>
+              {Object.entries(fees).map(([cid, v]) => (
+                <Row key={cid} icon={<CurBadge c={cur(cid)} size="sm" />} title={cur(cid).name} right={fmt(v, 0)} tone="pos" />
+              ))}
+            </Card>
+          )}
         </>
       )}
 
+      {tab !== "balance" && <Back onClick={() => setTab("balance")} t={tr("گەڕانەوە")} />}
+      {tab === "safe" && <AccountSafe userId={user.id} data={data} calc={calc} cur={cur} usr={usr} flash={flash} readOnly />}
+      {tab === "receipts" && <PartnerReceipts partnerId={user.id} data={data} flash={flash} />}
+      {tab === "send" && (
+        <>
+          <Card className="p-4">
+            <div className="text-[13px] leading-relaxed" style={{ color: "var(--txt-2)" }}>
+              {tr("فیشی ئەو پارەیە بنێرە کە لە ئەکاونتی تۆوە نێردراوە یان بۆ تۆ هاتووە.")}
+            </div>
+          </Card>
+          <ReceiptUploader partnerId={user.id} uploaderId={user.id} data={data} direction="out" allowDirection
+            flash={flash} onDone={() => { reloadBatches && reloadBatches(); setTab("receipts"); }} />
+        </>
+      )}
       {tab === "history" && (
-        hist.length === 0 ? <Card><Empty t={tr("هیچ نییە")} /></Card> :
-          hist.map((e) => (
-            <Card key={e.id} className="p-3.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-              <Pill tone={e.amount >= 0 ? "green" : "red"}>{e.amount >= 0 ? "هاتنە ژوورەوە" : "چوونە دەرەوە"}</Pill>
-              <span><Money v={e.amount} dec={0} /> {cur(e.curId).code}</span>
-              {e.type === "partner_fee" && <span className="text-[var(--txt-2)]">{tr("عمولە")}</span>}
-              <span className="text-[11px] text-[var(--txt-3)] mr-auto" style={num}>{new Date(e.date).toLocaleString("en-GB")}</span>
-            </Card>
-          ))
+        hist.length === 0 ? <Card className="p-2"><Empty t={tr("هیچ نییە")} /></Card> :
+          <Card className="px-4 py-2">
+            {hist.map((e) => (
+              <Row key={e.id}
+                icon={<span className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
+                  style={{ background: e.amount >= 0 ? "rgba(52,211,153,.12)" : "rgba(251,113,133,.12)" }}>
+                  {e.amount >= 0 ? <ArrowDownLeft className="w-4 h-4" style={{ color: "var(--pos)" }} />
+                                 : <ArrowUpRight className="w-4 h-4" style={{ color: "var(--neg)" }} />}
+                </span>}
+                title={e.type === "partner_fee" ? tr("عمولە") : e.amount >= 0 ? tr("هاتنە ژوورەوە") : tr("چوونە دەرەوە")}
+                sub={new Date(e.date).toLocaleString("en-GB")}
+                right={`${e.amount >= 0 ? "+" : ""}${fmt(e.amount, 0)}`}
+                rightSub={cur(e.curId).code}
+                tone={e.amount >= 0 ? "pos" : "neg"} />
+            ))}
+          </Card>
       )}
     </div>
   );

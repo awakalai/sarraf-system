@@ -5587,6 +5587,52 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
     throw e;
   };
 
+
+  // Compatibility layer for older Supabase schemas during prototype testing.
+  // Only OPTIONAL receipt metadata may be removed after an explicit PGRST204.
+  // Required financial/identity fields are never silently dropped.
+  const insertCompat = async (table, payload, optionalColumns = [], stage = "unknown") => {
+    let current = Array.isArray(payload)
+      ? payload.map((row) => ({ ...row }))
+      : { ...payload };
+
+    const allowed = new Set(optionalColumns);
+
+    for (let attempt = 0; attempt < 16; attempt++) {
+      const res = await supabase.from(table).insert(current);
+      if (!res.error) return res;
+
+      const msg = String(res.error?.message || "");
+      const code = String(res.error?.code || "");
+      const match =
+        msg.match(/Could not find the ['"]([^'"]+)['"] column/i) ||
+        msg.match(/column ['"]?([^'"\s]+)['"]? .*schema cache/i);
+
+      const missing = match?.[1];
+
+      if (code === "PGRST204" && missing && allowed.has(missing)) {
+        console.warn(`[schema-compat] ${table}: optional "${missing}" missing; retrying without it`);
+
+        if (Array.isArray(current)) {
+          current = current.map((row) => {
+            const next = { ...row };
+            delete next[missing];
+            return next;
+          });
+        } else {
+          delete current[missing];
+        }
+
+        allowed.delete(missing);
+        continue;
+      }
+
+      throwSendError(stage, res.error);
+    }
+
+    throwSendError(stage, new Error(`${table}: schema compatibility retries exceeded`));
+  };
+
   const send = async () => {
     if (working || processing.length) return flash("هێشتا هەندێک فیش دەخوێندرێنەوە");
     if (review.length) return flash(`${review.length} فیش پێویستیان بە پشکنینی دەستی هەیە`);
@@ -5650,17 +5696,32 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
       }
 
       const a = mainCur ? agg[mainCur] : { g: 0, f: 0, n: 0 };
-      const b = await supabase.from("receipt_batches").insert({
+      const batchPayload = {
         id: batchId, customer_id: customerId || null, customer_name: customerName || null,
         partner_id: partnerId || null, direction: dir, status: "new", currency: mainCur,
         total_gross: a.g, total_fee: a.f, total_net: a.n, n: good.length, dup_n: dupN,
         rejected_n: bad.length, uploaded_by: uploaderId || null,
-      });
-      if (b.error) throwSendError("batch", b.error);
+      };
+
+      await insertCompat(
+        "receipt_batches",
+        batchPayload,
+        ["rejected_n", "dup_n", "uploaded_by", "partner_id", "customer_name"],
+        "batch"
+      );
       batchInserted = true;
 
-      const rr = await supabase.from("receipts").insert(recs);
-      if (rr.error) throwSendError("receipts", rr.error);
+      await insertCompat(
+        "receipts",
+        recs,
+        [
+          "fee_original", "fee_discount", "platform", "net_amount",
+          "counted", "reject_code", "reject_reason",
+          "dup_of", "dup_of_date", "dup_of_who",
+          "raw", "uploaded_by", "image_path", "bank", "note"
+        ],
+        "receipts"
+      );
 
       try {
         const nr = await supabase.from("notes").insert({

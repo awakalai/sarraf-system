@@ -3,8 +3,8 @@
 // Uses Gemini by default. Claude remains an optional fallback/provider.
 // No Supabase writes happen in this endpoint.
 
-const MAX_BASE64_CHARS = 12_000_000;
-const RETRYABLE = new Set([429, 502, 503, 504]);
+const MAX_BASE64_CHARS = 3_900_000;
+const RETRYABLE = new Set([502, 503, 504]);
 
 const RECEIPT_SCHEMA = {
   type: "object",
@@ -177,7 +177,6 @@ async function geminiOnce(model, key, image, mediaType, currentDate) {
         responseMimeType: "application/json",
         responseJsonSchema: RECEIPT_SCHEMA,
         maxOutputTokens: 1800,
-        temperature: 0.1,
         thinkingConfig: { thinkingLevel: "low" }
       }
     };
@@ -301,6 +300,9 @@ async function callClaude(key, image, mediaType, currentDate) {
 }
 
 export default async function handler(req, res) {
+  res.setHeader("Cache-Control", "no-store, max-age=0");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("X-Content-Type-Options", "nosniff");
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
     res.status(405).json({ error: "POST only" });
@@ -346,7 +348,7 @@ export default async function handler(req, res) {
       result = await run();
     } catch (e) {
       if (RETRYABLE.has(Number(e?.status))) {
-        await sleep(1800);
+        await sleep(800);
         result = await run();
       } else {
         throw e;
@@ -367,6 +369,7 @@ export default async function handler(req, res) {
       : status === 504 || /timed out/i.test(message)
         ? "خوێندنەوە زۆر درێژەی کێشا — دووبارە هەوڵ بدە"
         : message;
-    res.status(RETRYABLE.has(status) ? 503 : 500).json({ error: friendly });
+    const httpStatus = status === 429 ? 429 : RETRYABLE.has(status) ? 503 : (status >= 400 && status < 500 ? status : 500);
+    res.status(httpStatus).json({ error: friendly });
   }
 }

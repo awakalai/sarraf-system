@@ -4734,6 +4734,10 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
   const [sending, setSending] = useState(false);
   const [share, setShare] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [reviewTab, setReviewTab] = useState("all");
+  const [reviewSearch, setReviewSearch] = useState("");
+  const [reviewPlatform, setReviewPlatform] = useState("all");
+  const [selectedRows, setSelectedRows] = useState([]);
   const maxAge = 7;
 
   const commitRows = (updater) => {
@@ -5019,6 +5023,98 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
   });
   const mainCur = Object.keys(agg).sort((a, b) => agg[b].g - agg[a].g)[0] || null;
 
+  const receiptTabCounts = {
+    all: rows.length,
+    ok: good.length,
+    suspect: review.length,
+    dup: dupN,
+    error: errN,
+  };
+  const receiptTabs = [
+    ["all", "هەموو", receiptTabCounts.all],
+    ["ok", "پشتڕاستکراو", receiptTabCounts.ok],
+    ["suspect", "پشکنین", receiptTabCounts.suspect],
+    ["dup", "دووبارە", receiptTabCounts.dup],
+    ["error", "هەڵە", receiptTabCounts.error],
+  ];
+  const platformOptions = Array.from(new Set(rows.map((r) => r.platform || detectPlatform(r.bank)).filter(Boolean))).sort();
+  const normalizedReceiptSearch = normalizeSearchText(reviewSearch);
+  const visibleRows = rows.filter((r) => {
+    if (reviewTab !== "all" && r.status !== reviewTab) return false;
+    const rp = r.platform || detectPlatform(r.bank) || "";
+    if (reviewPlatform !== "all" && rp !== reviewPlatform) return false;
+    if (!normalizedReceiptSearch) return true;
+    return [
+      r.amount, r.currency, r.refNo, r.receiver, r.sender, r.bank, rp, r.fileName, r.note
+    ].some((v) => normalizeSearchText(v).includes(normalizedReceiptSearch));
+  });
+  const visibleIds = visibleRows.map((r) => r.id);
+  const visibleSelectableIds = visibleRows.filter((r) => r.status !== "processing").map((r) => r.id);
+  const allVisibleSelected = visibleSelectableIds.length > 0 && visibleSelectableIds.every((id) => selectedRows.includes(id));
+  const selectedActual = rows.filter((r) => selectedRows.includes(r.id));
+
+  const toggleSelected = (id) => setSelectedRows((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+  const toggleAllVisible = () => {
+    setSelectedRows((prev) => {
+      if (allVisibleSelected) return prev.filter((id) => !visibleSelectableIds.includes(id));
+      return Array.from(new Set([...prev, ...visibleSelectableIds]));
+    });
+  };
+  const clearSelected = () => setSelectedRows([]);
+
+  const confirmSelected = () => {
+    const ids = new Set(selectedActual
+      .filter((r) => r.status !== "processing" && r.status !== "dup" && Number(r.amount) > 0 && String(r.currency || "").trim())
+      .map((r) => r.id));
+    if (!ids.size) return flash("هیچ فیشێکی گونجاو بۆ پشتڕاستکردنەوە هەڵنەبژێردراوە");
+    commitRows((xs) => xs.map((r) => ids.has(r.id) ? {
+      ...r,
+      status: "ok",
+      counted: true,
+      reviewRequired: false,
+      rejectCode: null,
+      rejectReason: null,
+      note: r.manualEdited ? "بە دەست پشکنرا و ڕاستکرایەوە ✓" : "بە کۆمەڵەیی پشتڕاست کرایەوە ✓",
+      reviewedManually: true,
+    } : r));
+    setSelectedRows((prev) => prev.filter((id) => !ids.has(id)));
+    if (editingId && ids.has(editingId)) setEditingId(null);
+    flash(`${ids.size} فیش پشتڕاست کرانەوە ✓`);
+  };
+
+  const rejectSelected = () => {
+    const ids = new Set(selectedActual.filter((r) => r.status !== "processing" && r.status !== "dup").map((r) => r.id));
+    if (!ids.size) return flash("هیچ فیشێکی گونجاو بۆ ڕەتکردنەوە هەڵنەبژێردراوە");
+    commitRows((xs) => xs.map((r) => ids.has(r.id) ? {
+      ...r,
+      status: "error",
+      counted: false,
+      reviewRequired: false,
+      rejectCode: "manual_reject",
+      rejectReason: "بە دەست ڕەتکرایەوە",
+      note: "بە دەست ڕەتکرایەوە",
+      reviewedManually: true,
+    } : r));
+    setSelectedRows((prev) => prev.filter((id) => !ids.has(id)));
+    if (editingId && ids.has(editingId)) setEditingId(null);
+    flash(`${ids.size} فیش ڕەتکرانەوە`);
+  };
+
+  const retrySelected = async () => {
+    const ids = selectedActual.filter((r) => r.status !== "processing" && r.status !== "dup" && r.ocrImage).map((r) => r.id);
+    if (!ids.length) return flash("هیچ فیشێکی گونجاو بۆ دووبارە خوێندنەوە هەڵنەبژێردراوە");
+    let cursor = 0;
+    const worker = async () => {
+      while (true) {
+        const pos = cursor++;
+        if (pos >= ids.length) return;
+        await retryRow(ids[pos]);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(2, ids.length) }, () => worker()));
+    setSelectedRows((prev) => prev.filter((id) => !ids.includes(id)));
+  };
+
   const send = async () => {
     if (working || processing.length) return flash("هێشتا هەندێک فیش دەخوێندرێنەوە");
     if (review.length) return flash(`${review.length} فیش پێویستیان بە پشکنینی دەستی هەیە`);
@@ -5081,6 +5177,10 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
       flash(`${good.length} ${tr("فیش نێردرا")} ✓${bad.length ? ` — ${bad.length} ${tr("ڕەتکراو تۆمار کران")}` : ""}`);
       commitRows([]);
       setEditingId(null);
+      setSelectedRows([]);
+      setReviewTab("all");
+      setReviewSearch("");
+      setReviewPlatform("all");
       onDone && onDone();
     } catch (e) {
       console.error(e);
@@ -5154,20 +5254,86 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
             ))}
           </div>
 
+          <Card className="p-3 md:p-4">
+            <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
+              <div>
+                <div className="text-[13px] font-bold text-[var(--txt)]">ناوەندی پشکنینی فیش</div>
+                <div className="text-[10.5px] text-[var(--txt-3)] mt-0.5">فلتەر، هەڵبژاردنی کۆمەڵەیی، دووبارە خوێندنەوە و پشتڕاستکردنەوە لە یەک شوێن.</div>
+              </div>
+              <div className="text-[10.5px] font-semibold" style={{ color: "var(--txt-3)", ...num }}>{visibleRows.length} / {rows.length}</div>
+            </div>
+
+            <div className="flex gap-1 p-1 rounded-xl overflow-x-auto mb-3" style={{ background: "var(--surf-3)" }}>
+              {receiptTabs.map(([key, label, count]) => (
+                <button key={key} onClick={() => { setReviewTab(key); setSelectedRows([]); }}
+                  className="whitespace-nowrap px-3 py-2 rounded-lg text-[11px] font-semibold transition"
+                  style={reviewTab === key
+                    ? { background: "var(--surf)", color: "var(--txt)", boxShadow: "var(--sh-1)" }
+                    : { color: "var(--txt-3)" }}>
+                  {label} <span style={num}>({count})</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_180px_auto] gap-2.5">
+              <div className="relative">
+                <Search className="w-4 h-4 absolute top-1/2 -translate-y-1/2 start-3 text-[var(--txt-3)] pointer-events-none" />
+                <input value={reviewSearch} onChange={(e) => setReviewSearch(e.target.value)}
+                  placeholder="گەڕان بە بڕ، دراو، ژمارە، وەرگر..."
+                  className="w-full ps-9 pe-3 py-2.5 rounded-xl text-[12px] outline-none"
+                  style={{ background: "var(--surf-2)", border: "1px solid var(--line)", color: "var(--txt)" }} />
+              </div>
+              <select value={reviewPlatform} onChange={(e) => setReviewPlatform(e.target.value)}
+                className="w-full px-3 py-2.5 rounded-xl text-[12px] outline-none"
+                style={{ background: "var(--surf-2)", border: "1px solid var(--line)", color: "var(--txt)" }}>
+                <option value="all">هەموو پلاتفۆرمەکان</option>
+                {platformOptions.map((p) => <option key={p} value={p}>{platMeta(p).ku}</option>)}
+              </select>
+              <button onClick={toggleAllVisible} disabled={!visibleSelectableIds.length}
+                className="px-3 py-2.5 rounded-xl text-[11px] font-semibold disabled:opacity-40"
+                style={{ background: "var(--surf-3)", color: "var(--txt-2)", border: "1px solid var(--line)" }}>
+                {allVisibleSelected ? "هەڵوەشاندنەوەی هەموو" : "هەڵبژاردنی هەموو"}
+              </button>
+            </div>
+
+            {selectedActual.length > 0 && (
+              <div className="mt-3 p-3 rounded-xl flex items-center justify-between gap-2 flex-wrap"
+                style={{ background: "color-mix(in srgb, var(--ac) 7%, var(--surf))", border: "1px solid color-mix(in srgb, var(--ac) 18%, var(--line))" }}>
+                <div className="text-[11px] font-semibold" style={{ color: "var(--txt)" }}>
+                  <span style={num}>{selectedActual.length}</span> فیش هەڵبژێردراوە
+                </div>
+                <div className="flex gap-1.5 flex-wrap">
+                  <button onClick={confirmSelected} className="px-3 py-2 rounded-lg text-[11px] font-semibold"
+                    style={{ background: "var(--pos)", color: "#fff" }}>پشتڕاستکردنەوە</button>
+                  <button onClick={retrySelected} className="px-3 py-2 rounded-lg text-[11px] font-semibold"
+                    style={{ background: "var(--surf)", color: "var(--txt-2)", border: "1px solid var(--line)" }}>دووبارە خوێندنەوە</button>
+                  <button onClick={rejectSelected} className="px-3 py-2 rounded-lg text-[11px] font-semibold"
+                    style={{ background: "color-mix(in srgb, var(--neg) 9%, var(--surf))", color: "var(--neg)", border: "1px solid color-mix(in srgb, var(--neg) 20%, var(--line))" }}>ڕەتکردنەوە</button>
+                  <button onClick={clearSelected} className="px-3 py-2 rounded-lg text-[11px] font-semibold"
+                    style={{ color: "var(--txt-3)" }}>پاککردنەوە</button>
+                </div>
+              </div>
+            )}
+          </Card>
+
           {review.length > 0 && (
             <Card className="p-4 border-[color-mix(in_srgb,var(--warn)_34%,transparent)] bg-[color-mix(in_srgb,var(--warn)_9%,transparent)]">
               <div className="flex items-start gap-2 text-sm text-[var(--warn)]">
                 <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
                 <div>
                   <div className="font-semibold">{review.length} فیش پێویستیان بە پشکنینی تۆ هەیە</div>
-                  <div className="text-xs mt-1 opacity-90">بڕ، دراو، ژمارەی مامەڵە و ناوی وەرگر بپشکنە؛ پاشان «پشتڕاستکردنەوە» بکە. تا ئەو کاتە هەژمار ناکرێن.</div>
+                  <div className="text-xs mt-1 opacity-90">بڕ، دراو، ژمارەی مامەڵە و ناوی وەرگر بپشکنە؛ پاشان پشتڕاستی بکەرەوە. تا ئەو کاتە هەژمار ناکرێن.</div>
                 </div>
               </div>
             </Card>
           )}
 
+          {visibleRows.length === 0 && (
+            <Card className="p-5"><Empty t="هیچ فیشێک بەم فلتەرە نەدۆزرایەوە" /></Card>
+          )}
+
           <div className="space-y-2.5">
-            {rows.map((r, i) => {
+            {visibleRows.map((r, i) => {
               const st = ST[r.status] || ST.error;
               const editing = editingId === r.id;
               const hardDup = r.status === "dup";
@@ -5175,6 +5341,16 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
                 <Card key={r.id} className="p-0 overflow-hidden">
                   <div className={`p-3.5 md:p-4 ${r.status === "dup" ? "bg-[color-mix(in_srgb,var(--neg)_7%,transparent)]" : r.status === "suspect" ? "bg-[color-mix(in_srgb,var(--warn)_7%,transparent)]" : ""}`}>
                     <div className="flex items-start gap-3">
+                      <label className={`mt-0.5 shrink-0 ${r.status === "processing" ? "opacity-40" : "cursor-pointer"}`}>
+                        <input type="checkbox" className="sr-only" disabled={r.status === "processing"}
+                          checked={selectedRows.includes(r.id)} onChange={() => toggleSelected(r.id)} />
+                        <span className="w-5 h-5 rounded-md flex items-center justify-center"
+                          style={selectedRows.includes(r.id)
+                            ? { background: "var(--ac)", color: "#fff", border: "1px solid var(--ac)" }
+                            : { background: "var(--surf)", color: "transparent", border: "1px solid var(--line-2)" }}>
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                        </span>
+                      </label>
                       <div className="text-[10px] w-5 pt-1 text-center shrink-0" style={{ ...num, color: "var(--txt-3)" }}>{i + 1}</div>
                       {r.url
                         ? <img src={r.url} alt="" className="w-14 h-14 md:w-16 md:h-16 object-cover rounded-xl border border-[var(--line)] shrink-0" />

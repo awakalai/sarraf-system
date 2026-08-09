@@ -2690,6 +2690,8 @@ function Dashboard({ data, calc, cur, mySafe, profitIn, ownProfitIn, investorsPr
         <Stat label={tr("چاوەڕوان") } value={pendingCount} sub={pendingCount?tr("پێویستی بە پشکنینە"):`✓ ${tr("هیچ نییە")}`} />
       </div>
 
+      <MarketWatch compact />
+
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,.9fr)] gap-4">
         <section className="fin-card p-5 md:p-6">
           <div className="flex items-start justify-between gap-3 mb-5">
@@ -2887,6 +2889,189 @@ function CurrencyBreakdown({ curId, data, calc, cur, owners, ratesReady }) {
     </div>
   );
 }
+
+
+/* ══════════════════ MARKET WATCH — reference only ══════════════════ */
+const MARKET_CACHE_KEY = "sarraf_market_rates_v2";
+const MARKET_CACHE_MS = 12 * 60 * 60 * 1000;
+const MARKET_MAJOR_CODES = ["IQD","EUR","GBP","CNY","JPY","TRY","AED","SAR","KWD","QAR","CAD","AUD","CHF","INR","KRW"];
+const MARKET_NAMES = {
+  IQD:"Iraqi Dinar", EUR:"Euro", GBP:"British Pound", CNY:"Chinese Yuan", JPY:"Japanese Yen",
+  TRY:"Turkish Lira", AED:"UAE Dirham", SAR:"Saudi Riyal", KWD:"Kuwaiti Dinar", QAR:"Qatari Riyal",
+  CAD:"Canadian Dollar", AUD:"Australian Dollar", CHF:"Swiss Franc", INR:"Indian Rupee", KRW:"South Korean Won",
+  USD:"US Dollar"
+};
+const MARKET_FLAGS = {
+  IQD:"🇮🇶", EUR:"🇪🇺", GBP:"🇬🇧", CNY:"🇨🇳", JPY:"🇯🇵", TRY:"🇹🇷", AED:"🇦🇪", SAR:"🇸🇦",
+  KWD:"🇰🇼", QAR:"🇶🇦", CAD:"🇨🇦", AUD:"🇦🇺", CHF:"🇨🇭", INR:"🇮🇳", KRW:"🇰🇷", USD:"🇺🇸"
+};
+const MARKET_METALS = [
+  ["gold","Gold","🥇"],
+  ["silver","Silver","🥈"],
+  ["platinum","Platinum","⬜"],
+  ["palladium","Palladium","◻️"],
+];
+
+function MarketWatch({ compact = false }) {
+  const [market, setMarket] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+
+  const load = async (force = false) => {
+    if (busy) return;
+    if (!force) {
+      try {
+        const cached = JSON.parse(localStorage.getItem(MARKET_CACHE_KEY) || "null");
+        if (cached?.at && cached?.data && Date.now() - cached.at < MARKET_CACHE_MS) {
+          setMarket(cached.data);
+          return;
+        }
+      } catch {}
+    }
+
+    setBusy(true);
+    setErr("");
+    try {
+      const res = await fetch("/api/market-rates", { headers: { Accept: "application/json" } });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body?.ok) throw new Error(body?.message || "نرخی بازاڕ بەردەست نییە");
+      setMarket(body);
+      try { localStorage.setItem(MARKET_CACHE_KEY, JSON.stringify({ at: Date.now(), data: body })); } catch {}
+    } catch (e) {
+      console.error("market-watch", e);
+      setErr(e?.message || "نەتوانرا نرخی بازاڕ بار بکرێت");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  useEffect(() => { load(false); }, []);
+
+  const rows = Object.entries(market?.rates || {})
+    .filter(([code, value]) => code !== "USD" && Number(value) > 0)
+    .sort(([a], [b]) => {
+      const ai = MARKET_MAJOR_CODES.indexOf(a), bi = MARKET_MAJOR_CODES.indexOf(b);
+      if (ai !== -1 || bi !== -1) return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+      return a.localeCompare(b);
+    })
+    .filter(([code]) => !search || `${code} ${MARKET_NAMES[code] || ""}`.toLowerCase().includes(search.toLowerCase()));
+
+  const shown = search || open ? rows : rows.slice(0, compact ? 6 : 10);
+  const metals = MARKET_METALS.filter(([key]) => Number(market?.metals?.[key]) > 0);
+
+  return (
+    <Card className={`market-watch-card ${compact ? "p-4 md:p-5" : "p-5"}`}>
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+              style={{ background:"var(--pos-bg)", color:"var(--pos)" }}>
+              <TrendingUp className="w-4 h-4" />
+            </span>
+            <div>
+              <div className="text-[14px] font-bold">{tr("نرخی جیهانی")}</div>
+              <div className="text-[10.5px] mt-0.5" style={{ color:"var(--txt-3)" }}>
+                Market Watch · تەنها بۆ زانیاری
+              </div>
+            </div>
+            <span className="px-2 py-1 rounded-full text-[9px] font-bold"
+              style={{ background:"var(--surf-2)", border:"1px solid var(--line)", color:"var(--txt-3)" }}>
+              REFERENCE
+            </span>
+          </div>
+          <div className="text-[10.5px] mt-2 leading-relaxed" style={{ color:"var(--txt-3)" }}>
+            ئەم نرخانە هیچ کاریگەرییەکیان لە نرخی ناوخۆ، مامەڵە، خێر، باڵانس یان حیسابات نییە.
+          </div>
+        </div>
+
+        <button onClick={() => load(true)} disabled={busy}
+          className="shrink-0 px-3 py-2 rounded-xl text-[10.5px] font-semibold tap flex items-center justify-center gap-1.5"
+          style={{ background:"var(--surf-2)", border:"1px solid var(--line)", color:"var(--txt-2)" }}>
+          <RotateCcw className={`w-3.5 h-3.5 ${busy ? "animate-spin" : ""}`} />
+          {busy ? "..." : tr("نوێکردنەوە")}
+        </button>
+      </div>
+
+      {err && (
+        <div className="mt-3 p-3 rounded-xl flex items-start gap-2 text-[11px]"
+          style={{ background:"var(--warn-bg)", color:"var(--warn)" }}>
+          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+          <div>
+            <div className="font-semibold">نرخی جیهانی کاتێک بەردەست نییە</div>
+            <div className="mt-0.5 opacity-80">{err}</div>
+          </div>
+        </div>
+      )}
+
+      {!market && !err && (
+        <div className="mt-4 py-5 text-center text-[11px]" style={{ color:"var(--txt-3)" }}>
+          {busy ? "نرخی جیهانی بار دەکرێت..." : "چاوەڕوانی نرخی جیهانی..."}
+        </div>
+      )}
+
+      {market && (
+        <>
+          {metals.length > 0 && (
+            <div className={`mt-4 grid ${compact ? "grid-cols-2 lg:grid-cols-4" : "grid-cols-2 md:grid-cols-4"} gap-2`}>
+              {metals.map(([key, name, icon]) => (
+                <div key={key} className="rounded-xl p-3" style={{ background:"var(--surf-2)", border:"1px solid var(--line)" }}>
+                  <div className="text-[9.5px] flex items-center gap-1" style={{ color:"var(--txt-3)" }}><span>{icon}</span>{name}</div>
+                  <div className="text-[14px] font-bold mt-1" style={num}>${fmt(market.metals[key], 2)}</div>
+                  <div className="text-[8.5px] mt-0.5" style={{ color:"var(--txt-3)" }}>USD / oz</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className={`mt-4 grid ${compact ? "grid-cols-2 md:grid-cols-3" : "grid-cols-1 sm:grid-cols-2"} gap-2`}>
+            {shown.map(([code, value]) => (
+              <div key={code} className="rounded-xl px-3 py-2.5 flex items-center gap-2.5"
+                style={{ background:"var(--surf-2)", border:"1px solid var(--line)" }}>
+                <span className="text-[18px] shrink-0">{MARKET_FLAGS[code] || "🌐"}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-bold">{code}</span>
+                    <span className="text-[10.5px] font-semibold" style={num}>{fmt(value, rateDigits(value))}</span>
+                  </div>
+                  <div className="text-[8.5px] truncate mt-0.5" style={{ color:"var(--txt-3)" }}>
+                    1 USD = {code} · {MARKET_NAMES[code] || "Global currency"}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {(open || !compact) && (
+            <div className="relative mt-3">
+              <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color:"var(--txt-3)" }} />
+              <input value={search} onChange={(e) => setSearch(e.target.value)}
+                placeholder="گەڕان بە USD, EUR, CNY..."
+                className="w-full ps-9 pe-3 py-2.5 rounded-xl outline-none text-[11px]"
+                style={{ background:"var(--surf-2)", border:"1px solid var(--line)", color:"var(--txt)" }} />
+            </div>
+          )}
+
+          {rows.length > (compact ? 6 : 10) && !search && (
+            <button onClick={() => setOpen((v) => !v)}
+              className="mt-3 w-full py-2.5 rounded-xl text-[10.5px] font-semibold tap"
+              style={{ background:"var(--surf-2)", color:"var(--txt-2)", border:"1px solid var(--line)" }}>
+              {open ? "کەمتر پیشان بدە" : `هەموو ${rows.length} دراوەکە ببینە`}
+            </button>
+          )}
+
+          <div className="mt-3 pt-3 flex flex-wrap items-center justify-between gap-2 text-[9px]"
+            style={{ borderTop:"1px solid var(--line)", color:"var(--txt-3)" }}>
+            <span>{market.provider || "Market provider"}</span>
+            <span style={num}>{market.timestamp ? new Date(market.timestamp).toLocaleString("en-GB") : "—"}</span>
+          </div>
+        </>
+      )}
+    </Card>
+  );
+}
+
 
 /* ══════════════════ نرخی ڕۆژانە ══════════════════ */
 function Rates({ data, saveRates }) {
@@ -6254,6 +6439,8 @@ function Office({ data, cur, usr, officePay, calc, accountMove, accountTransfer,
         <S title={tr("ئەم مانگە")} m={sums((t) => new Date(t.paidAt) >= m0)} />
       </div>
 
+      <MarketWatch compact />
+
       <div className="flex gap-1 rounded-[var(--r)] p-1 overflow-x-auto" style={{ background: "var(--surf)", border: "1px solid var(--line)", boxShadow: "var(--sh-1)" }}>
         {TABS.map(([k, t]) => (
           <button key={k} onClick={() => setTab(k)}
@@ -7455,6 +7642,8 @@ function CustomerPortal({ user, c, base, data, calc, cur, usr, flash, reloadBatc
             <Quick icon={History} label={tr("مامەڵەکانم")} onClick={() => setTab("history")} />
           </div>
 
+          <MarketWatch compact />
+
           {/* دوو باڵانس */}
           {(owe.length > 0 || due.length > 0) && (
             <div className="grid grid-cols-2 gap-3">
@@ -7570,6 +7759,8 @@ function PartnerPortal({ user, data, calc, cur, usr, flash, reloadBatches, accou
             <Quick icon={Vault} label={tr("قاسە")} onClick={() => setTab("safe")} />
             <Quick icon={History} label={tr("مێژوو")} onClick={() => setTab("history")} />
           </div>
+
+          <MarketWatch compact />
 
           {rows.length > 1 && (
             <Card className="px-4 py-2">
@@ -7687,6 +7878,7 @@ function Portal({ user, data, calc, cur, usr, officePay, settle, invUnpaid, flas
       <div className="space-y-4">
         <H sub={`بەخێربێیت، ${user.name}`}>{tr("ئەکاونتی من")}</H>
         <InvestorDetail u={user} data={data} calc={calc} cur={cur} invUnpaid={invUnpaid} mine />
+        <MarketWatch compact />
       </div>
     );
   }

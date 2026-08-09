@@ -4358,21 +4358,92 @@ const D = ({ k, v, tone }) => (
   </div>
 );
 
-async function prepImage(file) {
-  const bmp = await createImageBitmap(file);
-  const MAX = 1400;
-  const s = Math.min(1, MAX / Math.max(bmp.width, bmp.height));
-  const cv = document.createElement("canvas");
-  cv.width = Math.round(bmp.width * s); cv.height = Math.round(bmp.height * s);
-  cv.getContext("2d").drawImage(bmp, 0, 0, cv.width, cv.height);
-  const blob = await new Promise((r) => cv.toBlob(r, "image/jpeg", 0.8));
-  const buf = await blob.arrayBuffer();
-  const bytes = new Uint8Array(buf);
+const waitMs = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const clamp01 = (v, fallback = 0) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : fallback;
+};
+const bytesToBase64 = (bytes) => {
   let bin = "";
-  for (let i = 0; i < bytes.length; i += 8192) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
-  const hb = await crypto.subtle.digest("SHA-256", buf);
+  for (let i = 0; i < bytes.length; i += 8192) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
+  }
+  return btoa(bin);
+};
+
+async function prepImage(file) {
+  const originalBuf = await file.arrayBuffer();
+  const hb = await crypto.subtle.digest("SHA-256", originalBuf);
   const hash = [...new Uint8Array(hb)].map((x) => x.toString(16).padStart(2, "0")).join("");
-  return { b64: btoa(bin), hash, blob, url: URL.createObjectURL(blob) };
+
+  let bmp;
+  try { bmp = await createImageBitmap(file, { imageOrientation: "from-image" }); }
+  catch { bmp = await createImageBitmap(file); }
+
+  // Receipt text is often tiny; keep materially more detail than the old 1400px/0.8 pipeline.
+  const MAX = 2200;
+  const scale = Math.min(1, MAX / Math.max(bmp.width, bmp.height));
+  const cv = document.createElement("canvas");
+  cv.width = Math.max(1, Math.round(bmp.width * scale));
+  cv.height = Math.max(1, Math.round(bmp.height * scale));
+
+  const ctx = cv.getContext("2d", { alpha: false });
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, cv.width, cv.height);
+  ctx.drawImage(bmp, 0, 0, cv.width, cv.height);
+  bmp.close?.();
+
+  const blob = await new Promise((resolve) => cv.toBlob(resolve, "image/jpeg", 0.92));
+  if (!blob) throw new Error("نەتوانرا وێنەکە ئامادە بکرێت");
+
+  const buf = await blob.arrayBuffer();
+  const b64 = bytesToBase64(new Uint8Array(buf));
+  return {
+    b64,
+    hash,
+    blob,
+    mediaType: "image/jpeg",
+    width: cv.width,
+    height: cv.height,
+    url: URL.createObjectURL(blob),
+  };
+}
+
+async function readReceiptAI(image, mediaType = "image/jpeg", retry = true) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30000);
+  try {
+    const resp = await fetch("/api/read-receipt", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ image, mediaType }),
+      signal: controller.signal,
+    });
+    const raw = await resp.text();
+    let data;
+    try { data = JSON.parse(raw); }
+    catch { throw new Error(`وەڵامی نەناسراو (${resp.status})`); }
+
+    if (resp.status === 404) throw new Error("خزمەتگوزاری خوێندنەوە بەردەست نییە");
+    if (!resp.ok || data?.error) {
+      const err = new Error(data?.error || `هەڵەی خوێندنەوە (${resp.status})`);
+      err.status = resp.status;
+      throw err;
+    }
+    return data;
+  } catch (e) {
+    const transient = e?.name === "AbortError" || e?.status === 429 || e?.status === 502 || e?.status === 503 || e?.status === 504;
+    if (retry && transient) {
+      await waitMs(1200);
+      return readReceiptAI(image, mediaType, false);
+    }
+    if (e?.name === "AbortError") throw new Error("خوێندنەوە زۆر درێژەی کێشا — دووبارە هەوڵ بدە");
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 const normRef = (r) => String(r || "").replace(/[\s\-_.]/g, "").toUpperCase();
 const DIR_KU = { in: "پارە هاتووە", out: "پارە نێردراوە" };
@@ -4383,6 +4454,8 @@ const PLATFORMS = {
   FIB:      { ku: "FIB",      cls: "bg-violet-50 text-violet-800 border-violet-200" },
   FastPay:  { ku: "FastPay",  cls: "bg-[color-mix(in_srgb,var(--warn)_11%,transparent)] text-[var(--warn)] border-[color-mix(in_srgb,var(--warn)_26%,transparent)]" },
   ZainCash: { ku: "Zain Cash", cls: "bg-[color-mix(in_srgb,var(--neg)_10%,transparent)] text-[var(--neg)] border-[color-mix(in_srgb,var(--neg)_26%,transparent)]" },
+  NassWallet:{ ku: "NassWallet", cls: "bg-sky-50 text-sky-800 border-sky-200" },
+  QiCard:    { ku: "Qi Card", cls: "bg-emerald-50 text-emerald-800 border-emerald-200" },
 };
 const platMeta = (p) => PLATFORMS[p] || { ku: p || "نەزانراو", cls: "bg-[var(--line)] text-[var(--txt-2)] border-[var(--line)]" };
 const detectPlatform = (bank) => {
@@ -4392,6 +4465,8 @@ const detectPlatform = (bank) => {
   if (/\bfib\b/.test(b)) return "FIB";
   if (/fastpay/.test(b)) return "FastPay";
   if (/zain/.test(b)) return "ZainCash";
+  if (/nass|ناس/.test(b)) return "NassWallet";
+  if (/qi\s*card|qicard|کی\s*کارد|قي\s*كارد/.test(b)) return "QiCard";
   if (/bank|بانک|مصرف/.test(b)) return "Bank";
   return null;
 };
@@ -4406,6 +4481,9 @@ const REJECT_KU = {
   not_receipt: "فیشی پارەدان نییە",
   tampered: "نیشانەی دەستکاری تێدایە",
   low_confidence: "خوێندنەوەکە دڵنیا نییە",
+  possible_duplicate: "گومانی دووبارەبوونەوە",
+  manual_reject: "بە دەست ڕەتکرایەوە",
+  missing_required: "زانیاری گرنگ کەمە",
 };
 
 function ReceiptImg({ path, className }) {
@@ -4649,135 +4727,307 @@ function ReceiptList({ rows, showFrom }) {
 /* ─────────── ئەپلۆدکەری فیش ─────────── */
 function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, direction = "in", onDone, flash, data, allowDirection }) {
   const [rows, setRows] = useState([]);
+  const rowsRef = useRef([]);
   const [dir, setDir] = useState(direction);
   const [working, setWorking] = useState(false);
   const [prog, setProg] = useState(null);
   const [sending, setSending] = useState(false);
   const [share, setShare] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const maxAge = 7;
 
-  const onFiles = async (files) => {
-    const list = Array.from(files || []).filter((f) => f.type.startsWith("image/"));
-    if (!list.length) return;
-    setWorking(true);
-    const out = [...rows];
-    try {
-      for (let i = 0; i < list.length; i++) {
-        setProg(`${i + 1} لە ${list.length}`);
-        const f = list[i];
-        let img;
-        try { img = await prepImage(f); }
-        catch { out.push({ id: uid(), status: "error", note: "نەتوانرا وێنەکە بکرێتەوە" }); setRows([...out]); continue; }
+  const commitRows = (updater) => {
+    setRows((prev) => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      rowsRef.current = next;
+      return next;
+    });
+  };
+  useEffect(() => { rowsRef.current = rows; }, [rows]);
 
-        let inOld = null;
-        try {
-          const { data: hit } = await supabase.rpc("check_receipt_dupe", { p_hash: img.hash, p_ref: null });
-          if (hit?.length) inOld = hit[0];
-        } catch {}
-        const inBatch = out.find((r) => r.hash === img.hash);
-        if (inBatch || inOld) {
-          const code = inBatch ? "same_batch" : "same_image";
-          const reason = inBatch
-            ? `هەمان وێنە لەم کۆمەڵەیەدا دووبارە بووەتەوە (فیشی ژمارە ${out.findIndex((r) => r.hash === img.hash) + 1})`
-            : `هەمان وێنە پێشتر ناردراوە لە ${inOld?.d ? new Date(inOld.d).toLocaleString("en-GB") : "پێشتر"}${inOld?.who ? ` لەلایەن ${inOld.who}` : ""}${inOld?.ref ? ` — ژمارەی مامەڵە ${inOld.ref}` : ""}`;
-          out.push({ id: uid(), url: img.url, blob: img.blob, hash: img.hash, status: "dup", counted: false,
-            rejectCode: code, rejectReason: reason, note: reason,
-            dupOf: inOld?.id || null, dupOfDate: inOld?.d || null, dupOfWho: inOld?.who || null });
-          setRows([...out]); continue;
-        }
-
-        let d;
-        try {
-          if (i > 0) await new Promise((r) => setTimeout(r, 1500));
-          const resp = await fetch("/api/read-receipt", {
-            method: "POST", headers: { "content-type": "application/json" },
-            body: JSON.stringify({ image: img.b64, mediaType: "image/jpeg" }),
-          });
-          const raw = await resp.text();
-          if (resp.status === 404) throw new Error("خزمەتگوزاری خوێندنەوە بەردەست نییە");
-          try { d = JSON.parse(raw); } catch { throw new Error(`وەڵامی نەناسراو (${resp.status})`); }
-          if (d.error) throw new Error(d.error);
-        } catch (e) {
-          const reason = `نەتوانرا بخوێندرێتەوە: ${String(e.message || e)}`;
-          out.push({ id: uid(), url: img.url, hash: img.hash, blob: img.blob, status: "error", counted: false,
-            rejectCode: "unreadable", rejectReason: reason, note: reason });
-          setRows([...out]); continue;
-        }
-        if (d.ok === false) {
-          const reason = d.note || "ئەم وێنەیە فیشی پارەدان نییە";
-          out.push({ id: uid(), url: img.url, hash: img.hash, blob: img.blob, status: "error", counted: false,
-            rejectCode: "not_receipt", rejectReason: reason, note: reason });
-          setRows([...out]); continue;
-        }
-
-        const rn = normRef(d.refNo);
-        let status = "ok", note = "", rejectCode = null, rejectReason = null, dupOf = null, dupOfDate = null, dupOfWho = null;
-        // بێ ژمارەی مامەڵە → نەژمێردرێت
-        if (!rn) {
-          status = "dup"; rejectCode = "no_ref";
-          rejectReason = "ژمارەی مامەڵەی (Order No) نییە — ناتوانرێت پشتڕاست بکرێتەوە";
-          note = rejectReason;
-        }
-        if (rn) {
-          const bch = out.find((r) => r.refNo && normRef(r.refNo) === rn);
-          let o = null;
-          try { const { data: hit } = await supabase.rpc("check_receipt_dupe", { p_hash: null, p_ref: rn }); if (hit?.length) o = hit[0]; } catch {}
-          if (bch || o) {
-            status = "dup";
-            rejectCode = bch ? "same_batch" : "same_ref";
-            rejectReason = bch
-              ? `هەمان ژمارەی مامەڵە (${d.refNo}) لەم کۆمەڵەیەدا دووبارە بووەتەوە`
-              : `ژمارەی مامەڵەی ${d.refNo} پێشتر تۆمار کراوە لە ${o?.d ? new Date(o.d).toLocaleString("en-GB") : "پێشتر"}${o?.who ? ` لەلایەن ${o.who}` : ""}`;
-            note = rejectReason;
-            dupOf = o?.id || null; dupOfDate = o?.d || null; dupOfWho = o?.who || null;
-          }
-        }
-        if (status === "ok") {
-          const same = out.find((r) => r.counted !== false && r.amount && +r.amount === +d.amount && r.txTime && d.txTime && r.txTime === d.txTime);
-          if (same) { status = "dup"; rejectCode = "same_amount_time";
-            rejectReason = `هەمان بڕ (${fmt(d.amount, 0)}) لە هەمان کاتدا (${d.txTime}) — گومانی دووبارەبوونەوە`;
-            note = rejectReason; }
-        }
-        let ageDays = null;
-        if (d.txDate && /^\d{4}-\d{2}-\d{2}$/.test(d.txDate)) {
-          ageDays = Math.floor((Date.now() - new Date(d.txDate + "T12:00:00").getTime()) / 86400000);
-          if (status === "ok" && ageDays > maxAge) { status = "suspect"; note = `ڕێکەوتی کۆن — ${ageDays} ڕۆژ لەمەوبەر`; }
-        }
-        if (status === "ok" && d.confidence != null && d.confidence < 0.6) { status = "suspect"; note = "خوێندنەوەکە دڵنیا نییە — بە دەست بیپشکنە"; }
-        if (status !== "dup" && d.note && /دەستکاری|فۆتۆشۆپ|tamper/i.test(d.note)) { status = "suspect"; note = `⚠️ ${d.note}`; }
-
-        const feeV = +d.fee || 0;                          // فی دوای داشکاندن
-        const feeOrig = d.feeOriginal != null ? +d.feeOriginal : feeV;
-        const feeDisc = +d.feeDiscount || 0;
-        const netV = d.netAmount != null ? +d.netAmount : (+d.amount || 0) - feeV;
-        const plat = d.platform || detectPlatform(d.bank);
-        if (feeDisc > 0) note = note || `داشکاندنی فی: ${fmt(feeOrig, 0)} → ${fmt(feeV, 0)}`;
-        out.push({ id: uid(), url: img.url, blob: img.blob, hash: img.hash, status, note,
-          counted: status !== "dup", rejectCode, rejectReason, dupOf, dupOfDate, dupOfWho,
-          amount: +d.amount || 0, fee: feeV, feeOriginal: feeOrig, feeDiscount: feeDisc,
-          net: netV, currency: d.currency, sender: d.sender, platform: plat,
-          receiver: d.receiver, refNo: d.refNo, txTime: d.txTime, txDate: d.txDate, ageDays, bank: d.bank, raw: d });
-        setRows([...out]);
-      }
-    } finally { setWorking(false); setProg(null); }
+  const patchRow = (id, patch) => {
+    commitRows((xs) => xs.map((r) => r.id === id ? { ...r, ...(typeof patch === "function" ? patch(r) : patch) } : r));
   };
 
-  const good = rows.filter((r) => r.counted !== false && r.status !== "dup" && r.status !== "error");
-  const bad = rows.filter((r) => r.counted === false || r.status === "dup" || r.status === "error");
+  const criticalLowFields = (fc = {}) => {
+    const out = [];
+    const checks = [
+      ["amount", 0.72, "بڕ"],
+      ["currency", 0.68, "دراو"],
+      ["refNo", 0.55, "ژمارەی مامەڵە"],
+      ["receiver", 0.50, "وەرگر"],
+    ];
+    checks.forEach(([k, min, label]) => {
+      if (fc[k] != null && clamp01(fc[k]) < min) out.push(label);
+    });
+    return out;
+  };
+
+  const classifyParsed = async (id, img, d) => {
+    if (d?.ok === false) {
+      const reason = d.note || "ئەم وێنەیە فیشی پارەدان نییە";
+      return {
+        id, url: img.url, blob: img.blob, hash: img.hash, ocrImage: img.b64 || img.ocrImage, mediaType: img.mediaType,
+        status: "error", counted: false, reviewRequired: false,
+        rejectCode: "not_receipt", rejectReason: reason, note: reason, raw: d,
+      };
+    }
+
+    const feeV = Number(d?.fee) || 0;
+    const amountV = Number(d?.amount) || 0;
+    const feeOrig = d?.feeOriginal != null ? Number(d.feeOriginal) || 0 : feeV;
+    const feeDisc = Number(d?.feeDiscount) || 0;
+    const netV = d?.netAmount != null && Number.isFinite(Number(d.netAmount))
+      ? Number(d.netAmount)
+      : Math.max(0, amountV - feeV);
+    const plat = d?.platform || detectPlatform(d?.bank);
+    const rn = normRef(d?.refNo);
+    const fc = d?.fieldConfidence && typeof d.fieldConfidence === "object" ? d.fieldConfidence : {};
+    const conf = clamp01(d?.confidence, 0.5);
+
+    // Exact reference duplicate = hard duplicate. Same amount/time alone is only a review warning.
+    if (rn) {
+      const local = rowsRef.current.find((r) => r.id !== id && r.refNo && normRef(r.refNo) === rn && r.status !== "error");
+      let old = null;
+      try {
+        const { data: hit } = await supabase.rpc("check_receipt_dupe", { p_hash: null, p_ref: rn });
+        if (hit?.length) old = hit[0];
+      } catch {}
+      if (local || old) {
+        const reason = local
+          ? `هەمان ژمارەی مامەڵە (${d.refNo}) لەم کۆمەڵەیەدا دووبارە بووەتەوە`
+          : `ژمارەی مامەڵەی ${d.refNo} پێشتر تۆمار کراوە لە ${old?.d ? new Date(old.d).toLocaleString("en-GB") : "پێشتر"}${old?.who ? ` لەلایەن ${old.who}` : ""}`;
+        return {
+          id, url: img.url, blob: img.blob, hash: img.hash, ocrImage: img.b64 || img.ocrImage, mediaType: img.mediaType,
+          status: "dup", counted: false, reviewRequired: false,
+          rejectCode: local ? "same_batch" : "same_ref", rejectReason: reason, note: reason,
+          dupOf: old?.id || local?.id || null, dupOfDate: old?.d || null, dupOfWho: old?.who || null,
+          amount: amountV, fee: feeV, feeOriginal: feeOrig, feeDiscount: feeDisc, net: netV,
+          currency: d?.currency, sender: d?.sender, receiver: d?.receiver, refNo: d?.refNo,
+          txTime: d?.txTime, txDate: d?.txDate, bank: d?.bank, platform: plat,
+          confidence: conf, fieldConfidence: fc, raw: d,
+        };
+      }
+    }
+
+    const reviewReasons = [];
+    let reviewCode = null;
+
+    if (!amountV || amountV <= 0 || !d?.currency || /نەزانراو|unknown/i.test(String(d.currency))) {
+      reviewReasons.push("بڕ یان دراو بە دڵنیایی نەخوێندرایەوە");
+      reviewCode = reviewCode || "missing_required";
+    }
+    if (!rn) {
+      reviewReasons.push("ژمارەی مامەڵە نەدۆزرایەوە");
+      reviewCode = reviewCode || "no_ref";
+    }
+
+    const sameAmountTime = rowsRef.current.find((r) =>
+      r.id !== id && r.status !== "dup" && r.status !== "error" &&
+      Number(r.amount) > 0 && Number(r.amount) === amountV &&
+      r.txTime && d?.txTime && String(r.txTime) === String(d.txTime)
+    );
+    if (sameAmountTime) {
+      reviewReasons.push(`هەمان بڕ و هەمان کات لە فیشێکی تر هەیە — پشکنین پێویستە`);
+      reviewCode = reviewCode || "possible_duplicate";
+    }
+
+    let ageDays = null;
+    if (d?.txDate && /^\d{4}-\d{2}-\d{2}$/.test(d.txDate)) {
+      ageDays = Math.floor((Date.now() - new Date(d.txDate + "T12:00:00").getTime()) / 86400000);
+      if (ageDays > maxAge) {
+        reviewReasons.push(`ڕێکەوتی کۆنە — ${ageDays} ڕۆژ لەمەوبەر`);
+        reviewCode = reviewCode || "old_date";
+      }
+    }
+
+    const low = criticalLowFields(fc);
+    if (conf < 0.72 || low.length) {
+      reviewReasons.push(low.length ? `دڵنیایی نزم لە: ${low.join("، ")}` : "دڵنیایی گشتیی خوێندنەوە نزمە");
+      reviewCode = reviewCode || "low_confidence";
+    }
+
+    if (d?.note && /دەستکاری|فۆتۆشۆپ|tamper|edited|manipulat/i.test(String(d.note))) {
+      reviewReasons.push(`⚠️ ${d.note}`);
+      reviewCode = reviewCode || "tampered";
+    }
+
+    let note = reviewReasons.join(" · ");
+    if (!note && feeDisc > 0) note = `داشکاندنی فی: ${fmt(feeOrig, 0)} → ${fmt(feeV, 0)}`;
+    else if (!note && d?.note) note = d.note;
+
+    const status = reviewReasons.length ? "suspect" : "ok";
+    return {
+      id, url: img.url, blob: img.blob, hash: img.hash, ocrImage: img.b64 || img.ocrImage, mediaType: img.mediaType,
+      status, counted: status === "ok", reviewRequired: status === "suspect",
+      rejectCode: status === "suspect" ? reviewCode : null,
+      rejectReason: status === "suspect" ? note : null,
+      note, ageDays,
+      amount: amountV, fee: feeV, feeOriginal: feeOrig, feeDiscount: feeDisc, net: netV,
+      currency: d?.currency, sender: d?.sender, receiver: d?.receiver, refNo: d?.refNo,
+      txTime: d?.txTime, txDate: d?.txDate, bank: d?.bank, platform: plat,
+      confidence: conf, fieldConfidence: fc, raw: d,
+    };
+  };
+
+  const onFiles = async (files) => {
+    const list = Array.from(files || []).filter((f) => f.type?.startsWith("image/"));
+    if (!list.length) return flash("تەنها وێنە هەڵبژێرە");
+    if (working) return;
+
+    setWorking(true);
+    const tasks = list.map((file) => ({ id: uid(), file }));
+    commitRows((xs) => [
+      ...xs,
+      ...tasks.map(({ id, file }) => ({
+        id, status: "processing", counted: false, reviewRequired: false,
+        fileName: file.name, note: "ئامادەکردنی وێنە...",
+      })),
+    ]);
+
+    const seen = new Map(rowsRef.current.filter((r) => r.hash).map((r) => [r.hash, r.id]));
+    let cursor = 0;
+    let done = 0;
+    const worker = async () => {
+      while (true) {
+        const pos = cursor++;
+        if (pos >= tasks.length) return;
+        const { id, file } = tasks[pos];
+        try {
+          patchRow(id, { note: "ئامادەکردنی وێنە...", status: "processing" });
+          const img = await prepImage(file);
+          patchRow(id, { url: img.url, blob: img.blob, hash: img.hash, ocrImage: img.b64, mediaType: img.mediaType, note: "پشکنینی دووبارەبوونەوە..." });
+
+          const localId = seen.get(img.hash);
+          if (localId && localId !== id) {
+            const reason = "هەمان وێنە لەم کۆمەڵەیەدا دووبارە بووەتەوە";
+            patchRow(id, {
+              status: "dup", counted: false, reviewRequired: false,
+              rejectCode: "same_batch", rejectReason: reason, note: reason, dupOf: localId,
+            });
+            continue;
+          }
+          seen.set(img.hash, id);
+
+          let old = null;
+          try {
+            const { data: hit } = await supabase.rpc("check_receipt_dupe", { p_hash: img.hash, p_ref: null });
+            if (hit?.length) old = hit[0];
+          } catch {}
+          if (old) {
+            const reason = `هەمان وێنە پێشتر ناردراوە لە ${old?.d ? new Date(old.d).toLocaleString("en-GB") : "پێشتر"}${old?.who ? ` لەلایەن ${old.who}` : ""}${old?.ref ? ` — ژمارەی مامەڵە ${old.ref}` : ""}`;
+            patchRow(id, {
+              status: "dup", counted: false, reviewRequired: false,
+              rejectCode: "same_image", rejectReason: reason, note: reason,
+              dupOf: old?.id || null, dupOfDate: old?.d || null, dupOfWho: old?.who || null,
+            });
+            continue;
+          }
+
+          patchRow(id, { note: "AI فیشەکە دەخوێنێتەوە...", status: "processing" });
+          const d = await readReceiptAI(img.b64, img.mediaType);
+          patchRow(id, { note: "پشتڕاستکردنەوەی زانیاری..." });
+          const ready = await classifyParsed(id, img, d);
+          patchRow(id, ready);
+        } catch (e) {
+          const reason = `نەتوانرا بخوێندرێتەوە: ${String(e?.message || e)}`;
+          patchRow(id, {
+            status: "error", counted: false, reviewRequired: true,
+            rejectCode: "unreadable", rejectReason: reason, note: reason,
+          });
+        } finally {
+          done += 1;
+          setProg(`${done} لە ${tasks.length}`);
+        }
+      }
+    };
+
+    try {
+      // Two controlled workers: materially faster than the old serial + 1.5s delay,
+      // while remaining gentle enough for free-tier OCR APIs.
+      const nWorkers = Math.min(2, tasks.length);
+      await Promise.all(Array.from({ length: nWorkers }, () => worker()));
+    } finally {
+      setWorking(false);
+      setProg(null);
+    }
+  };
+
+  const retryRow = async (id) => {
+    const r = rowsRef.current.find((x) => x.id === id);
+    if (!r?.ocrImage) return flash("وێنەکە بۆ دووبارە خوێندنەوە بەردەست نییە");
+    patchRow(id, { status: "processing", counted: false, reviewRequired: false, note: "دووبارە دەخوێندرێتەوە..." });
+    try {
+      const d = await readReceiptAI(r.ocrImage, r.mediaType || "image/jpeg");
+      const ready = await classifyParsed(id, r, d);
+      patchRow(id, ready);
+    } catch (e) {
+      const reason = `نەتوانرا دووبارە بخوێندرێتەوە: ${String(e?.message || e)}`;
+      patchRow(id, { status: "error", counted: false, reviewRequired: true, rejectCode: "unreadable", rejectReason: reason, note: reason });
+    }
+  };
+
+  const editField = (id, key, value) => {
+    patchRow(id, (r) => {
+      const numeric = ["amount", "fee", "net", "feeOriginal", "feeDiscount"].includes(key);
+      const next = { ...r, [key]: numeric ? (value === "" ? "" : Number(value)) : value, manualEdited: true };
+      if ((key === "amount" || key === "fee") && Number.isFinite(Number(next.amount)) && Number.isFinite(Number(next.fee))) {
+        next.net = Math.max(0, Number(next.amount) - Number(next.fee));
+      }
+      return next;
+    });
+  };
+
+  const confirmRow = (id) => {
+    const r = rowsRef.current.find((x) => x.id === id);
+    if (!r) return;
+    if (r.status === "dup") return flash("فیشی دووبارە ناتوانرێت وەک فیشی نوێ پشتڕاست بکرێتەوە");
+    if (!(Number(r.amount) > 0) || !String(r.currency || "").trim()) {
+      return flash("بڕ و دراو پێویستن پێش پشتڕاستکردنەوە");
+    }
+    patchRow(id, {
+      status: "ok", counted: true, reviewRequired: false,
+      rejectCode: null, rejectReason: null,
+      note: r.manualEdited ? "بە دەست پشکنرا و ڕاستکرایەوە ✓" : "بە دەست پشتڕاست کرایەوە ✓",
+      reviewedManually: true,
+    });
+    setEditingId(null);
+  };
+
+  const rejectRow = (id) => {
+    patchRow(id, {
+      status: "error", counted: false, reviewRequired: false,
+      rejectCode: "manual_reject", rejectReason: "بە دەست ڕەتکرایەوە", note: "بە دەست ڕەتکرایەوە",
+      reviewedManually: true,
+    });
+    setEditingId(null);
+  };
+
+  const good = rows.filter((r) => r.status === "ok" && r.counted !== false);
+  const review = rows.filter((r) => r.status === "suspect");
+  const processing = rows.filter((r) => r.status === "processing");
+  const bad = rows.filter((r) => r.status === "dup" || r.status === "error");
   const dupN = rows.filter((r) => r.status === "dup").length;
   const errN = rows.filter((r) => r.status === "error").length;
   const agg = {};
-  good.forEach((r) => { const c = r.currency || "?"; agg[c] = agg[c] || { g: 0, f: 0, n: 0 }; agg[c].g += +r.amount || 0; agg[c].f += +r.fee || 0; agg[c].n += +r.net || 0; });
+  good.forEach((r) => {
+    const c = r.currency || "?";
+    agg[c] = agg[c] || { g: 0, f: 0, n: 0 };
+    agg[c].g += Number(r.amount) || 0;
+    agg[c].f += Number(r.fee) || 0;
+    agg[c].n += Number(r.net) || 0;
+  });
   const mainCur = Object.keys(agg).sort((a, b) => agg[b].g - agg[a].g)[0] || null;
 
   const send = async () => {
+    if (working || processing.length) return flash("هێشتا هەندێک فیش دەخوێندرێنەوە");
+    if (review.length) return flash(`${review.length} فیش پێویستیان بە پشکنینی دەستی هەیە`);
     if (!good.length && !bad.length) return flash("هیچ فیشێک نییە");
     setSending(true);
     try {
       const batchId = uid();
       const folder = customerId || partnerId || "misc";
       const recs = [];
-      // هەموو فیشەکان پاشەکەوت دەکرێن — ڕەتکراوەکانیش بۆ تۆمار مێژوویی
       for (const r of [...good, ...bad]) {
         let path = null;
         if (r.blob) {
@@ -4795,9 +5045,18 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
           note: r.note || null, image_hash: r.hash, image_path: path, status: r.status,
           counted: r.counted !== false, reject_code: r.rejectCode || null, reject_reason: r.rejectReason || null,
           dup_of: r.dupOf || null, dup_of_date: r.dupOfDate || null, dup_of_who: r.dupOfWho || null,
-          uploaded_by: uploaderId || null, raw: r.raw || null,
+          uploaded_by: uploaderId || null,
+          raw: {
+            ...(r.raw || {}),
+            ocr_v: 2,
+            confidence: r.confidence ?? r.raw?.confidence ?? null,
+            fieldConfidence: r.fieldConfidence || r.raw?.fieldConfidence || null,
+            reviewedManually: !!r.reviewedManually,
+            manualEdited: !!r.manualEdited,
+          },
         });
       }
+
       const a = mainCur ? agg[mainCur] : { g: 0, f: 0, n: 0 };
       const b = await supabase.from("receipt_batches").insert({
         id: batchId, customer_id: customerId || null, customer_name: customerName || null,
@@ -4806,9 +5065,10 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
         rejected_n: bad.length, uploaded_by: uploaderId || null,
       });
       if (b.error) throw b.error;
+
       const rr = await supabase.from("receipts").insert(recs);
       if (rr.error) throw rr.error;
-      // ئاگاداری بۆ ئەدمین
+
       try {
         await supabase.from("notes").insert({
           id: uid(), user_id: null, kind: "receipt",
@@ -4817,14 +5077,40 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
           link: "receipts", ref_id: batchId,
         });
       } catch {}
+
       flash(`${good.length} ${tr("فیش نێردرا")} ✓${bad.length ? ` — ${bad.length} ${tr("ڕەتکراو تۆمار کران")}` : ""}`);
-      setRows([]);
+      commitRows([]);
+      setEditingId(null);
       onDone && onDone();
-    } catch (e) { console.error(e); flash("هەڵە لە ناردن — دووبارە هەوڵ بدە"); }
-    finally { setSending(false); }
+    } catch (e) {
+      console.error(e);
+      flash("هەڵە لە ناردن — دووبارە هەوڵ بدە");
+    } finally {
+      setSending(false);
+    }
   };
 
-  const ST = { ok: { tone: "green", t: "دروست" }, dup: { tone: "red", t: "دووبارە" }, suspect: { tone: "amber", t: "گومانلێکراو" }, error: { tone: "slate", t: "هەڵە" } };
+  const ST = {
+    processing: { tone: "slate", t: "خوێندنەوە" },
+    ok: { tone: "green", t: "پشتڕاستکراو" },
+    dup: { tone: "red", t: "دووبارە" },
+    suspect: { tone: "amber", t: "پشکنین پێویستە" },
+    error: { tone: "slate", t: "هەڵە" },
+  };
+
+  const confidenceLabel = (r) => {
+    const v = r.confidence;
+    if (v == null || !Number.isFinite(Number(v))) return null;
+    return `${Math.round(clamp01(v) * 100)}%`;
+  };
+
+  const fieldConf = (r, key) => {
+    const v = r.fieldConfidence?.[key];
+    if (v == null || !Number.isFinite(Number(v))) return null;
+    const pct = Math.round(clamp01(v) * 100);
+    const color = pct >= 80 ? "var(--pos)" : pct >= 60 ? "var(--warn)" : "var(--neg)";
+    return <span className="text-[9px] font-bold" style={{ color }}>{pct}%</span>;
+  };
 
   return (
     <div className="space-y-4">
@@ -4841,72 +5127,150 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
       )}
 
       <Card className="p-5">
-        <label className={`block border-2 border-dashed rounded-[var(--r)] p-8 text-center cursor-pointer transition ${working ? "border-[var(--line)] bg-[var(--line)]" : "border-[var(--line)] hover:border-[var(--pos)] hover:bg-[color-mix(in_srgb,var(--pos)_10%,transparent)]/30"}`}>
+        <label className={`block border-2 border-dashed rounded-[var(--r)] p-7 md:p-9 text-center cursor-pointer transition ${working ? "border-[var(--line)] bg-[var(--line)]" : "border-[var(--line)] hover:border-[var(--pos)] hover:bg-[color-mix(in_srgb,var(--pos)_10%,transparent)]/30"}`}>
           <input type="file" accept="image/*" multiple className="hidden" disabled={working}
             onChange={(e) => { onFiles(e.target.files); e.target.value = ""; }} />
-          <Upload className="w-8 h-8 mx-auto text-[var(--txt-3)] mb-2" />
-          <div className="text-sm font-semibold text-[var(--txt)]">{working ? `خوێندنەوە... ${prog || ""}` : "کلیک بکە بۆ هەڵبژاردنی فیشەکان"}</div>
-          <div className="text-xs text-[var(--txt-3)] mt-1">{tr("دەتوانیت چەندین وێنە بەیەکەوە هەڵبژێریت")}</div>
+          <div className="w-12 h-12 rounded-2xl mx-auto mb-3 flex items-center justify-center" style={{ background: "var(--surf-3)", color: "var(--ac)" }}>
+            {working ? <RotateCcw className="w-5 h-5 animate-spin" /> : <Upload className="w-5 h-5" />}
+          </div>
+          <div className="text-sm font-semibold text-[var(--txt)]">{working ? `خوێندنەوەی فیشەکان... ${prog || ""}` : "فیشەکان هەڵبژێرە یان لێرە دایبنێ"}</div>
+          <div className="text-xs text-[var(--txt-3)] mt-1.5">AI زانیارییەکان دەخوێنێتەوە؛ هەر فیشێکی گومانلێکراو پێش ناردن پێویستی بە پشتڕاستکردنەوەی تۆ هەیە.</div>
         </label>
       </Card>
 
       {rows.length > 0 && (
         <>
-          {dupN > 0 && (
-            <Card className="p-4 border-[color-mix(in_srgb,var(--neg)_34%,transparent)] bg-[color-mix(in_srgb,var(--neg)_9%,transparent)]">
-              <div className="flex items-center gap-2 text-sm text-[var(--neg)] font-semibold">
-                <AlertTriangle className="w-4 h-4" /> {dupN} فیشی دووبارە — ناژمێردرێن
-              </div>
-            </Card>
-          )}
-          {errN > 0 && (
-            <Card className="p-4 border-[color-mix(in_srgb,var(--warn)_34%,transparent)] bg-[color-mix(in_srgb,var(--warn)_10%,transparent)]">
-              <div className="text-sm text-[var(--warn)]">
-                <div className="font-semibold mb-1">{errN} فیش نەخوێندرایەوە:</div>
-                {[...new Set(rows.filter((r) => r.status === "error").map((r) => r.note))].map((n, i) => <div key={i} className="text-xs">• {n}</div>)}
-              </div>
-            </Card>
-          )}
-
-          <Card className="p-4 space-y-2">
-            {rows.map((r, i) => (
-              <div key={r.id} className={`flex items-center gap-3 p-2.5 rounded-[var(--r-sm)] ${r.status === "dup" ? "bg-[color-mix(in_srgb,var(--neg)_10%,transparent)]" : r.status === "suspect" ? "bg-[color-mix(in_srgb,var(--warn)_11%,transparent)]" : "bg-[var(--line)]"}`}>
-                <span className="text-xs text-[var(--txt-3)] w-5" style={num}>{i + 1}</span>
-                {r.url ? <img src={r.url} alt="" className="w-11 h-11 object-cover rounded-lg border border-[var(--line)]" /> : <div className="w-11 h-11 bg-[var(--line)] rounded-lg" />}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-baseline gap-1.5">
-                    <span className="font-bold text-[var(--txt)]" style={num}>{r.amount ? fmt(r.amount, 0) : "—"}</span>
-                    <span className="text-xs text-[var(--txt-2)]">{r.currency || ""}</span>
-                    {r.fee > 0 && <span className="text-[11px] text-[var(--neg)]" style={num}>فی {fmt(r.fee, 0)} → {fmt(r.net, 0)}</span>}
-                  </div>
-                  <div className="text-[11px] text-[var(--txt-2)] truncate">
-                    {r.receiver && <>{tr("بۆ")}<b>{r.receiver}</b> · </>}
-                    {r.refNo && <span style={num}>{r.refNo}</span>}
-                  </div>
-                  {r.note && <div className="text-[10px] text-[var(--txt-2)] mt-0.5">{r.note}</div>}
-                </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <Pill tone={ST[r.status].tone}>{ST[r.status].t}</Pill>
-                  <button onClick={() => setRows(rows.filter((x) => x.id !== r.id))} className="p-1 text-[var(--txt-3)] hover:text-[var(--neg)]"><Trash2 className="w-3.5 h-3.5" /></button>
-                </div>
-              </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+            {[
+              ["پشتڕاستکراو", good.length, "var(--pos)"],
+              ["پشکنین پێویستە", review.length, "var(--warn)"],
+              ["دووبارە", dupN, "var(--neg)"],
+              ["هەڵە", errN, "var(--txt-3)"],
+            ].map(([label, value, color]) => (
+              <Card key={label} className="p-3.5">
+                <div className="text-[10.5px]" style={{ color: "var(--txt-3)" }}>{label}</div>
+                <div className="text-xl font-bold mt-1" style={{ ...num, color }}>{value}</div>
+              </Card>
             ))}
-          </Card>
+          </div>
 
-          <ReceiptTotals rows={rows} data={data} title={tr("کۆی گشتی")} />
+          {review.length > 0 && (
+            <Card className="p-4 border-[color-mix(in_srgb,var(--warn)_34%,transparent)] bg-[color-mix(in_srgb,var(--warn)_9%,transparent)]">
+              <div className="flex items-start gap-2 text-sm text-[var(--warn)]">
+                <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                <div>
+                  <div className="font-semibold">{review.length} فیش پێویستیان بە پشکنینی تۆ هەیە</div>
+                  <div className="text-xs mt-1 opacity-90">بڕ، دراو، ژمارەی مامەڵە و ناوی وەرگر بپشکنە؛ پاشان «پشتڕاستکردنەوە» بکە. تا ئەو کاتە هەژمار ناکرێن.</div>
+                </div>
+              </div>
+            </Card>
+          )}
 
-          <Btn kind="gold" className="w-full flex items-center justify-center gap-2" onClick={() => setShare(true)}>
-            <Share2 className="w-4 h-4" /> {tr("ناردنی خشتەی وردەکاری")}
-          </Btn>
+          <div className="space-y-2.5">
+            {rows.map((r, i) => {
+              const st = ST[r.status] || ST.error;
+              const editing = editingId === r.id;
+              const hardDup = r.status === "dup";
+              return (
+                <Card key={r.id} className="p-0 overflow-hidden">
+                  <div className={`p-3.5 md:p-4 ${r.status === "dup" ? "bg-[color-mix(in_srgb,var(--neg)_7%,transparent)]" : r.status === "suspect" ? "bg-[color-mix(in_srgb,var(--warn)_7%,transparent)]" : ""}`}>
+                    <div className="flex items-start gap-3">
+                      <div className="text-[10px] w-5 pt-1 text-center shrink-0" style={{ ...num, color: "var(--txt-3)" }}>{i + 1}</div>
+                      {r.url
+                        ? <img src={r.url} alt="" className="w-14 h-14 md:w-16 md:h-16 object-cover rounded-xl border border-[var(--line)] shrink-0" />
+                        : <div className="w-14 h-14 md:w-16 md:h-16 rounded-xl shrink-0 flex items-center justify-center" style={{ background: "var(--surf-3)" }}>
+                            {r.status === "processing" ? <RotateCcw className="w-4 h-4 animate-spin text-[var(--txt-3)]" /> : <Receipt className="w-4 h-4 text-[var(--txt-3)]" />}
+                          </div>}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-[var(--txt)] text-[15px]" style={num}>{Number(r.amount) > 0 ? fmt(r.amount, 0) : "—"}</span>
+                          <span className="text-xs text-[var(--txt-2)]">{r.currency || "—"}</span>
+                          {Number(r.fee) > 0 && <span className="text-[10px]" style={{ ...num, color: "var(--txt-3)" }}>فی {fmt(r.fee, 0)} · نەت {fmt(r.net, 0)}</span>}
+                          <Pill tone={st.tone}>{st.t}</Pill>
+                          {confidenceLabel(r) && <span className="text-[10px] font-semibold" style={{ ...num, color: clamp01(r.confidence) >= .8 ? "var(--pos)" : clamp01(r.confidence) >= .65 ? "var(--warn)" : "var(--neg)" }}>AI {confidenceLabel(r)}</span>}
+                        </div>
+                        <div className="text-[11px] text-[var(--txt-2)] mt-1 truncate">
+                          {r.receiver ? <>{tr("بۆ")} <b>{r.receiver}</b></> : "وەرگر: —"}
+                          {r.refNo && <span style={num}> · {r.refNo}</span>}
+                        </div>
+                        {r.platform && <div className="text-[10px] text-[var(--txt-3)] mt-0.5">{platMeta(r.platform).ku}</div>}
+                        {r.note && <div className={`text-[10.5px] mt-1.5 leading-relaxed ${r.status === "suspect" ? "text-[var(--warn)]" : r.status === "dup" ? "text-[var(--neg)]" : "text-[var(--txt-3)]"}`}>{r.note}</div>}
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {r.status !== "processing" && !hardDup && (
+                          <button title="پشکنین و دەستکاری" onClick={() => setEditingId(editing ? null : r.id)}
+                            className="p-2 rounded-lg hover:bg-[var(--surf-3)] text-[var(--txt-2)]"><Pencil className="w-3.5 h-3.5" /></button>
+                        )}
+                        {r.status !== "processing" && !hardDup && r.ocrImage && (
+                          <button title="دووبارە خوێندنەوە" onClick={() => retryRow(r.id)}
+                            className="p-2 rounded-lg hover:bg-[var(--surf-3)] text-[var(--txt-2)]"><RotateCcw className="w-3.5 h-3.5" /></button>
+                        )}
+                        <button title="سڕینەوە" onClick={() => { commitRows((xs) => xs.filter((x) => x.id !== r.id)); if (editingId === r.id) setEditingId(null); }}
+                          className="p-2 rounded-lg hover:bg-[color-mix(in_srgb,var(--neg)_9%,transparent)] text-[var(--txt-3)] hover:text-[var(--neg)]"><Trash2 className="w-3.5 h-3.5" /></button>
+                      </div>
+                    </div>
+
+                    {editing && !hardDup && r.status !== "processing" && (
+                      <div className="mt-4 pt-4 border-t border-[var(--line)]">
+                        <div className="flex items-center justify-between gap-3 mb-3">
+                          <div>
+                            <div className="text-[12px] font-semibold text-[var(--txt)]">پشکنینی دەستی فیش</div>
+                            <div className="text-[10.5px] text-[var(--txt-3)] mt-0.5">ئەو خانانەی دڵنیاییان نزمە بە تایبەتی بپشکنە.</div>
+                          </div>
+                          <button onClick={() => setEditingId(null)} className="p-1.5 text-[var(--txt-3)]"><X className="w-4 h-4" /></button>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div><div className="flex justify-between"><Lbl>بڕ</Lbl>{fieldConf(r, "amount")}</div><Inp type="number" value={r.amount ?? ""} onChange={(e) => editField(r.id, "amount", e.target.value)} /></div>
+                          <div><div className="flex justify-between"><Lbl>دراو</Lbl>{fieldConf(r, "currency")}</div><Inp value={r.currency ?? ""} onChange={(e) => editField(r.id, "currency", e.target.value.toUpperCase())} placeholder="IQD / USD / CNY..." /></div>
+                          <div><div className="flex justify-between"><Lbl>فی / عمولە</Lbl>{fieldConf(r, "fee")}</div><Inp type="number" value={r.fee ?? ""} onChange={(e) => editField(r.id, "fee", e.target.value)} /></div>
+                          <div><Lbl>بڕی نەت</Lbl><Inp type="number" value={r.net ?? ""} onChange={(e) => editField(r.id, "net", e.target.value)} /></div>
+                          <div><div className="flex justify-between"><Lbl>ژمارەی مامەڵە / Reference</Lbl>{fieldConf(r, "refNo")}</div><Inp value={r.refNo ?? ""} onChange={(e) => editField(r.id, "refNo", e.target.value)} /></div>
+                          <div><div className="flex justify-between"><Lbl>وەرگر</Lbl>{fieldConf(r, "receiver")}</div><Inp value={r.receiver ?? ""} onChange={(e) => editField(r.id, "receiver", e.target.value)} /></div>
+                          <div><div className="flex justify-between"><Lbl>ناردەر</Lbl>{fieldConf(r, "sender")}</div><Inp value={r.sender ?? ""} onChange={(e) => editField(r.id, "sender", e.target.value)} /></div>
+                          <div><div className="flex justify-between"><Lbl>ئەپ / بانک</Lbl>{fieldConf(r, "platform")}</div><Inp value={r.bank ?? r.platform ?? ""} onChange={(e) => { editField(r.id, "bank", e.target.value); editField(r.id, "platform", detectPlatform(e.target.value) || r.platform); }} /></div>
+                          <div><div className="flex justify-between"><Lbl>بەروار</Lbl>{fieldConf(r, "txDate")}</div><Inp type="date" value={r.txDate ?? ""} onChange={(e) => editField(r.id, "txDate", e.target.value)} /></div>
+                          <div><div className="flex justify-between"><Lbl>کات / دەقی کات</Lbl>{fieldConf(r, "txTime")}</div><Inp value={r.txTime ?? ""} onChange={(e) => editField(r.id, "txTime", e.target.value)} /></div>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2 mt-4">
+                          <Btn className="flex items-center gap-2" onClick={() => confirmRow(r.id)}>
+                            <CheckCircle2 className="w-4 h-4" /> پشتڕاستکردنەوە
+                          </Btn>
+                          {r.ocrImage && <Btn kind="ghost" className="flex items-center gap-2" onClick={() => retryRow(r.id)}><RotateCcw className="w-4 h-4" /> دووبارە خوێندنەوە</Btn>}
+                          <Btn kind="ghost" className="flex items-center gap-2" style={{ color: "var(--neg)" }} onClick={() => rejectRow(r.id)}>
+                            <XCircle className="w-4 h-4" /> ڕەتکردنەوە
+                          </Btn>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+
+          {good.length > 0 && <ReceiptTotals rows={good} data={data} title={tr("کۆی گشتی")} />}
+
+          {good.length > 0 && (
+            <Btn kind="gold" className="w-full flex items-center justify-center gap-2" onClick={() => setShare(true)}>
+              <Share2 className="w-4 h-4" /> {tr("ناردنی خشتەی وردەکاری")}
+            </Btn>
+          )}
           {share && (
-            <ShareTable rows={rows} data={data} who={displayValue(customerName)} title={tr("وردەکاری فیشەکان")}
+            <ShareTable rows={good} data={data} who={displayValue(customerName)} title={tr("وردەکاری فیشەکان")}
               flash={flash} onClose={() => setShare(false)} />
           )}
 
-          <RejectedReceipts rows={rows} title={tr("ئەمانە هەژمار ناکرێن")} />
+          {bad.length > 0 && <RejectedReceipts rows={bad} title={tr("ئەمانە هەژمار ناکرێن")} />}
 
-          <Btn className="w-full" onClick={send} disabled={sending || (!good.length && !bad.length)}>
-            {sending ? "ناردن..." : `ناردنی ${good.length} فیش${bad.length ? ` (+ ${bad.length} ڕەتکراو)` : ""}`}
+          <Btn className="w-full" onClick={send}
+            disabled={sending || working || processing.length > 0 || review.length > 0 || (!good.length && !bad.length)}>
+            {sending
+              ? "ناردن..."
+              : review.length
+                ? `${review.length} فیش پێویستی بە پشکنین هەیە`
+                : `ناردنی ${good.length} فیش${bad.length ? ` (+ ${bad.length} ڕەتکراو)` : ""}`}
           </Btn>
         </>
       )}

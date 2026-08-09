@@ -2118,7 +2118,7 @@ function Dashboard({ data, calc, cur, mySafe, profitIn, ownProfitIn, investorsPr
           <div className="hidden md:grid grid-cols-[.8fr_.65fr_1fr_.7fr_.8fr_.8fr] gap-3 px-2 pb-2 text-[10px] font-semibold" style={{color:"var(--txt-3)"}}><span>Type</span><span>Currency</span><span>Amount</span><span>Rate</span><span>Profit</span><span>Status</span></div>
           <div className="space-y-1">
             {recent.map(t=>{const c=cur(t.curId), positive=t.type==="buy"; return <button key={t.id} onClick={()=>go("txs")} className="w-full text-start grid grid-cols-[1fr_auto] md:grid-cols-[.8fr_.65fr_1fr_.7fr_.8fr_.8fr] gap-3 items-center px-2 py-3 rounded-xl tap hover:bg-[var(--surf-2)]"><div><div className="text-[12px] font-semibold">{t.type==="buy"?tr("کڕین"):tr("فرۆشتن")}</div><div className="text-[9px] md:hidden" style={{color:"var(--txt-3)"}}>{t.cpName||usrSafeName(data,t.cpId)||"—"}</div></div><div className="flex items-center gap-1.5 text-[11px] font-semibold"><span>{curFlag(c)}</span>{c.code}</div><div style={num} className="text-[12px] font-semibold">{fmt(t.amount,0)}</div><div style={num} className="hidden md:block text-[11px]">{fmt(t.rate,3)}</div><div style={num} className="hidden md:block text-[11px]" >{t.profit==null?"—":fmt(t.profit,0)}</div><div className="text-end md:text-start"><Pill tone={t.status==="pending"?"amber":positive?"green":"slate"}>{t.status==="pending"?tr("چاوەڕوان"):tr("تەواوکراو")}</Pill></div></button>})}
-            {!recent.length && <Empty t={tr("هیچ مامەڵەیەک نەدۆزرایەوە")}/>
+            {!recent.length && <Empty t={tr("هیچ مامەڵەیەک نەدۆزرایەوە")}/>} 
           </div>
         </section>
 

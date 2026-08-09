@@ -39,22 +39,6 @@ const now = () => new Date().toISOString();
 
 
 
-/*
- * SECURITY RULE:
- * UI permission checks are defense-in-depth only.
- * Supabase RLS / backend authorization remains the source of truth.
- * Never grant permissions here that the backend does not grant.
- */
-  const canAccess = (permission, user = null) => {
-    if (!permission) return true;
-    const u = user || (typeof currentUser !== "undefined" ? currentUser : null);
-    const permissions = u?.permissions;
-    if (Array.isArray(permissions)) return permissions.includes(permission);
-    if (permissions && typeof permissions === "object") return permissions[permission] === true;
-    return false;
-  };
-
-
 
   const displayValue = (value, fallback = "—") => {
     if (value === null || value === undefined || value === "") return fallback;
@@ -417,12 +401,15 @@ function Scanner({ onFound, onClose }) {
 /* ══════════════════ چارتەکان ══════════════════ */
 
 /* هێڵی بچووک — ڕەوتی خێرا */
-const Card = ({ children, className = "", onClick, tone, glass, style }) => {
-  const t = tone === "accent"
-    ? { background: "var(--ac)", borderColor: "transparent", color: "var(--ac-ink)" }
-    : tone === "deep"
-      ? { background: "var(--surf-2)", borderColor: "var(--line)" }
-      : {};
+const Card = ({ children, className = "", onClick, tone, accent = false, dark = false, glass, style }) => {
+  const effectiveTone = accent ? "accent" : dark ? "dark" : tone;
+  const t = effectiveTone === "accent"
+    ? { background: "linear-gradient(145deg,var(--ac),var(--ac-2))", borderColor: "transparent", color: "var(--ac-ink)" }
+    : effectiveTone === "dark"
+      ? { background: "linear-gradient(145deg,#111713,#0A0F0D)", borderColor: "rgba(255,255,255,.08)", color: "#F7FAF8", boxShadow: "0 18px 44px rgba(3,10,7,.16)" }
+      : effectiveTone === "deep"
+        ? { background: "var(--surf-2)", borderColor: "var(--line)" }
+        : {};
   return (
     <div onClick={onClick} style={{ ...t, ...style }}
       className={`${glass ? "glass" : "card"} ${onClick ? "tap hov cursor-pointer" : ""} ${className}`}>
@@ -535,8 +522,42 @@ const Money = ({ v, dec, pos }) => (
   <span style={{ ...num, fontWeight: 600, color: v < 0 ? "var(--neg)" : pos ? "var(--pos)" : "var(--txt)" }}>{fmt(v, dec)}</span>
 );
 
-const Empty = ({ t }) => (
-  <div className="text-center py-14 text-[13px]" style={{ color: "var(--txt-3)" }}>{t}</div>
+const StatePanel = ({ type = "empty", title, detail, compact = false, onRetry }) => {
+  const isLoading = type === "loading";
+  const isError = type === "error";
+  const Ic = isError ? AlertTriangle : isLoading ? RotateCcw : Database;
+  return (
+    <div className={`state-panel ${compact ? "state-panel-compact" : ""}`}>
+      <span className={`state-panel-icon ${isError ? "is-error" : isLoading ? "is-loading" : ""}`}>
+        <Ic className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} />
+      </span>
+      <div className="min-w-0">
+        <div className="state-panel-title">{title || (isLoading ? tr("بارکردن...") : isError ? "هەڵەیەک ڕوویدا" : tr("هیچ داتایەک نییە"))}</div>
+        {detail && <div className="state-panel-detail">{detail}</div>}
+        {isError && onRetry && (
+          <button onClick={onRetry} className="state-panel-retry tap">
+            <RotateCcw className="w-3.5 h-3.5" /> {tr("نوێکردنەوە")}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const Empty = ({ t, detail, compact = false }) => {
+  const loading = /بارکردن|loading|چاوەڕوانی/i.test(String(t || ""));
+  return <StatePanel type={loading ? "loading" : "empty"} title={t} detail={detail} compact={compact} />;
+};
+
+const ReportKpi = ({ icon: Ic, label, value, sub, tone = "neutral", delay = 0 }) => (
+  <Card className="report-kpi rise" style={{ animationDelay: `${delay}ms` }}>
+    <div className={`report-kpi-icon tone-${tone}`}><Ic className="w-4 h-4" /></div>
+    <div className="min-w-0">
+      <div className="report-kpi-label">{label}</div>
+      <div className={`report-kpi-value tone-${tone}`} style={num}>{value}</div>
+      {sub && <div className="report-kpi-sub">{sub}</div>}
+    </div>
+  </Card>
 );
 
 const Back = ({ onClick, t }) => (
@@ -1386,7 +1407,70 @@ body{
 }
 
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
-  `}</style>;
+  
+
+/* ══════════════════ PROFESSIONAL REPORTS & ANALYTICS — PHASE 6 ══════════════════ */
+.state-panel{
+  display:flex;align-items:flex-start;justify-content:center;gap:11px;
+  padding:32px 18px;text-align:start;color:var(--txt-3);
+}
+.state-panel-compact{justify-content:flex-start;padding:16px;border-radius:14px;background:var(--surf-2);border:1px solid var(--line)}
+.state-panel-icon{width:34px;height:34px;border-radius:11px;display:flex;align-items:center;justify-content:center;flex:0 0 auto;background:var(--surf-3);color:var(--txt-3);border:1px solid var(--line)}
+.state-panel-icon.is-loading{color:var(--ac);background:var(--pos-bg)}
+.state-panel-icon.is-error{color:var(--neg);background:var(--neg-bg)}
+.state-panel-title{font-size:12px;font-weight:650;color:var(--txt-2);line-height:1.55}
+.state-panel-detail{font-size:10.5px;line-height:1.6;margin-top:2px;color:var(--txt-3)}
+.state-panel-retry{display:inline-flex;align-items:center;gap:5px;margin-top:8px;padding:6px 9px;border-radius:9px;background:var(--surf);border:1px solid var(--line);font-size:10.5px;font-weight:700;color:var(--txt-2)}
+.report-head,.analytics-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.report-head .mb-5,.analytics-head .mb-5{margin-bottom:8px}
+.report-period-badge,.analytics-live-badge{display:inline-flex;align-items:center;gap:7px;padding:6px 9px;border-radius:10px;background:var(--surf);border:1px solid var(--line);font-size:10.5px;font-weight:600;color:var(--txt-3);box-shadow:var(--sh-1)}
+.analytics-live-badge{background:var(--pos-bg);border-color:color-mix(in srgb,var(--pos) 20%,transparent);color:var(--pos)}
+.analytics-live-dot{width:7px;height:7px;border-radius:50%;background:var(--pos);box-shadow:0 0 0 4px var(--pos-bg)}
+.report-filter-card{padding:15px}
+.report-preset-row{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px}
+.report-preset{padding:7px 11px;border-radius:10px;background:var(--surf-2);border:1px solid var(--line);font-size:10.5px;font-weight:700;color:var(--txt-2)}
+.report-preset:hover{border-color:color-mix(in srgb,var(--ac) 35%,var(--line));color:var(--ac)}
+.report-date-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.report-kpi-grid,.analytics-kpi-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.report-kpi{padding:14px;display:flex;align-items:flex-start;gap:11px;min-width:0}
+.report-kpi-icon{width:34px;height:34px;display:flex;align-items:center;justify-content:center;border-radius:11px;background:var(--surf-3);color:var(--txt-2);flex:0 0 auto;border:1px solid var(--line)}
+.report-kpi-icon.tone-positive{background:var(--pos-bg);color:var(--pos);border-color:transparent}
+.report-kpi-icon.tone-negative{background:var(--neg-bg);color:var(--neg);border-color:transparent}
+.report-kpi-label{font-size:10.5px;font-weight:600;color:var(--txt-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.report-kpi-value{font-size:21px;font-weight:750;line-height:1.2;letter-spacing:-.025em;color:var(--txt);margin-top:2px;overflow-wrap:anywhere}
+.report-kpi-value.tone-positive{color:var(--pos)}
+.report-kpi-value.tone-negative{color:var(--neg)}
+.report-kpi-sub{font-size:9.5px;color:var(--txt-3);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.report-pl-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 0;border-top:1px solid var(--line)}
+.report-pl-row.is-total{margin-top:3px;padding-top:15px;border-top:1.5px solid var(--line-2)}
+.report-pl-label{font-size:12.5px;color:var(--txt-2)}
+.report-pl-row.is-total .report-pl-label{font-weight:750;color:var(--txt)}
+.report-net-box{margin-top:12px;padding:12px 13px;border-radius:12px;display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--surf-2);color:var(--txt);border:1px solid var(--line)}
+.report-net-box.is-positive{background:var(--pos-bg);color:var(--pos);border-color:color-mix(in srgb,var(--pos) 18%,transparent)}
+.report-net-box.is-negative{background:var(--neg-bg);color:var(--neg);border-color:color-mix(in srgb,var(--neg) 18%,transparent)}
+.analytics-tabs{display:flex;gap:5px;padding:5px;border-radius:15px;overflow-x:auto;background:var(--surf);border:1px solid var(--line);box-shadow:var(--sh-1);position:sticky;top:66px;z-index:8}
+.analytics-tab{flex:1;min-width:max-content;white-space:nowrap;padding:9px 12px;border-radius:11px;font-size:11.5px;font-weight:650;color:var(--txt-2)}
+.analytics-tab.is-active{background:var(--txt);color:var(--surf);box-shadow:0 5px 16px rgba(15,23,42,.12)}
+[data-theme="dark"] .analytics-tab.is-active{background:#F4F7F5;color:#111714}
+@media(max-width:1024px){
+  .report-kpi-grid,.analytics-kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:640px){
+  .report-head,.analytics-head{align-items:stretch}
+  .report-head>button{width:100%;justify-content:center}
+  .report-date-grid{grid-template-columns:1fr}
+  .report-preset-row{flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px}
+  .report-preset{flex:0 0 auto}
+  .report-kpi-grid,.analytics-kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .report-kpi{padding:12px;gap:8px}
+  .report-kpi-icon{width:30px;height:30px;border-radius:10px}
+  .report-kpi-value{font-size:18px}
+  .analytics-tabs{top:58px}
+}
+@media(max-width:360px){
+  .report-kpi-grid,.analytics-kpi-grid{grid-template-columns:1fr}
+}
+`}</style>;
 }
 
 /* ══════════════════ ئەپی سەرەکی ══════════════════ */
@@ -1937,11 +2021,6 @@ export default function App() {
   };
 
   const delTx = (t) => {
-    if (typeof currentUser !== "undefined" && !currentUser) {
-      flash("تکایە سەرەتا بچۆ ژوورەوە");
-      return false;
-    }
-
     if (!t || t.deleted) {
       flash("ئەم مامەڵەیە پێشتر سڕاوەتەوە");
       return false;
@@ -1960,11 +2039,6 @@ export default function App() {
   };
 
   const settle = (t, byOffice) => {
-    if (typeof currentUser !== "undefined" && !currentUser) {
-      flash("تکایە سەرەتا بچۆ ژوورەوە");
-      return false;
-    }
-
     if (!t || t.deleted) {
       flash("ئەم مامەڵەیە سڕاوەتەوە و ناتوانرێت تەسویە بکرێت");
       return false;
@@ -2229,7 +2303,11 @@ export default function App() {
     if (r.error) throw r.error;
     // تەنها ٤٠ی دوایی بهێڵەرەوە
     const old = await supabase.from("backups").select("id").order("created_at", { ascending: false }).range(40, 999);
-    if (old.data?.length) await supabase.from("backups").delete().in("id", old.data.map((x) => x.id));
+    if (old.error) throw old.error;
+    if (old.data?.length) {
+      const pruned = await supabase.from("backups").delete().in("id", old.data.map((x) => x.id));
+      if (pruned.error) throw pruned.error;
+    }
     if (kind === "manual") { await A("باکئەپ", `${counts.txs} مامەڵە · ${counts.ledger} تۆماری دەفتەر`); flash("باکئەپ درووست کرا ✓"); }
   });
 
@@ -2246,13 +2324,16 @@ export default function App() {
   // باکئەپی ئۆتۆماتیکی: ئەگەر دوا باکئەپ کۆنتر بێت لە ٦ کاتژمێر
   const autoBackup = async () => {
     try {
-      const { data: last } = await supabase.from("backups").select("created_at").order("created_at", { ascending: false }).limit(1);
+      const lastRes = await supabase.from("backups").select("created_at").order("created_at", { ascending: false }).limit(1);
+      if (lastRes.error) throw lastRes.error;
+      const last = lastRes.data || [];
       const t = last?.[0]?.created_at ? new Date(last[0].created_at).getTime() : 0;
       if (Date.now() - t > 6 * 3600 * 1000) {
         const { payload, counts } = await snapshot("auto");
-        await supabase.from("backups").insert({ id: uid(), kind: "auto", counts, data: payload });
+        const saved = await supabase.from("backups").insert({ id: uid(), kind: "auto", counts, data: payload });
+        if (saved.error) throw saved.error;
       }
-    } catch { /* خشتەکە هێشتا درووست نەکراوە */ }
+    } catch (e) { console.warn("autoBackup", e?.message || e); }
   };
 
   /* ── ئاگادارکردنەوەکان ── */
@@ -2261,18 +2342,20 @@ export default function App() {
 
   const loadNotes = async () => {
     try {
-      const { data: n } = await supabase.from("notes").select("*").order("created_at", { ascending: false }).limit(60);
+      const { data: n, error } = await supabase.from("notes").select("*").order("created_at", { ascending: false }).limit(60);
+      if (error) throw error;
       setNotes(n || []);
-    } catch { setNotes([]); }
+    } catch (e) { console.error("loadNotes", e); setNotes([]); }
   };
 
   // ناردنی ئاگاداری بۆ کەسێک (یان بۆ ئەدمین گەر userId = null)
   const notify = async (userId, kind, title, body, link, refId) => {
     try {
-      await supabase.from("notes").insert({
+      const r = await supabase.from("notes").insert({
         id: uid(), user_id: userId || null, kind, title,
         body: body || null, link: link || null, ref_id: refId || null,
       });
+      if (r.error) throw r.error;
     } catch (e) { console.error("notify", e); }
   };
 
@@ -3216,19 +3299,14 @@ function MarketWatch({ compact = false }) {
       </div>
 
       {err && (
-        <div className="mt-3 p-3 rounded-xl flex items-start gap-2 text-[11px]"
-          style={{ background:"var(--warn-bg)", color:"var(--warn)" }}>
-          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-          <div>
-            <div className="font-semibold">نرخی جیهانی کاتێک بەردەست نییە</div>
-            <div className="mt-0.5 opacity-80">{err}</div>
-          </div>
+        <div className="mt-3">
+          <StatePanel type="error" title="نرخی جیهانی کاتێک بەردەست نییە" detail={err} onRetry={() => load(true)} compact />
         </div>
       )}
 
       {!market && !err && (
-        <div className="mt-4 py-5 text-center text-[11px]" style={{ color:"var(--txt-3)" }}>
-          {busy ? "نرخی جیهانی بار دەکرێت..." : "چاوەڕوانی نرخی جیهانی..."}
+        <div className="mt-3">
+          <StatePanel type="loading" title="نرخی جیهانی بار دەکرێت..." detail="سیستەمی مامەڵە و نرخی ناوخۆ بەردەوام کار دەکات." compact />
         </div>
       )}
 
@@ -4592,6 +4670,12 @@ const bytesToBase64 = (bytes) => {
   return btoa(bin);
 };
 
+const OCR_MAX_BINARY_BYTES = 2_800_000;
+const OCR_MAX_BASE64_CHARS = 3_900_000;
+
+const canvasToJpeg = (canvas, quality) =>
+  new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+
 async function prepImage(file) {
   const originalBuf = await file.arrayBuffer();
   const hb = await crypto.subtle.digest("SHA-256", originalBuf);
@@ -4601,26 +4685,63 @@ async function prepImage(file) {
   try { bmp = await createImageBitmap(file, { imageOrientation: "from-image" }); }
   catch { bmp = await createImageBitmap(file); }
 
-  // Receipt text is often tiny; keep materially more detail than the old 1400px/0.8 pipeline.
-  const MAX = 2200;
-  const scale = Math.min(1, MAX / Math.max(bmp.width, bmp.height));
-  const cv = document.createElement("canvas");
+  // Keep enough detail for tiny receipt text while staying below Vercel's function payload ceiling.
+  const MAX_SIDE = 2200;
+  const scale = Math.min(1, MAX_SIDE / Math.max(bmp.width, bmp.height));
+  let cv = document.createElement("canvas");
   cv.width = Math.max(1, Math.round(bmp.width * scale));
   cv.height = Math.max(1, Math.round(bmp.height * scale));
 
-  const ctx = cv.getContext("2d", { alpha: false });
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = "high";
-  ctx.fillStyle = "#fff";
-  ctx.fillRect(0, 0, cv.width, cv.height);
-  ctx.drawImage(bmp, 0, 0, cv.width, cv.height);
+  const draw = (canvas, source) => {
+    const ctx = canvas.getContext("2d", { alpha: false });
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+  };
+
+  draw(cv, bmp);
   bmp.close?.();
 
-  const blob = await new Promise((resolve) => cv.toBlob(resolve, "image/jpeg", 0.92));
+  let quality = 0.92;
+  let blob = await canvasToJpeg(cv, quality);
   if (!blob) throw new Error("نەتوانرا وێنەکە ئامادە بکرێت");
+
+  // First preserve resolution and gently reduce JPEG quality.
+  while (blob.size > OCR_MAX_BINARY_BYTES && quality > 0.72) {
+    quality = Math.max(0.72, quality - 0.06);
+    blob = await canvasToJpeg(cv, quality);
+    if (!blob) throw new Error("نەتوانرا وێنەکە ئامادە بکرێت");
+  }
+
+  // If the image is still too large, reduce dimensions in controlled steps.
+  let resizePass = 0;
+  while (blob.size > OCR_MAX_BINARY_BYTES && Math.max(cv.width, cv.height) > 1350 && resizePass < 3) {
+    const ratio = Math.max(0.72, Math.min(0.9, Math.sqrt(OCR_MAX_BINARY_BYTES / blob.size) * 0.95));
+    const smaller = document.createElement("canvas");
+    smaller.width = Math.max(1, Math.round(cv.width * ratio));
+    smaller.height = Math.max(1, Math.round(cv.height * ratio));
+    draw(smaller, cv);
+    cv = smaller;
+    quality = 0.82;
+    blob = await canvasToJpeg(cv, quality);
+    if (!blob) throw new Error("نەتوانرا وێنەکە ئامادە بکرێت");
+    resizePass += 1;
+  }
+
+  // Final guarded encoding leaves headroom for JSON/base64 overhead.
+  if (blob.size > OCR_MAX_BINARY_BYTES) {
+    blob = await canvasToJpeg(cv, 0.68);
+    if (!blob) throw new Error("نەتوانرا وێنەکە ئامادە بکرێت");
+  }
 
   const buf = await blob.arrayBuffer();
   const b64 = bytesToBase64(new Uint8Array(buf));
+  if (b64.length > OCR_MAX_BASE64_CHARS) {
+    throw new Error("قەبارەی وێنەکە زۆر گەورەیە — تکایە وێنەکە crop بکە یان دووبارە وێنەی بگرە");
+  }
+
   return {
     b64,
     hash,
@@ -4632,9 +4753,14 @@ async function prepImage(file) {
   };
 }
 
-async function readReceiptAI(image, mediaType = "image/jpeg", retry = true) {
+async function readReceiptAI(image, mediaType = "image/jpeg", retryNetwork = true) {
+  if (!image || image.length > OCR_MAX_BASE64_CHARS) {
+    throw new Error("قەبارەی وێنەکە بۆ خوێندنەوە زۆر گەورەیە");
+  }
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 30000);
+  // The server owns upstream retry logic. Keep the browser timeout long enough
+  // for one controlled server retry, but never automatically retry a timed-out AI call.
+  const timer = setTimeout(() => controller.abort(), 50000);
   try {
     const resp = await fetch("/api/read-receipt", {
       method: "POST",
@@ -4643,24 +4769,39 @@ async function readReceiptAI(image, mediaType = "image/jpeg", retry = true) {
       signal: controller.signal,
     });
     const raw = await resp.text();
-    let data;
-    try { data = JSON.parse(raw); }
-    catch { throw new Error(`وەڵامی نەناسراو (${resp.status})`); }
 
-    if (resp.status === 404) throw new Error("خزمەتگوزاری خوێندنەوە بەردەست نییە");
-    if (!resp.ok || data?.error) {
-      const err = new Error(data?.error || `هەڵەی خوێندنەوە (${resp.status})`);
-      err.status = resp.status;
+    const fail = (message, status = resp.status) => {
+      const err = new Error(message);
+      err.status = status;
       throw err;
+    };
+
+    // Vercel may return HTML/plain text for gateway/payload errors, so inspect
+    // status before attempting JSON parsing.
+    if (resp.status === 404) fail("خزمەتگوزاری خوێندنەوە بەردەست نییە", 404);
+    if (resp.status === 413) fail("قەبارەی وێنەکە زۆر گەورەیە — دووبارە بە وێنەیەکی بچووکتر هەوڵ بدە", 413);
+
+    let data = {};
+    if (raw) {
+      try { data = JSON.parse(raw); }
+      catch { fail(`وەڵامی نەناسراو (${resp.status})`, resp.status); }
+    }
+
+    if (!resp.ok || data?.error) {
+      fail(data?.error || `هەڵەی خوێندنەوە (${resp.status})`, resp.status);
     }
     return data;
   } catch (e) {
-    const transient = e?.name === "AbortError" || e?.status === 429 || e?.status === 502 || e?.status === 503 || e?.status === 504;
-    if (retry && transient) {
-      await waitMs(1200);
+    if (e?.name === "AbortError") {
+      throw new Error("خوێندنەوە زۆر درێژەی کێشا — لە Review Center دووبارە بخوێنەرەوە");
+    }
+    // Retry only a browser/network transport failure. HTTP/API failures are
+    // already retried once on the server where rate limits can be controlled.
+    const networkOnly = retryNetwork && e instanceof TypeError && !e?.status;
+    if (networkOnly) {
+      await waitMs(700);
       return readReceiptAI(image, mediaType, false);
     }
-    if (e?.name === "AbortError") throw new Error("خوێندنەوە زۆر درێژەی کێشا — دووبارە هەوڵ بدە");
     throw e;
   } finally {
     clearTimeout(timer);
@@ -6120,41 +6261,54 @@ function WhatsAppInfo({ batches, waN }) {
 /* ─────────── فیشەکانی شوێنێک (لای خۆم یان لای هاوبەشێک) ─────────── */
 function LocationReceipts({ partnerId, data, title, flash }) {
   const [recs, setRecs] = useState(null);
+  const [recErr, setRecErr] = useState("");
   const [mode, setMode] = useState("month");
   const [dir, setDir] = useState("all");
   const [share, setShare] = useState(false);
 
-  useEffect(() => {
-    (async () => {
-      setRecs(null);
+  const loadLocationReceipts = async () => {
+    setRecs(null);
+    setRecErr("");
+    try {
       // ١) فیشە دابەشکراوەکان (partner_id لەسەر خودی فیشەکە)
-      let direct = [];
-      try {
-        const q1 = partnerId
-          ? supabase.from("receipts").select("*").eq("partner_id", partnerId)
-          : supabase.from("receipts").select("*").is("partner_id", null);
-        const { data: d1 } = await q1;
-        direct = d1 || [];
-      } catch {}
+      const q1 = partnerId
+        ? supabase.from("receipts").select("*").eq("partner_id", partnerId)
+        : supabase.from("receipts").select("*").is("partner_id", null);
+      const directRes = await q1;
+      if (directRes.error) throw directRes.error;
+      const direct = directRes.data || [];
+
       // ٢) کۆمەڵەکانی ئەم شوێنە
       let q = supabase.from("receipt_batches").select("id, customer_name, partner_id");
       q = partnerId ? q.eq("partner_id", partnerId) : q.is("partner_id", null);
-      const { data: bs } = await q;
-      const names = Object.fromEntries((bs || []).map((x) => [x.id, x.customer_name]));
+      const batchRes = await q;
+      if (batchRes.error) throw batchRes.error;
+      const bs = batchRes.data || [];
+      const names = Object.fromEntries(bs.map((x) => [x.id, x.customer_name]));
+
       let fromBatch = [];
-      if (bs?.length) {
-        const { data: rs } = await supabase.from("receipts").select("*").in("batch_id", bs.map((x) => x.id));
+      if (bs.length) {
+        const receiptRes = await supabase.from("receipts").select("*").in("batch_id", bs.map((x) => x.id));
+        if (receiptRes.error) throw receiptRes.error;
         // ئەوانەی خۆیان partner_id ـی جیایان هەیە، لێرە نایەن
-        fromBatch = (rs || []).filter((r) => !r.partner_id || r.partner_id === (partnerId || null));
+        fromBatch = (receiptRes.data || []).filter((r) => !r.partner_id || r.partner_id === (partnerId || null));
       }
+
       const seen = new Set();
       const merged = [...direct, ...fromBatch].filter((r) => (seen.has(r.id) ? false : (seen.add(r.id), true)))
         .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
       setRecs(merged.map((r) => ({ ...r, customer_name: r.customer_name || names[r.batch_id] })));
-    })();
-  }, [partnerId]);
+    } catch (e) {
+      console.error("location-receipts", e);
+      setRecErr(e?.message || "نەتوانرا فیشەکان وەربگیرێن");
+      setRecs([]);
+    }
+  };
 
-  if (recs === null) return <Card><Empty t={tr("بارکردن...")} /></Card>;
+  useEffect(() => { loadLocationReceipts(); }, [partnerId]);
+
+  if (recs === null) return <Card><StatePanel type="loading" title={tr("بارکردن...")} compact /></Card>;
+  if (recErr) return <Card><StatePanel type="error" title="نەتوانرا فیشەکان وەربگیرێن" detail={recErr} onRetry={loadLocationReceipts} compact /></Card>;
 
   const t = new Date(), iso = (d) => d.toISOString().slice(0, 10);
   const w = new Date(t); w.setDate(w.getDate() - w.getDay());
@@ -6588,19 +6742,27 @@ function AccountMoney({ data, cur, usr, accountMove, accountTransfer, flash }) {
   const [mv, setMv] = useState({ dir: "in", userId: "", curId: data.currencies[0]?.id, amount: "", note: "" });
   const [xfer, setXfer] = useState({ fromId: "", toId: "", curId: data.currencies[0]?.id, amount: "", note: "" });
   const [hist, setHist] = useState(null);
+  const [histErr, setHistErr] = useState("");
 
   const load = async () => {
+    setHistErr("");
     try {
       const [m, t] = await Promise.all([
         supabase.from("account_moves").select("*").order("created_at", { ascending: false }).limit(50),
         supabase.from("account_transfers").select("*").order("created_at", { ascending: false }).limit(50),
       ]);
+      if (m.error) throw m.error;
+      if (t.error) throw t.error;
       const rows = [
         ...(m.data || []).map((x) => ({ ...x, kind: "move" })),
         ...(t.data || []).map((x) => ({ ...x, kind: "transfer" })),
       ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 60);
       setHist(rows);
-    } catch { setHist([]); }
+    } catch (e) {
+      console.error("account-money-history", e);
+      setHistErr(e?.message || "نەتوانرا مێژووی پارە وەربگیرێت");
+      setHist([]);
+    }
   };
   useEffect(() => { load(); }, []);
 
@@ -6683,7 +6845,8 @@ function AccountMoney({ data, cur, usr, accountMove, accountTransfer, flash }) {
       )}
 
       <SecLbl>{tr("مێژوو")}</SecLbl>
-      {hist === null ? <Card><Empty t={tr("بارکردن...")} /></Card> :
+      {hist === null ? <Card><StatePanel type="loading" title={tr("بارکردن...")} compact /></Card> :
+        histErr ? <Card><StatePanel type="error" title="نەتوانرا مێژووی پارە وەربگیرێت" detail={histErr} onRetry={load} compact /></Card> :
         hist.length === 0 ? (
           <Card className="p-4">
             <div className="text-sm text-[var(--warn)] bg-[color-mix(in_srgb,var(--warn)_11%,transparent)] border border-[color-mix(in_srgb,var(--warn)_26%,transparent)] rounded-[var(--r-sm)] p-3">
@@ -7407,6 +7570,12 @@ function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare, s
   });
   const allCurs = data.currencies.filter((c) => profit[c.id] || loss[c.id] || exp[c.id] || fee[c.id] || payout[c.id] || flow[c.id] || vol[c.id]);
   const investors = data.users.filter((u) => u.role === "investor" && !u.deleted);
+  const buyCount = txs.filter((t) => t.type === "buy").length;
+  const sellCount = txs.filter((t) => t.type === "sell").length;
+  const netUsd = ratesReady ? sumUsd(net) : null;
+  const netFallback = Object.values(net).reduce((s2, v) => s2 + (Number(v) || 0), 0);
+  const reportNet = netUsd ?? netFallback;
+  const reportNetTone = reportNet < 0 ? "negative" : reportNet > 0 ? "positive" : "neutral";
 
   const exportCsv = () => {
     const head = ["کۆد", tr("جۆر"), "بەروار", "لایەن", tr("دراو"), tr("بڕ"), "ڕەیت", "بەرامبەر", "کۆ", "شوێن", tr("دۆخ"), tr("خێر")];
@@ -7421,18 +7590,23 @@ function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare, s
     a.download = `report_${from}_${to}.csv`; a.click();
   };
 
-  const PL = ({ label, m, tone, bold }) => (
-    <div className="flex items-center justify-between py-3" style={{ borderTop: "1px solid var(--line)" }}>
-      <span className="text-[13px]" style={{ color: bold ? "var(--txt)" : "var(--txt-2)", fontWeight: bold ? 600 : 400 }}>{label}</span>
+  const PL = ({ label, m, tone = "auto", bold }) => (
+    <div className={`report-pl-row ${bold ? "is-total" : ""}`}>
+      <span className="report-pl-label">{label}</span>
       <div className="text-end space-y-0.5">
         {Object.keys(m).length === 0 ? <span className="text-[13px]" style={{ color: "var(--txt-3)" }}>0</span> :
-          Object.entries(m).map(([cid, v]) => (
-            <div key={cid} className={bold ? "text-[17px]" : "text-[13px]"}
-              style={{ ...num, fontWeight: 600, color: tone === "pos" ? "var(--pos)" : tone === "neg" ? "var(--neg)" : "var(--txt)" }}>
-              {tone === "neg" ? "−" : ""}{fmt(Math.abs(v), 0)}
-              <span className="text-[10.5px] font-normal ms-1" style={{ color: "var(--txt-3)" }}>{cur(cid).code}</span>
-            </div>
-          ))}
+          Object.entries(m).map(([cid, raw]) => {
+            const v = Number(raw) || 0;
+            const neg = tone === "neg" || (tone === "auto" && v < 0);
+            const pos = tone === "pos" || (tone === "auto" && v > 0);
+            return (
+              <div key={cid} className={bold ? "text-[18px]" : "text-[13px]"}
+                style={{ ...num, fontWeight: bold ? 700 : 600, color: neg ? "var(--neg)" : pos ? "var(--pos)" : "var(--txt)" }}>
+                {neg ? "−" : pos && tone === "auto" ? "+" : ""}{fmt(Math.abs(v), 0)}
+                <span className="text-[10.5px] font-normal ms-1" style={{ color: "var(--txt-3)" }}>{cur(cid).code}</span>
+              </div>
+            );
+          })}
       </div>
     </div>
   );
@@ -7440,33 +7614,41 @@ function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare, s
   const TABS = [["pl", tr("خێر و زەرەر")], ["flow", tr("هاتوو و تێچوو")], ["inv", tr("وەبەرهێنەران")]];
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-start justify-between flex-wrap gap-2">
-        <H sub={`${from} تا ${to}`}>{tr("ڕاپۆرت")}</H>
-        <Btn kind="ghost" onClick={exportCsv}>{tr("دەرهێنان بۆ ئێکسڵ")}</Btn>
+    <div className="space-y-5">
+      <div className="report-head">
+        <div className="min-w-0">
+          <H sub={`${from} تا ${to}`}>{tr("ڕاپۆرت")}</H>
+          <div className="report-period-badge">
+            <History className="w-3.5 h-3.5" />
+            <span style={num}>{from}</span>
+            <span>→</span>
+            <span style={num}>{to}</span>
+          </div>
+        </div>
+        <Btn kind="ghost" className="flex items-center gap-2" onClick={exportCsv}>
+          <Download className="w-4 h-4" /> {tr("دەرهێنان بۆ ئێکسڵ")}
+        </Btn>
       </div>
 
-      <Card className="p-4 space-y-3">
-        <div className="flex gap-1.5 flex-wrap">
+      <Card className="report-filter-card">
+        <div className="report-preset-row">
           {[["today", tr("ئەمڕۆ")], ["week", tr("ئەم هەفتەیە")], ["month", tr("ئەم مانگە")], ["prev", tr("مانگی ڕابردوو")], ["year", tr("ئەمساڵ")]].map(([k, t]) => (
-            <button key={k} onClick={() => preset(k)} className="px-3 py-1.5 rounded-lg bg-[var(--line)] hover:bg-[var(--pos)] hover:text-white text-xs font-semibold text-[var(--txt-2)] transition">{t}</button>
+            <button key={k} onClick={() => preset(k)} className="report-preset tap">{t}</button>
           ))}
         </div>
-        <div className="grid grid-cols-2 gap-2.5">
+        <div className="report-date-grid">
           <div><Lbl>{tr("لە")}</Lbl><Inp type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
           <div><Lbl>{tr("بۆ")}</Lbl><Inp type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
         </div>
       </Card>
 
-      {/* پوختەی سەرەکی */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Card className="p-4"><div className="text-xs text-[var(--txt-2)]">{tr("مامەڵە")}</div><div className="text-2xl font-bold" style={num}>{txs.length}</div></Card>
-        <Card className="p-4"><div className="text-xs text-[var(--txt-2)]">{tr("کڕین")}</div><div className="text-2xl font-bold text-[var(--pos)]" style={num}>{txs.filter((t) => t.type === "buy").length}</div></Card>
-        <Card className="p-4"><div className="text-xs text-[var(--txt-2)]">{tr("فرۆشتن")}</div><div className="text-2xl font-bold text-[var(--neg)]" style={num}>{txs.filter((t) => t.type === "sell").length}</div></Card>
-        <Card accent className="p-4">
-          <div className="text-xs text-emerald-100">نەتی خۆم {ratesReady ? "(دۆلار)" : ""}</div>
-          <div className="text-2xl font-bold" style={num}>{ratesReady ? fmt(sumUsd(net), 0) : Object.values(net).length ? fmt(Object.values(net)[0], 0) : 0}</div>
-        </Card>
+      <div className="report-kpi-grid">
+        <ReportKpi icon={ArrowLeftRight} label={tr("مامەڵەکان")} value={fmt(txs.length, 0)} sub={`${buyCount} ${tr("کڕین")} · ${sellCount} ${tr("فرۆشتن")}`} />
+        <ReportKpi icon={ArrowDownLeft} label={tr("کڕین")} value={fmt(buyCount, 0)} tone="positive" delay={40} />
+        <ReportKpi icon={ArrowUpRight} label={tr("فرۆشتن")} value={fmt(sellCount, 0)} tone="neutral" delay={80} />
+        <ReportKpi icon={reportNet < 0 ? TrendingDown : TrendingUp} label={tr("نەتیجەی کۆتایی (بۆ خۆم)")}
+          value={`${reportNet > 0 ? "+" : reportNet < 0 ? "−" : ""}${fmt(Math.abs(reportNet), 0)}${ratesReady ? " $" : ""}`}
+          tone={reportNetTone} delay={120} />
       </div>
 
       <div className="flex gap-1 rounded-[var(--r)] p-1 overflow-x-auto" style={{ background: "var(--surf)", border: "1px solid var(--line)", boxShadow: "var(--sh-1)" }}>
@@ -7487,12 +7669,14 @@ function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare, s
             <PL label={tr("عمولەی هاوبەشان")} m={fee} tone="neg" />
             <PL label={tr("خێری وەبەرهێنەران")} m={invP} tone="neg" />
             <div className="mt-1 pt-1 border-t-2 border-slate-900/10">
-              <PL label={tr("نەتیجەی کۆتایی (بۆ خۆم)")} m={net} tone="pos" bold />
+              <PL label={tr("نەتیجەی کۆتایی (بۆ خۆم)")} m={net} tone="auto" bold />
             </div>
             {ratesReady && (
-              <div className="mt-3 bg-[color-mix(in_srgb,var(--pos)_10%,transparent)] rounded-[var(--r-sm)] p-3 flex justify-between items-center">
-                <span className="text-sm text-[var(--pos)] font-semibold">{tr("کۆی نەت بە دۆلار")}</span>
-                <span className="text-xl font-bold text-[var(--pos)]" style={num}>{fmt(sumUsd(net), 0)} $</span>
+              <div className={`report-net-box ${netUsd < 0 ? "is-negative" : netUsd > 0 ? "is-positive" : ""}`}>
+                <span className="text-sm font-semibold">{tr("کۆی نەت بە دۆلار")}</span>
+                <span className="text-xl font-bold" style={num}>
+                  {netUsd > 0 ? "+" : netUsd < 0 ? "−" : ""}{fmt(Math.abs(netUsd || 0), 0)} $
+                </span>
               </div>
             )}
           </>}
@@ -7768,11 +7952,23 @@ function Insights({ data, calc, cur, usr, profitIn, ownProfitIn, sumUsd, ratesRe
   const [span, setSpan] = useState(14);
   const [rateCur, setRateCur] = useState(null);
   const [hist, setHist] = useState(null);
+  const [histErr, setHistErr] = useState("");
 
-  useEffect(() => {
-    supabase.from("rate_history").select("*").order("created_at", { ascending: true }).limit(600)
-      .then(({ data: d }) => setHist(d || [])).catch(() => setHist([]));
-  }, []);
+  const loadRateHistory = async () => {
+    setHist(null);
+    setHistErr("");
+    try {
+      const { data: d, error } = await supabase.from("rate_history").select("*").order("created_at", { ascending: true }).limit(600);
+      if (error) throw error;
+      setHist(d || []);
+    } catch (e) {
+      console.error("rate-history", e);
+      setHist([]);
+      setHistErr("نەتوانرا مێژووی نرخەکان بار بکرێت");
+    }
+  };
+
+  useEffect(() => { loadRateHistory(); }, []);
 
   const iso = (d) => d.toISOString().slice(0, 10);
   const days = [...Array(span)].map((_, i) => {
@@ -7789,6 +7985,7 @@ function Insights({ data, calc, cur, usr, profitIn, ownProfitIn, sumUsd, ratesRe
   });
   const totProfit = dayProfit.reduce((s2, d) => s2 + d.v, 0);
   const best = dayProfit.reduce((a, b) => (b.v > a.v ? b : a), dayProfit[0] || { v: 0 });
+  const avgDailyProfit = span ? totProfit / span : 0;
 
   /* ── قەبارەی مامەڵەکان ── */
   const dayVol = days.map((k) => {
@@ -7904,15 +8101,18 @@ function Insights({ data, calc, cur, usr, profitIn, ownProfitIn, sumUsd, ratesRe
   const TABS = [["trend", tr("ڕەوت")], ["fc", tr("پێشبینین")], ["rates", tr("مێژووی نرخ")], ["report", tr("ڕاپۆرتی ڕۆژ")], ["log", tr("چالاکی")]];
 
   return (
-    <div className="space-y-4">
-      <H sub="ڕەوتی خێر، مێژووی نرخەکان، و کورتەی ڕۆژ">{tr("ڕەوت و شیکاری")}</H>
+    <div className="space-y-5">
+      <div className="analytics-head">
+        <div>
+          <H sub="ڕەوتی خێر، مێژووی نرخەکان، کورتەی ڕۆژ و چاودێری بازاڕ">{tr("ڕەوت و شیکاری")}</H>
+          <div className="analytics-live-badge"><span className="analytics-live-dot" /> داتای ناوخۆی سیستەم</div>
+        </div>
+      </div>
 
-      <div className="flex gap-1 rounded-[var(--r)] p-1 overflow-x-auto"
-        style={{ background: "var(--surf)", border: "1px solid var(--line)", boxShadow: "var(--sh-1)" }}>
+      <div className="analytics-tabs">
         {TABS.map(([k, t]) => (
           <button key={k} onClick={() => setTab(k)}
-            style={tab === k ? { background: "linear-gradient(180deg, var(--ac), var(--pos))", color: "#fff", boxShadow: "0 2px 8px -2px rgba(14,122,107,.4)" } : { color: "var(--txt-2)" }}
-            className={`flex-1 whitespace-nowrap px-3 py-2.5 rounded-[var(--r-sm)] text-sm transition-all tap ${tab === k ? "font-bold" : "font-medium"}`}>{t}</button>
+            className={`analytics-tab tap ${tab === k ? "is-active" : ""}`}>{t}</button>
         ))}
       </div>
 
@@ -7926,19 +8126,17 @@ function Insights({ data, calc, cur, usr, profitIn, ownProfitIn, sumUsd, ratesRe
             ))}
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <Card className="p-4 rise">
-              <div className="text-[11px]" style={{ color: "var(--txt-2)" }}>خێری {span} ڕۆژ</div>
-              <div className="text-2xl font-bold mt-0.5" style={{ ...num, color: totProfit >= 0 ? "var(--pos)" : "var(--neg)" }}>
-                {fmt(totProfit, 0)}{ratesReady && <span className="text-xs mr-1" style={{ color: "var(--txt-3)" }}>$</span>}
-              </div>
-              <div className="mt-1.5"><Spark data={dayProfit.map((d) => d.v)} w={110} h={26} /></div>
-            </Card>
-            <Card className="p-4 rise" style={{ animationDelay: "60ms" }}>
-              <div className="text-[11px]" style={{ color: "var(--txt-2)" }}>{tr("مامەڵەکان")}</div>
-              <div className="text-2xl font-bold mt-0.5" style={{ ...num, color: "var(--txt)" }}>{totTx}</div>
-              <div className="mt-1.5"><Spark data={dayVol.map((d) => d.v)} w={110} h={26} color="var(--ac)" /></div>
-            </Card>
+          <div className="analytics-kpi-grid">
+            <ReportKpi icon={totProfit < 0 ? TrendingDown : TrendingUp} label={`خێری ${span} ڕۆژ`}
+              value={`${totProfit > 0 ? "+" : totProfit < 0 ? "−" : ""}${fmt(Math.abs(totProfit), 0)}${ratesReady ? " $" : ""}`}
+              tone={totProfit < 0 ? "negative" : totProfit > 0 ? "positive" : "neutral"} />
+            <ReportKpi icon={ArrowLeftRight} label={tr("مامەڵەکان")} value={fmt(totTx, 0)}
+              sub={`${span} ڕۆژی ڕابردوو`} delay={40} />
+            <ReportKpi icon={PieChart} label="مامناوەندی خێری ڕۆژانە"
+              value={`${avgDailyProfit > 0 ? "+" : avgDailyProfit < 0 ? "−" : ""}${fmt(Math.abs(avgDailyProfit), 0)}${ratesReady ? " $" : ""}`}
+              tone={avgDailyProfit < 0 ? "negative" : avgDailyProfit > 0 ? "positive" : "neutral"} delay={80} />
+            <ReportKpi icon={TrendingUp} label={tr("باشترین ڕۆژ:")} value={best?.v ? fmt(best.v, 0) : "—"}
+              sub={best?.v ? best.k : "داتا نییە"} tone={best?.v > 0 ? "positive" : "neutral"} delay={120} />
           </div>
 
           <Card className="p-5">
@@ -8034,7 +8232,7 @@ function Insights({ data, calc, cur, usr, profitIn, ownProfitIn, sumUsd, ratesRe
 
       {tab === "rates" && (
         <>
-          <WorldRates data={data} cur={cur} />
+          <MarketWatch />
           <div className="flex gap-1.5 flex-wrap">
             {rateCurs.map((c) => (
               <button key={c.id} onClick={() => setRateCur(c.id)}
@@ -8048,12 +8246,10 @@ function Insights({ data, calc, cur, usr, profitIn, ownProfitIn, sumUsd, ratesRe
           </div>
           <Card className="p-5">
             <SecLbl>مێژووی نرخی {cur(activeCur).name} — ١ دۆلار بە چەند</SecLbl>
-            {hist === null ? <Empty t={tr("بارکردن...")} /> :
+            {hist === null ? <StatePanel type="loading" title={tr("بارکردن...")} compact /> :
+              histErr ? <StatePanel type="error" title={histErr} detail="پەیوەندی Supabase بپشکنە و دووبارە هەوڵ بدەرەوە." onRetry={loadRateHistory} compact /> :
               rateSeries.length === 0 ? (
-                <div className="text-sm rounded-[var(--r-sm)] p-3.5"
-                  style={{ background: "color-mix(in srgb, var(--warn) 11%, transparent)", color: "var(--warn)" }}>
-                  {tr("هێشتا مێژوویەک نییە — هەر جارێک نرخ بگۆڕیت، لێرە تۆمار دەبێت")}
-                </div>
+                <StatePanel title={tr("هێشتا مێژوویەک نییە — هەر جارێک نرخ بگۆڕیت، لێرە تۆمار دەبێت")} compact />
               ) : <>
                 <LineChart series={rateSeries} />
                 <div className="flex gap-4 mt-3 pt-3 text-xs" style={{ borderTop: "1px solid var(--line)" }}>

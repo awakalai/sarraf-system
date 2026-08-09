@@ -35,19 +35,17 @@ const CUR_STYLE = {
 };
 const curStyle = (c) => CUR_STYLE[(c?.id || "").toLowerCase()] || CUR_STYLE._default;
 
+/* نیشانی وڵاتی دراوەکان — تەنها بۆ UI، هیچ کاریگەرییەکی لەسەر حیساب نییە */
+const CUR_FLAG = { usd: "🇺🇸", eur: "🇪🇺", gbp: "🇬🇧", try: "🇹🇷", cny: "🇨🇳", jpy: "🇯🇵", iqd: "🇮🇶", aed: "🇦🇪", gold: "🥇", slv: "🥈" };
+const curFlag = (c) => CUR_FLAG[(c?.id || c?.code || "").toLowerCase()] || "💱";
+
 /* نیشانەی دراو — گۆی ڕەنگاوڕەنگ */
 const CurBadge = ({ c, size = "md", pulse }) => {
-  const st = curStyle(c);
-  const dim = size === "lg" ? "w-12 h-12 text-lg" : size === "sm" ? "w-7 h-7 text-[11px]" : "w-9 h-9 text-sm";
+  const dim = size === "lg" ? "w-12 h-12 text-[24px]" : size === "sm" ? "w-8 h-8 text-[17px]" : "w-10 h-10 text-[20px]";
   return (
-    <div className={`${dim} rounded-full font-bold flex items-center justify-center shrink-0 relative ${pulse ? "pop" : ""}`}
-      style={{
-        background: `radial-gradient(circle at 32% 26%, ${st.hi}, ${st.mid} 46%, ${st.lo})`,
-        color: "#fff",
-        boxShadow: `0 1px 2px rgba(13,17,23,.2), 0 4px 10px -2px ${st.glow}, inset 0 1px 1px rgba(255,255,255,.45), inset 0 -2px 4px rgba(0,0,0,.18)`,
-        textShadow: "0 1px 2px rgba(0,0,0,.28)",
-      }}>
-      {c?.symbol || st.sym}
+    <div className={`${dim} rounded-full font-medium flex items-center justify-center shrink-0 relative ${pulse ? "pop" : ""}`}
+      style={{ background: "var(--surf-3)", border: "1px solid var(--line)", boxShadow: "var(--sh-1)" }}>
+      <span aria-hidden>{curFlag(c)}</span>
     </div>
   );
 };
@@ -272,9 +270,9 @@ function Scanner({ onFound, onClose }) {
 /* هێڵی بچووک — ڕەوتی خێرا */
 const Card = ({ children, className = "", onClick, tone, glass, style }) => {
   const t = tone === "accent"
-    ? { background: "linear-gradient(150deg, var(--ac), var(--ac-2))", borderColor: "transparent", color: "#fff" }
+    ? { background: "var(--ac)", borderColor: "transparent", color: "var(--ac-ink)" }
     : tone === "deep"
-      ? { background: "linear-gradient(155deg, var(--surf-2), var(--bg-2))", borderColor: "var(--line)" }
+      ? { background: "var(--surf-2)", borderColor: "var(--line)" }
       : {};
   return (
     <div onClick={onClick} style={{ ...t, ...style }}
@@ -305,7 +303,7 @@ const Quick = ({ icon: Ic, label, onClick, active }) => (
   <button onClick={onClick} className="flex flex-col items-center gap-2 tap group">
     <span className="w-[52px] h-[52px] rounded-full flex items-center justify-center transition-all"
       style={active
-        ? { background: "linear-gradient(160deg, var(--ac), var(--ac-2))", boxShadow: "0 6px 20px -6px rgba(var(--ac-gl),.6)" }
+        ? { background: "var(--ac)", boxShadow: "0 7px 18px -7px rgba(var(--ac-gl),.45)" }
         : { background: "var(--glass)", border: "1px solid var(--line)", backdropFilter: "var(--blur)" }}>
       <Ic className="w-[21px] h-[21px]" style={{ color: active ? "var(--ac-ink)" : "var(--txt-2)" }} />
     </span>
@@ -346,8 +344,8 @@ const Sel = (p) => (
 
 const Btn = ({ kind = "primary", className = "", style, ...p }) => {
   const k = {
-    primary: { background: "linear-gradient(170deg, var(--ac), var(--ac-2))", color: "var(--ac-ink)",
-               boxShadow: "0 4px 16px -4px rgba(var(--ac-gl),.5), inset 0 1px 0 rgba(255,255,255,.2)" },
+    primary: { background: "var(--ac)", color: "var(--ac-ink)",
+               boxShadow: "0 6px 16px -6px rgba(var(--ac-gl),.45)" },
     danger:  { background: "linear-gradient(170deg, #FB7185, #E11D48)", color: "#fff",
                boxShadow: "0 4px 16px -4px rgba(225,29,72,.45), inset 0 1px 0 rgba(255,255,255,.18)" },
     gold:    { background: "linear-gradient(170deg, #FFC97A, #DCA03C)", color: "#241905",
@@ -620,124 +618,99 @@ const dOnly = (d) => (d || "").slice(0, 10);
 /* ══════════════════ پێکهاتە بچووکەکان ══════════════════ */
 function Styles() {
   return <style>{`
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 
-:root, [data-theme="dark"] {
-  --bg:        #08090C;
-  --bg-2:      #0B0D11;
-  --surf:      #12151B;
-  --surf-2:    #171B22;
-  --surf-3:    #1E232C;
-  --line:      rgba(255,255,255,.07);
-  --line-2:    rgba(255,255,255,.12);
-  --txt:       #F4F6FA;
-  --txt-2:     #A8B1C0;
-  --txt-3:     #737E90;
-  --pos:       #3DDC97;
-  --pos-bg:    rgba(61,220,151,.13);
-  --neg:       #FF6B81;
-  --neg-bg:    rgba(255,107,129,.13);
-  --warn:      #FFC24B;
-  --warn-bg:   rgba(255,194,75,.13);
-  --glass:     rgba(255,255,255,.045);
-  --glass-2:   rgba(255,255,255,.075);
-  --blur:      saturate(180%) blur(22px);
-  --r-sm: 14px; --r: 20px; --r-lg: 26px; --r-xl: 32px;
-  --sh-1: 0 1px 2px rgba(0,0,0,.4);
-  --sh-2: 0 4px 16px -4px rgba(0,0,0,.5), 0 1px 3px rgba(0,0,0,.4);
-  --sh-3: 0 18px 48px -12px rgba(0,0,0,.7), 0 4px 12px rgba(0,0,0,.4);
-  --ring: inset 0 1px 0 rgba(255,255,255,.07);
-}
-
-[data-theme="light"] {
-  --bg:        #F4F5F8;
-  --bg-2:      #EDEFF4;
+:root, [data-theme="light"] {
+  --bg:        #F3F5F8;
+  --bg-2:      #E9EDF2;
   --surf:      #FFFFFF;
-  --surf-2:    #FFFFFF;
-  --surf-3:    #F3F5F9;
-  --line:      rgba(10,14,22,.08);
-  --line-2:    rgba(10,14,22,.14);
-  --txt:       #10161F;
-  --txt-2:     #55606F;
-  --txt-3:     #7C8695;
-  --pos:       #08916A;
-  --pos-bg:    rgba(8,145,106,.1);
-  --neg:       #D92D4E;
-  --neg-bg:    rgba(217,45,78,.1);
-  --warn:      #C77A08;
-  --warn-bg:   rgba(199,122,8,.11);
-  --glass:     rgba(255,255,255,.7);
-  --glass-2:   rgba(255,255,255,.9);
-  --sh-1: 0 1px 2px rgba(10,14,22,.05);
-  --sh-2: 0 4px 14px -4px rgba(10,14,22,.1), 0 1px 3px rgba(10,14,22,.05);
-  --sh-3: 0 18px 44px -12px rgba(10,14,22,.16);
-  --ring: inset 0 1px 0 rgba(255,255,255,.9);
+  --surf-2:    #F8FAFB;
+  --surf-3:    #F1F4F6;
+  --line:      rgba(15,23,42,.075);
+  --line-2:    rgba(15,23,42,.13);
+  --txt:       #171A1F;
+  --txt-2:     #5F6875;
+  --txt-3:     #8A929D;
+  --pos:       #00D978;
+  --pos-bg:    rgba(0,217,120,.10);
+  --neg:       #E45B68;
+  --neg-bg:    rgba(228,91,104,.10);
+  --warn:      #D99118;
+  --warn-bg:   rgba(217,145,24,.10);
+  --ac:        #00D978;
+  --ac-2:      #00B967;
+  --ac-gl:     0,217,120;
+  --ac-ink:    #07130D;
+  --glass:     rgba(255,255,255,.82);
+  --glass-2:   rgba(255,255,255,.96);
+  --blur:      saturate(150%) blur(18px);
+  --r-sm: 12px; --r: 18px; --r-lg: 24px; --r-xl: 30px;
+  --sh-1: 0 1px 2px rgba(15,23,42,.03), 0 4px 18px rgba(15,23,42,.035);
+  --sh-2: 0 8px 24px rgba(15,23,42,.07);
+  --sh-3: 0 18px 50px rgba(15,23,42,.13);
+  --ring: inset 0 1px 0 rgba(255,255,255,.8);
 }
 
-/* ── ڕەنگی هەر ڕۆڵێک ── */
-[data-role="admin"]    { --ac: #F0B95E; --ac-2: #D0913A; --ac-gl: 240,185,94;  --ac-ink: #241905; }
-[data-role="customer"] { --ac: #8B7BFF; --ac-2: #6A57F0; --ac-gl: 139,123,255; --ac-ink: #fff; }
-[data-role="partner"]  { --ac: #3FDDCA; --ac-2: #17B8A6; --ac-gl: 63,221,202;  --ac-ink: #04201D; }
-[data-role="investor"] { --ac: #5BE894; --ac-2: #26C46E; --ac-gl: 91,232,148;  --ac-ink: #04220F; }
-[data-role="office"]   { --ac: #FFA45C; --ac-2: #F8802E; --ac-gl: 255,164,92;  --ac-ink: #2A1204; }
-
-[data-theme="light"][data-role="admin"]    { --ac: #B8811F; --ac-2: #9A6913; --ac-gl: 184,129,31;  --ac-ink: #fff; }
-[data-theme="light"][data-role="customer"] { --ac: #5B48D9; --ac-2: #4736B8; --ac-gl: 91,72,217;   --ac-ink: #fff; }
-[data-theme="light"][data-role="partner"]  { --ac: #0E9B8B; --ac-2: #087A6E; --ac-gl: 14,155,139;  --ac-ink: #fff; }
-[data-theme="light"][data-role="investor"] { --ac: #0F9D57; --ac-2: #0A7C43; --ac-gl: 15,157,87;   --ac-ink: #fff; }
-[data-theme="light"][data-role="office"]   { --ac: #D9701C; --ac-2: #B85A12; --ac-gl: 217,112,28;  --ac-ink: #fff; }
-
-body { background: var(--bg); color: var(--txt); font-family: 'IBM Plex Sans Arabic','Outfit',system-ui,sans-serif; -webkit-font-smoothing: antialiased; }
-html[lang="en"] body, html[lang="en"] input, html[lang="en"] select, html[lang="en"] textarea, html[lang="en"] button {
-  font-family: 'Outfit', system-ui, sans-serif;
-}
-.mono, [style*="tabular-nums"] { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-feature-settings: "tnum" 1; letter-spacing: -.01em; }
-
-/* ── جووڵە ── */
-@keyframes rise    { from { opacity:0; transform: translateY(14px) } to { opacity:1; transform:none } }
-@keyframes pop     { 0% { transform: scale(.8); opacity:0 } 55% { transform: scale(1.05) } 100% { transform:none; opacity:1 } }
-@keyframes drop    { from { opacity:0; transform: translateY(-14px) scale(.97) } to { opacity:1; transform:none } }
-@keyframes sheet   { from { transform: translateY(100%) } to { transform:none } }
-@keyframes breathe { 0%,100% { opacity:.55 } 50% { opacity:1 } }
-@keyframes shimmer { 0% { background-position: 200% 0 } 100% { background-position: -200% 0 } }
-.rise   { animation: rise .5s cubic-bezier(.16,1,.3,1) both }
-.pop    { animation: pop .45s cubic-bezier(.2,1.4,.35,1) both }
-.drop   { animation: drop .34s cubic-bezier(.16,1,.3,1) both }
-.sheet  { animation: sheet .36s cubic-bezier(.16,1,.3,1) both }
-.breathe{ animation: breathe 2.6s ease-in-out infinite }
-
-/* ── کارت ── */
-.card {
-  background: var(--surf);
-  border: 1px solid var(--line);
-  border-radius: var(--r);
-  box-shadow: var(--sh-1), var(--ring);
-}
-.glass {
-  background: var(--glass);
-  backdrop-filter: var(--blur);
-  -webkit-backdrop-filter: var(--blur);
-  border: 1px solid var(--line);
-}
-.tap { transition: transform .18s cubic-bezier(.16,1,.3,1), box-shadow .2s ease, background .2s ease }
-.tap:active { transform: scale(.97) }
-.hov:hover { background: var(--surf-2); border-color: var(--line-2) }
-
-/* ── تیشکی ڕەنگی ڕۆڵ ── */
-.aura::before {
-  content:''; position:absolute; inset:-40% -20% auto -20%; height:70%;
-  background: radial-gradient(60% 100% at 50% 0%, rgba(var(--ac-gl),.22), transparent 70%);
-  pointer-events:none;
+[data-theme="dark"] {
+  --bg: #0D1014; --bg-2:#11151A; --surf:#171B21; --surf-2:#1D2229; --surf-3:#232932;
+  --line:rgba(255,255,255,.08); --line-2:rgba(255,255,255,.14); --txt:#F4F7FA; --txt-2:#AAB3BE; --txt-3:#788390;
+  --pos:#00D978; --pos-bg:rgba(0,217,120,.12); --neg:#FF7482; --neg-bg:rgba(255,116,130,.12); --warn:#FFC45C; --warn-bg:rgba(255,196,92,.12);
+  --ac:#00D978; --ac-2:#00B967; --ac-gl:0,217,120; --ac-ink:#07130D;
+  --glass:rgba(255,255,255,.055); --glass-2:rgba(255,255,255,.08); --blur:saturate(160%) blur(18px);
+  --sh-1:0 1px 2px rgba(0,0,0,.25),0 4px 18px rgba(0,0,0,.18); --sh-2:0 8px 24px rgba(0,0,0,.25); --sh-3:0 18px 50px rgba(0,0,0,.38); --ring:inset 0 1px 0 rgba(255,255,255,.05);
 }
 
-::-webkit-scrollbar { width:8px; height:8px }
-::-webkit-scrollbar-track { background:transparent }
-::-webkit-scrollbar-thumb { background: var(--line-2); border-radius:8px }
-::-webkit-scrollbar-thumb:hover { background: var(--txt-3) }
-input,select,textarea { color-scheme: dark }
-[data-theme="light"] input, [data-theme="light"] select, [data-theme="light"] textarea { color-scheme: light }
-*:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px }
-@media (prefers-reduced-motion: reduce) { *,*::before,*::after { animation-duration:.01ms !important; transition-duration:.01ms !important } }
+[data-role="admin"],[data-role="customer"],[data-role="partner"],[data-role="investor"],[data-role="office"] {
+  --ac:#00D978; --ac-2:#00B967; --ac-gl:0,217,120; --ac-ink:#07130D;
+}
+
+* { box-sizing:border-box; }
+html { background:var(--bg); }
+body { margin:0; background:var(--bg); color:var(--txt); font-family:'IBM Plex Sans Arabic','Inter',system-ui,sans-serif; -webkit-font-smoothing:antialiased; }
+html[lang="en"] body, html[lang="en"] input, html[lang="en"] select, html[lang="en"] textarea, html[lang="en"] button { font-family:'Inter',system-ui,sans-serif; }
+.mono,[style*="tabular-nums"] { font-family:'IBM Plex Mono',ui-monospace,monospace; font-feature-settings:"tnum" 1; letter-spacing:-.01em; }
+
+@keyframes rise { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:none} }
+@keyframes pop { 0%{transform:scale(.96);opacity:0} 100%{transform:none;opacity:1} }
+@keyframes drop { from{opacity:0;transform:translateY(-8px) scale(.98)} to{opacity:1;transform:none} }
+@keyframes sheet { from{transform:translateY(100%)} to{transform:none} }
+@keyframes breathe { 0%,100%{opacity:.72} 50%{opacity:1} }
+.rise{animation:rise .38s cubic-bezier(.16,1,.3,1) both}.pop{animation:pop .28s ease both}.drop{animation:drop .25s ease both}.sheet{animation:sheet .32s cubic-bezier(.16,1,.3,1) both}.breathe{animation:breathe 2.6s ease-in-out infinite}
+
+.card { background:var(--surf); border:1px solid var(--line); border-radius:var(--r); box-shadow:var(--sh-1),var(--ring); }
+.glass { background:var(--glass); backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur); border:1px solid var(--line); }
+.tap { transition:transform .16s ease,box-shadow .18s ease,background .18s ease,border-color .18s ease; }
+.tap:active{transform:scale(.985)}
+.hov:hover{border-color:var(--line-2);box-shadow:var(--sh-2)}
+.aura::before{content:'';position:absolute;inset:-30% -10% auto -10%;height:65%;background:radial-gradient(55% 90% at 50% 0%,rgba(var(--ac-gl),.16),transparent 70%);pointer-events:none}
+
+/* reference-style shell */
+.sarraf-shell { min-height:100vh; background:var(--bg); }
+.sarraf-sidebar { background:#0B0D0F; color:#A9B0B8; box-shadow:10px 0 35px rgba(0,0,0,.08); }
+.sarraf-sidebar .nav-active { background:#00D978; color:#07130D !important; box-shadow:0 8px 20px rgba(0,217,120,.18); }
+.sarraf-sidebar .nav-item:hover { background:rgba(255,255,255,.07); color:#fff !important; }
+.sarraf-main { min-width:0; }
+.sarraf-topbar { background:rgba(255,255,255,.88); backdrop-filter:saturate(150%) blur(18px); -webkit-backdrop-filter:saturate(150%) blur(18px); }
+[data-theme="dark"] .sarraf-topbar { background:rgba(13,16,20,.88); }
+
+/* fintech primitives */
+.fin-card { background:var(--surf); border:1px solid var(--line); border-radius:20px; box-shadow:0 2px 12px rgba(15,23,42,.035); }
+.fin-green { background:linear-gradient(145deg,#00E77F 0%,#00D978 52%,#00C96E 100%); color:#06140D; border-color:transparent; box-shadow:0 14px 34px rgba(0,217,120,.20); }
+.fin-green .muted { color:rgba(4,25,15,.62); }
+.fin-green .white-muted { color:rgba(255,255,255,.82); }
+.fin-input { background:var(--surf); border:1px solid var(--line); }
+
+::-webkit-scrollbar{width:7px;height:7px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:99px}
+input,select,textarea{color-scheme:light} [data-theme="dark"] input,[data-theme="dark"] select,[data-theme="dark"] textarea{color-scheme:dark}
+*:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
+@media(max-width:767px){
+  .sarraf-sidebar{display:none}
+  .sarraf-topbar{box-shadow:0 1px 0 var(--line)}
+}
+@media(min-width:768px){
+  .sarraf-desktop-content{padding-left:260px}
+}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
   `}</style>;
 }
 
@@ -1595,10 +1568,14 @@ export default function App() {
       )}
       {busy && <div className="fixed top-0 right-0 left-0 h-0.5 bg-emerald-600 animate-pulse z-50" />}
 
-      <header className="sticky top-0 z-40 glass"
+      <header className="sticky top-0 z-40 sarraf-topbar"
         style={{ paddingTop: "env(safe-area-inset-top)", borderInline: 0, borderTop: 0, borderBottom: "1px solid var(--line)" }}>
-        <div className="px-4 md:px-6 py-3 flex items-center justify-between gap-3 max-w-[1400px] mx-auto">
+        <div className="px-4 md:px-7 py-3 flex items-center justify-between gap-3 max-w-[1600px] mx-auto md:ml-[260px]">
           <div className="flex items-center gap-3 min-w-0">
+            <div className="hidden md:flex items-center gap-2.5 me-3">
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{background:"#00D978",color:"#07130D"}}><Wallet className="w-5 h-5"/></div>
+              <div className="text-[15px] font-extrabold tracking-tight" style={{color:"var(--txt)"}}>SARRAF</div>
+            </div>
             <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
               style={{ background: "linear-gradient(155deg, var(--ac), var(--ac-2))",
                        boxShadow: "0 4px 14px -3px rgba(var(--ac-gl),.55)" }}>
@@ -1715,17 +1692,19 @@ export default function App() {
       ) : (
         <div className="flex flex-col md:flex-row">
           {/* لیستی لاتەنیشت — تەنها لە شاشەی گەورە */}
-          <nav className="hidden md:flex md:w-[236px] md:min-h-screen p-4 flex-col gap-1 sticky top-[64px] self-start">
+          <nav className="sarraf-sidebar hidden md:flex md:w-[236px] md:min-h-screen p-4 flex-col gap-1 fixed left-0 top-0 bottom-0 z-50 overflow-y-auto">
+            <div className="flex items-center gap-3 px-2 pt-2 pb-7">
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{background:"#00D978",color:"#07130D"}}><Wallet className="w-5 h-5"/></div>
+              <div><div className="text-[16px] font-extrabold tracking-tight text-white">SARRAF</div><div className="text-[9px] mt-0.5" style={{color:"#7D8792"}}>Financial System</div></div>
+            </div>
+            <div className="px-2 pb-2 text-[9px] font-semibold uppercase tracking-[.16em]" style={{color:"#68727D"}}>Workspace</div>
             {NAV.map(([id, t, Ic]) => {
               const on = page === id;
               return (
                 <button key={id} onClick={() => { setPage(id); setDetailId(null); setEditTx(null); }}
-                  style={on
-                    ? { background: "var(--surf-2)", color: "var(--txt)", boxShadow: "var(--sh-1), var(--ring)" }
-                    : { color: "var(--txt-3)" }}
-                  className={`flex items-center gap-3 px-4 py-3 rounded-[var(--r-sm)] text-[14px] tap relative ${on ? "font-semibold" : "font-medium hover:text-[var(--txt-2)]"}`}>
-                  {on && <span className="absolute inset-y-2 start-0 w-[3px] rounded-full" style={{ background: "var(--ac)" }} />}
-                  <Ic className="w-[18px] h-[18px]" style={{ color: on ? "var(--ac)" : "inherit" }} /> {t}
+                  style={on ? { color: "#07130D" } : { color: "#A9B0B8" }}
+                  className={`nav-item ${on ? "nav-active" : ""} flex items-center gap-3 px-4 py-3 rounded-xl text-[13px] tap relative ${on ? "font-semibold" : "font-medium"}`}>
+                  <Ic className="w-[17px] h-[17px]" style={{ color: on ? "#07130D" : "#8F98A3" }} /> {t}
                 </button>
               );
             })}
@@ -1738,7 +1717,7 @@ export default function App() {
               </div>
             )}
           </nav>
-          <main className="flex-1 px-4 pt-5 pb-28 md:px-8 md:pt-7 md:pb-10 max-w-[900px] w-full mx-auto">
+          <main className="sarraf-main sarraf-desktop-content flex-1 px-4 pt-5 pb-28 md:px-8 md:pt-7 md:pb-10 max-w-[1600px] w-full mx-auto">
             {page === "dash" && <Dashboard {...shared} batches={batches} go={setPage} />}
             {page === "safes" && <><Back onClick={() => setPage("dash")} t={tr("گەڕانەوە بۆ داشبۆرد")} /><Safes {...shared} addDeposit={addDeposit} addExpense={addExpense} addCurrency={addCurrency} /></>}
             {page === "rates" && <><Back onClick={() => setPage("dash")} t={tr("گەڕانەوە بۆ داشبۆرد")} /><Rates {...shared} saveRates={saveRates} /></>}
@@ -2029,136 +2008,136 @@ function Dashboard({ data, calc, cur, mySafe, profitIn, ownProfitIn, investorsPr
   const today = dOnly(new Date().toISOString());
   const todayTxs = data.txs.filter((t) => !t.deleted && dOnly(t.date) === today);
   const pTod = profitIn(today, today);
-  const invTod = investorsProfitIn(pTod);
-  const pendBuy = data.txs.filter((t) => !t.deleted && t.status === "pending" && t.type === "buy").length;
-  const pendSell = data.txs.filter((t) => !t.deleted && t.status === "pending" && t.type === "sell").length;
-  const pendingCount = pendBuy + pendSell;
+  const ownTod = ownProfitIn ? ownProfitIn(today, today) : {};
+  const totalTodayProfit = sumUsd(Object.keys(pTod).reduce((m,k)=>{ m[k]=(pTod[k]||0)+(ownTod[k]||0); return m; },{}));
+  const pendingCount = data.txs.filter((t) => !t.deleted && t.status === "pending").length;
   const noRates = data.currencies.some((c) => c.id !== "usd" && (!c.buyRate || !c.sellRate));
+  const totalBalance = ratesReady ? sumUsd(calc.phys) : 0;
 
-  /* ڕەوتی ٧ ڕۆژ */
   const last7 = [...Array(7)].map((_, i) => {
     const d = new Date(); d.setDate(d.getDate() - (6 - i));
-    const k = d.toISOString().slice(0, 10);
-    const p = profitIn(k, k), o = ownProfitIn ? ownProfitIn(k, k) : {};
-    const m = {};
-    [...Object.keys(p), ...Object.keys(o)].forEach((c) => (m[c] = (p[c] || 0) + (o[c] || 0)));
-    return { k, v: ratesReady ? Math.round(sumUsd(m)) : (Object.values(m)[0] || 0) };
+    const k = d.toISOString().slice(0,10);
+    const p = profitIn(k,k), o = ownProfitIn ? ownProfitIn(k,k) : {};
+    const all = {};
+    [...Object.keys(p), ...Object.keys(o)].forEach((c) => all[c]=(p[c]||0)+(o[c]||0));
+    return { k, v: ratesReady ? sumUsd(all) : (Object.values(all)[0] || 0) };
   });
-  const week7 = last7.reduce((s2, d) => s2 + d.v, 0);
+  const weekProfit = last7.reduce((s,x)=>s+x.v,0);
+  const chartMax = Math.max(...last7.map(x=>Math.abs(x.v)), 1);
 
-  /* ئاگادارییەکان — ئەوەی پێویستە سەرنجی بدەیت */
-  const alerts = [];
-  if (noRates) alerts.push({ tone: "amber", Ic: AlertTriangle, t: "نرخی هەموو دراوەکان دانەنراوە — کلیک بکە", go: () => go("rates") });
-  const newBatches = (batches || []).filter((b) => b.status === "new").length;
-  const waBatches = (batches || []).filter((b) => b.status === "new" && b.source === "whatsapp").length;
-  if (newBatches) alerts.push({ tone: "green", Ic: waBatches ? MessageCircle : ScanLine,
-    t: waBatches ? `${newBatches} کۆمەڵەی فیشی نوێ (${waBatches} لە واتساپەوە)` : `${newBatches} کۆمەڵەی فیشی نوێ چاوەڕوانی پشکنینن`,
-    go: () => go("receipts") });
-  const oldPend = data.txs.filter((t) => !t.deleted && t.status === "pending" && (Date.now() - new Date(t.date).getTime()) > 3 * 86400000).length;
-  if (oldPend) alerts.push({ tone: "amber", Ic: AlertTriangle, t: `${oldPend} مامەڵە زیاتر لە ٣ ڕۆژە چاوەڕوانی پارەن`, go: () => go("txs") });
-  const negP = data.users.filter((u) => u.role === "partner" && !u.deleted && Object.values(calc.partner[u.id] || {}).some((v) => v < 0));
-  if (negP.length) alerts.push({ tone: "red", Ic: TrendingDown, t: `قەرزارت لای ${negP.map((u) => u.name).join("، ")}`, go: () => go("people") });
+  const recent = [...data.txs].filter(t=>!t.deleted).sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,6);
+  const expenses = [...Array(7)].map((_, i) => {
+    const d = new Date(); d.setDate(d.getDate() - (6-i));
+    const k=d.toISOString().slice(0,10);
+    const v=data.ledger.filter(e=>e.type==="expense" && dOnly(e.date)===k).reduce((s,e)=>s+Math.abs(e.amount||0),0);
+    return {k,v};
+  });
+  const expMax=Math.max(...expenses.map(x=>x.v),1);
 
-  const Stat = ({ t, v, tone, i = 0 }) => (
-    <Card className="p-4 rise" style={{ animationDelay: `${i * 50}ms` }}>
-      <div className="text-xs text-[var(--txt-2)] mb-1">{t}</div>
-      <div className={`text-2xl font-bold ${tone || ""}`} style={num}>{v}</div>
-    </Card>
+  const Stat = ({label,value,sub,positive}) => (
+    <div className="fin-card p-4 md:p-5 min-w-0">
+      <div className="text-[11px] md:text-[12px] font-medium" style={{color:"var(--txt-3)"}}>{label}</div>
+      <div className="mt-2 text-[23px] md:text-[27px] font-bold tracking-tight" style={{...num,color:"var(--txt)"}}>{value}</div>
+      {sub && <div className="mt-1 text-[10px] md:text-[11px]" style={{color:positive?"var(--pos)":"var(--txt-3)"}}>{sub}</div>}
+    </div>
   );
 
+  const Flag = ({c}) => <span className="text-[20px] leading-none shrink-0" aria-hidden>{curFlag(c)}</span>;
+
   return (
-    <div className="space-y-5">
-      {/* ── ژمارەی سەرەکی ── */}
-      <div className="relative pt-3 pb-2 aura">
-        <Hero
-          label={ratesReady ? tr("کۆی گشتی") : tr("قاسەی گشتی")}
-          value={ratesReady ? fmt(sumUsd(calc.phys), 0) : "—"}
-          unit={ratesReady ? "$" : ""}
-          sub={ratesReady ? `${tr("ماڵی خۆم")} · ${fmt(sumUsd(mySafe), 0)} $` : tr("نرخەکان دابنێ")}
-        />
-      </div>
-
-      {/* ── کرداری خێرا ── */}
-      <div className="flex justify-around px-2">
-        <Quick icon={ArrowLeftRight} label={tr("مامەڵە")} onClick={() => go("newtx")} active />
-        <Quick icon={ScanLine} label={tr("فیش")} onClick={() => go("receipts")} />
-        <Quick icon={Vault} label={tr("قاسە")} onClick={() => go("safes")} />
-        <Quick icon={TrendingUp} label={tr("ڕەوت")} onClick={() => go("insights")} />
-      </div>
-
-      {/* ── ئاگادارییەکان ── */}
-      {alerts.length > 0 && (
-        <div className="space-y-2">
-          {alerts.map((a, i) => (
-            <Card key={i} onClick={a.go} className="p-3.5 rise" style={{ animationDelay: `${i * 60}ms` }}>
-              <div className="flex items-center gap-3">
-                <span className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
-                  style={{ background: a.tone === "red" ? "var(--neg-bg)" : a.tone === "amber" ? "var(--warn-bg)" : "rgba(var(--ac-gl),.14)" }}>
-                  <a.Ic className="w-4 h-4" style={{ color: a.tone === "red" ? "var(--neg)" : a.tone === "amber" ? "var(--warn)" : "var(--ac)" }} />
-                </span>
-                <span className="flex-1 text-[13px] font-medium" style={{ color: "var(--txt)" }}>{a.t}</span>
-                <ChevronLeft className="w-4 h-4 rotate-180 shrink-0" style={{ color: "var(--txt-3)" }} />
-              </div>
-            </Card>
-          ))}
+    <div className="space-y-5 md:space-y-6">
+      <div className="flex items-end justify-between gap-4">
+        <div>
+          <div className="text-[12px] md:text-[13px]" style={{color:"var(--txt-3)"}}>Welcome back, {data.users.find(u=>u.role==="admin"&&!u.deleted)?.name || "Sarraf"}</div>
+          <h1 className="text-[28px] md:text-[32px] font-bold tracking-tight mt-1" style={{color:"var(--txt)"}}>{tr("داشبۆرد")}</h1>
         </div>
-      )}
+        <button onClick={()=>go("newtx")} className="hidden md:flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-[13px] tap" style={{background:"#0B0D0F",color:"#fff"}}>
+          <Plus className="w-4 h-4" /> {tr("مامەڵەی نوێ")}
+        </button>
+      </div>
 
-      {/* ── ڕەوتی خێر ── */}
-      {last7.some((d) => d.v) && (
-        <Card tone="deep" className="p-5 rise" onClick={() => go("insights")}>
-          <div className="flex items-start justify-between gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+        <div className="fin-green rounded-[20px] p-5 md:p-6 col-span-2 min-h-[164px] relative overflow-hidden">
+          <div className="flex items-start justify-between relative z-10">
             <div>
-              <div className="text-[12px]" style={{ color: "var(--txt-3)" }}>{tr("خێری ٧ ڕۆژی ڕابردوو")}</div>
-              <div className="text-[26px] font-semibold mt-1"
-                style={{ ...num, letterSpacing: "-.02em", color: week7 >= 0 ? "var(--pos)" : "var(--neg)" }}>
-                {fmt(week7, 0)}{ratesReady && <span className="text-[13px] font-normal ms-1" style={{ color: "var(--txt-3)" }}>$</span>}
-              </div>
+              <div className="text-[12px] font-semibold opacity-80">Total Balance</div>
+              <div className="mt-2 text-[34px] md:text-[40px] font-semibold tracking-[-.04em]" style={num}>{ratesReady ? fmt(totalBalance,0) : "—"} <span className="text-[13px] font-medium">USD</span></div>
+              <div className="mt-1 text-[11px] muted">{ratesReady ? `+${fmt(Math.max(weekProfit,0),0)} this week` : tr("نرخەکان دابنێ")}</div>
             </div>
-            <Spark data={last7.map((d) => d.v)} w={130} h={44} color={week7 >= 0 ? "var(--pos)" : "var(--neg)"} />
+            <button onClick={()=>go("safes")} className="w-10 h-10 rounded-full flex items-center justify-center bg-white/90 text-black tap shadow-sm"><Plus className="w-5 h-5"/></button>
           </div>
-        </Card>
-      )}
-
-      {/* ── ژمارەکانی ئەمڕۆ ── */}
-      <div className="grid grid-cols-3 gap-2.5">
-        {[[tr("مامەڵە"), todayTxs.length, "var(--txt)"],
-          [tr("کڕین"), todayTxs.filter((t) => t.type === "buy").length, "var(--pos)"],
-          [tr("فرۆشتن"), todayTxs.filter((t) => t.type === "sell").length, "var(--neg)"]].map(([l, v, c], i) => (
-          <Card key={i} className="p-3.5 text-center rise" style={{ animationDelay: `${i * 50}ms` }}>
-            <div className="text-[24px] font-semibold" style={{ ...num, color: c }}>{v}</div>
-            <div className="text-[11px] mt-0.5" style={{ color: "var(--txt-3)" }}>{l}</div>
-          </Card>
-        ))}
+          <svg viewBox="0 0 420 100" preserveAspectRatio="none" className="absolute bottom-0 inset-x-0 w-full h-[82px] opacity-90">
+            <path d="M0 76 C45 70 60 55 100 62 S150 75 190 50 S240 26 285 42 S330 18 365 28 S400 18 420 12 L420 100 L0 100 Z" fill="rgba(255,255,255,.14)"/>
+            <path d="M0 76 C45 70 60 55 100 62 S150 75 190 50 S240 26 285 42 S330 18 365 28 S400 18 420 12" fill="none" stroke="rgba(255,255,255,.88)" strokeWidth="2.5" strokeLinecap="round"/>
+          </svg>
+          <div className="absolute bottom-4 start-5 text-[10px] white-muted">{tr("کۆی گشتی")}</div>
+        </div>
+        <Stat label={tr("خێری ئەمڕۆ")} value={ratesReady?`${fmt(totalTodayProfit,0)} USD`:`${fmt(Object.values(pTod).reduce((a,b)=>a+b,0),0)}`} sub={totalTodayProfit>=0?"↗ positive today":"↓ negative today"} positive={totalTodayProfit>=0}/>
+        <Stat label={tr("مامەڵەی ئەمڕۆ")} value={todayTxs.length} sub={`+${todayTxs.length} ${tr("ئەمڕۆ")}`} />
+        <Stat label={tr("چاوەڕوان") } value={pendingCount} sub={pendingCount?tr("پێویستی بە پشکنینە"):"✓ Clear"} />
       </div>
 
-      {/* ── قاسەی گشتی ── */}
-      <SafeCards data={data} calc={calc} cur={cur} mySafe={mySafe} sumUsd={sumUsd}
-        ratesReady={ratesReady} owners={owners} go={go} />
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,.9fr)] gap-4">
+        <section className="fin-card p-5 md:p-6">
+          <div className="flex items-start justify-between gap-3 mb-5">
+            <div><h2 className="text-[16px] font-bold">Profit Overview</h2><div className="text-[11px] mt-1" style={{color:"var(--txt-3)"}}>Last 7 days</div></div>
+            <button onClick={()=>go("insights")} className="text-[11px] font-semibold" style={{color:"var(--ac)"}}>{tr("وردەکاری ←")}</button>
+          </div>
+          <div className="relative h-[210px]">
+            <svg viewBox="0 0 700 210" preserveAspectRatio="none" className="w-full h-full overflow-visible">
+              {[0,1,2,3].map(i=><line key={i} x1="0" x2="700" y1={28+i*48} y2={28+i*48} stroke="var(--line)" strokeWidth="1"/>) }
+              <defs><linearGradient id="profitFillSarraf" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#00D978" stopOpacity=".22"/><stop offset="100%" stopColor="#00D978" stopOpacity="0"/></linearGradient></defs>
+              {(()=>{
+                const pts=last7.map((x,i)=>[20+i*(660/6),185-(Math.max(0,x.v)/chartMax)*145]);
+                const d=pts.map((p,i)=>`${i?"L":"M"}${p[0]},${p[1]}`).join(" ");
+                return <><path d={`${d} L680 185 L20 185 Z`} fill="url(#profitFillSarraf)"/><path d={d} fill="none" stroke="#00D978" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>{pts.map((p,i)=><circle key={i} cx={p[0]} cy={p[1]} r={i===pts.length-1?5:3.5} fill="#00D978" stroke="var(--surf)" strokeWidth="2"/>)}</>;
+              })()}
+            </svg>
+          </div>
+          <div className="flex justify-between text-[10px]" style={{color:"var(--txt-3)"}}>{last7.map(x=><span key={x.k}>{x.k.slice(5)}</span>)}</div>
+        </section>
 
-      {/* ── نرخی ڕۆژ ── */}
-      <Card className="p-5">
-        <div className="flex items-center justify-between mb-1">
-          <SecLbl>{tr("نرخی ئەمڕۆ")}</SecLbl>
-          <button onClick={() => go("rates")} className="text-[12px] font-semibold tap" style={{ color: "var(--ac)" }}>
-            {tr("گۆڕین ←")}
-          </button>
-        </div>
-        {data.currencies.filter((c) => c.id !== "usd").map((c) => (
-          <Row key={c.id}
-            icon={<CurBadge c={c} size="sm" />}
-            title={c.name}
-            right={<span>
-              <span style={{ color: "var(--pos)" }}>{c.buyRate ? fmt(c.buyRate, 3) : "—"}</span>
-              <span className="mx-1.5" style={{ color: "var(--txt-3)" }}>/</span>
-              <span style={{ color: "var(--neg)" }}>{c.sellRate ? fmt(c.sellRate, 3) : "—"}</span>
-            </span>} />
-        ))}
-        <div className="text-[11px] mt-2" style={{ color: "var(--txt-3)" }}>{tr("کڕین / فرۆشتن — ١ دۆلار بە چەند")}</div>
-      </Card>
+        <section className="fin-card p-5 md:p-6">
+          <div className="flex items-center justify-between mb-4"><h2 className="text-[16px] font-bold">Currency Rates</h2><button onClick={()=>go("rates")} className="text-[11px] font-semibold" style={{color:"var(--ac)"}}>{tr("هەمووی")}</button></div>
+          <div className="space-y-1">
+            {data.currencies.filter(c=>c.id!=="usd").slice(0,5).map(c=>(
+              <div key={c.id} className="flex items-center gap-3 py-3 border-b last:border-0" style={{borderColor:"var(--line)"}}>
+                <Flag c={c}/><div className="min-w-0 flex-1"><div className="text-[13px] font-semibold">{c.code}</div><div className="text-[10px] truncate" style={{color:"var(--txt-3)"}}>{c.name}</div></div>
+                <div className="text-end" style={num}><div className="text-[12px] font-semibold">{c.buyRate?fmt(c.buyRate,3):"—"}</div><div className="text-[10px]" style={{color:"var(--txt-3)"}}>{c.sellRate?fmt(c.sellRate,3):"—"}</div></div>
+                <div className="text-[10px] font-semibold min-w-[38px] text-end" style={{color:c.buyRate?"var(--pos)":"var(--txt-3)"}}>{c.buyRate?"Live":"—"}</div>
+              </div>
+            ))}
+          </div>
+          {noRates && <button onClick={()=>go("rates")} className="mt-3 w-full rounded-xl px-3 py-2.5 text-[11px] font-semibold" style={{background:"var(--warn-bg)",color:"var(--warn)"}}><AlertTriangle className="w-3.5 h-3.5 inline me-1"/>{tr("نرخی هەموو دراوەکان دانەنراوە — کلیک بکە")}</button>}
+        </section>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,.9fr)] gap-4">
+        <section className="fin-card p-5 md:p-6 overflow-hidden">
+          <div className="flex items-center justify-between mb-4"><h2 className="text-[16px] font-bold">Recent Transactions</h2><button onClick={()=>go("txs")} className="text-[11px] font-semibold" style={{color:"var(--ac)"}}>{tr("هەمووی")}</button></div>
+          <div className="hidden md:grid grid-cols-[.8fr_.65fr_1fr_.7fr_.8fr_.8fr] gap-3 px-2 pb-2 text-[10px] font-semibold" style={{color:"var(--txt-3)"}}><span>Type</span><span>Currency</span><span>Amount</span><span>Rate</span><span>Profit</span><span>Status</span></div>
+          <div className="space-y-1">
+            {recent.map(t=>{const c=cur(t.curId), positive=t.type==="buy"; return <button key={t.id} onClick={()=>go("txs")} className="w-full text-start grid grid-cols-[1fr_auto] md:grid-cols-[.8fr_.65fr_1fr_.7fr_.8fr_.8fr] gap-3 items-center px-2 py-3 rounded-xl tap hover:bg-[var(--surf-2)]"><div><div className="text-[12px] font-semibold">{t.type==="buy"?tr("کڕین"):tr("فرۆشتن")}</div><div className="text-[9px] md:hidden" style={{color:"var(--txt-3)"}}>{t.cpName||usrSafeName(data,t.cpId)||"—"}</div></div><div className="flex items-center gap-1.5 text-[11px] font-semibold"><span>{curFlag(c)}</span>{c.code}</div><div style={num} className="text-[12px] font-semibold">{fmt(t.amount,0)}</div><div style={num} className="hidden md:block text-[11px]">{fmt(t.rate,3)}</div><div style={num} className="hidden md:block text-[11px]" >{t.profit==null?"—":fmt(t.profit,0)}</div><div className="text-end md:text-start"><Pill tone={t.status==="pending"?"amber":positive?"green":"slate"}>{t.status==="pending"?tr("چاوەڕوان"):tr("تەواوکراو")}</Pill></div></button>})}
+            {!recent.length && <Empty t={tr("هیچ مامەڵەیەک نەدۆزرایەوە")}/>
+          </div>
+        </section>
+
+        <section className="fin-card p-5 md:p-6">
+          <div className="flex items-center justify-between mb-4"><h2 className="text-[16px] font-bold">Expenses</h2><span className="text-[10px]" style={{color:"var(--txt-3)"}}>This week</span></div>
+          <div className="flex items-end gap-2 h-[185px]">
+            {expenses.map((x,i)=><div key={x.k} className="flex-1 h-full flex flex-col justify-end items-center gap-2"><div className="w-full max-w-[22px] rounded-t-full" style={{height:`${Math.max(8,(x.v/expMax)*145)}px`,background:i===expenses.length-1?"#00D978":"#BFEFD9"}} title={fmt(x.v,0)}/><span className="text-[9px]" style={{color:"var(--txt-3)"}}>{x.k.slice(5)}</span></div>)}
+          </div>
+        </section>
+      </div>
+
+      <div className="md:hidden fixed bottom-[74px] end-4 z-30">
+        <button onClick={()=>go("newtx")} className="w-14 h-14 rounded-full flex items-center justify-center tap" style={{background:"#00D978",color:"#07130D",boxShadow:"0 12px 28px rgba(0,217,120,.28)"}}><Plus className="w-6 h-6"/></button>
+      </div>
     </div>
   );
 }
+
+function usrSafeName(data,id){ return data.users.find(u=>u.id===id)?.name || ""; }
 
 function SafeCards({ data, calc, cur, mySafe, sumUsd, ratesReady, owners, go }) {
   const [open, setOpen] = useState(null);

@@ -4686,8 +4686,8 @@ const bytesToBase64 = (bytes) => {
   return btoa(bin);
 };
 
-const OCR_MAX_BINARY_BYTES = 2_800_000;
-const OCR_MAX_BASE64_CHARS = 3_900_000;
+const OCR_MAX_BINARY_BYTES = 2_500_000;
+const OCR_MAX_BASE64_CHARS = 3_500_000;
 
 const canvasToJpeg = (canvas, quality) =>
   new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
@@ -4778,6 +4778,14 @@ const isTemporaryOcrError = (e) => {
 const ocrRetryNote = (e, prefix = "AI کاتێک بەردەست نییە") => {
   const sec = Number(e?.retryAfterSeconds);
   return `${prefix} — فیشەکە ڕەت نەکراوەتەوە${sec > 0 ? `؛ نزیکەی ${Math.ceil(sec)} چرکەی تر دووبارە هەوڵ بدە` : "؛ کەمێک دواتر دووبارە هەوڵ بدە"}`;
+};
+
+const ocrProviderLabel = (r) => {
+  const p = String(r?.raw?._meta?.provider || "").toLowerCase();
+  if (p === "groq") return "Groq";
+  if (p === "gemini") return "Gemini";
+  if (p === "claude") return "Claude";
+  return null;
 };
 
 async function readReceiptAI(image, mediaType = "image/jpeg", retryNetwork = true) {
@@ -5130,6 +5138,7 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
   const [working, setWorking] = useState(false);
   const [prog, setProg] = useState(null);
   const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState(null);
   const [share, setShare] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [reviewTab, setReviewTab] = useState("all");
@@ -5289,6 +5298,7 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
     ]);
 
     const seen = new Map(rowsRef.current.filter((r) => r.hash).map((r) => [r.hash, r.id]));
+    const pacedBatch = tasks.length > 5;
     let cursor = 0;
     let done = 0;
     const worker = async () => {
@@ -5349,14 +5359,16 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
         } finally {
           done += 1;
           setProg(`${done} لە ${tasks.length}`);
+          // Groq's free tier is fast enough that a single worker can still burst.
+          // Pace larger batches so requests do not arrive back-to-back.
+          if (pacedBatch && done < tasks.length) await waitMs(2200);
         }
       }
     };
 
     try {
-      // Small batches use two workers for speed. Larger batches use one paced queue
-      // to avoid bursting free-tier OCR rate limits (observed in real 10-receipt tests).
-      const nWorkers = tasks.length > 5 ? 1 : Math.min(2, tasks.length);
+      // Small batches use two workers for speed. Larger batches use one paced queue.
+      const nWorkers = pacedBatch ? 1 : Math.min(2, tasks.length);
       await Promise.all(Array.from({ length: nWorkers }, () => worker()));
     } finally {
       setWorking(false);
@@ -5532,28 +5544,88 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
         await retryRow(ids[pos]);
       }
     };
-    const retryWorkers = ids.length > 5 ? 1 : Math.min(2, ids.length);
-    await Promise.all(Array.from({ length: retryWorkers }, () => worker()));
+    const pacedRetry = ids.length > 5;
+    if (pacedRetry) {
+      for (let i = 0; i < ids.length; i++) {
+        await retryRow(ids[i]);
+        if (i < ids.length - 1) await waitMs(2200);
+      }
+    } else {
+      const retryWorkers = Math.min(2, ids.length);
+      await Promise.all(Array.from({ length: retryWorkers }, () => worker()));
+    }
     setSelectedRows((prev) => prev.filter((id) => !ids.includes(id)));
+  };
+
+  const receiptSendErrorInfo = (stage, err) => {
+    const labels = {
+      storage: "هەڵگرتنی وێنەکان",
+      batch: "دروستکردنی کۆمەڵە",
+      receipts: "تۆمارکردنی فیشەکان",
+      cleanup: "پاککردنەوەی ناردنی ناتەواو",
+      unknown: "ناردن",
+    };
+    const code = String(err?.code || err?.status || "").trim();
+    const message = String(err?.message || err || "هەڵەی نەناسراو").trim();
+    const details = String(err?.details || "").trim();
+    const hint = String(err?.hint || "").trim();
+    const bits = [message, details, hint].filter(Boolean);
+    return {
+      stage,
+      stageLabel: labels[stage] || labels.unknown,
+      code: code || null,
+      message: bits.join(" — "),
+    };
+  };
+
+  const throwSendError = (stage, err) => {
+    const e = new Error(String(err?.message || err || "send failed"));
+    e.stage = stage;
+    e.code = err?.code || err?.status || null;
+    e.details = err?.details || null;
+    e.hint = err?.hint || null;
+    throw e;
   };
 
   const send = async () => {
     if (working || processing.length) return flash("هێشتا هەندێک فیش دەخوێندرێنەوە");
     if (review.length) return flash(`${review.length} فیش پێویستیان بە پشکنینی دەستی هەیە`);
     if (retrying.length) return flash(`${retrying.length} فیش بەهۆی سنووری AI چاوەڕوانی دووبارە خوێندنەوەن — ڕەت نەکراونەتەوە`);
-    if (!good.length && !bad.length) return flash("هیچ فیشێک نییە");
+
+    // Hard duplicates and rejected rows with no amount/currency can violate legacy/unique constraints.
+    // Keep their count in the batch, but do not let them break an otherwise valid batch.
+    const persistableBad = bad.filter((r) =>
+      r.status !== "dup" && Number(r.amount) > 0 && String(r.currency || "").trim()
+    );
+    const skippedBad = bad.length - persistableBad.length;
+    const sendRows = [...good, ...persistableBad];
+
+    if (!sendRows.length) return flash("هیچ فیشێکی گونجاو بۆ ناردن نییە");
+
     setSending(true);
+    setSendError(null);
+
+    const batchId = uid();
+    const folder = customerId || partnerId || "misc";
+    const uploadedPaths = [];
+    let batchInserted = false;
+
     try {
-      const batchId = uid();
-      const folder = customerId || partnerId || "misc";
       const recs = [];
-      for (const r of [...good, ...bad]) {
+
+      // Upload images first. A storage error is now explicit instead of being silently ignored.
+      for (const r of sendRows) {
         let path = null;
         if (r.blob) {
           path = `${folder}/${batchId}/${r.id}.jpg`;
-          const up = await supabase.storage.from("receipts").upload(path, r.blob, { contentType: "image/jpeg", upsert: false });
-          if (up.error) { console.error(up.error); path = null; }
+          const up = await supabase.storage.from("receipts").upload(path, r.blob, {
+            contentType: "image/jpeg",
+            upsert: false,
+          });
+          if (up.error) throwSendError("storage", up.error);
+          uploadedPaths.push(path);
         }
+
         recs.push({
           id: r.id, batch_id: batchId, customer_id: customerId || null, customer_name: customerName || null,
           direction: dir, amount: r.amount || null, fee: r.fee || 0,
@@ -5567,7 +5639,7 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
           uploaded_by: uploaderId || null,
           raw: {
             ...(r.raw || {}),
-            ocr_v: 2,
+            ocr_v: 3,
             confidence: r.confidence ?? r.raw?.confidence ?? null,
             fieldConfidence: r.fieldConfidence || r.raw?.fieldConfidence || null,
             merchantOrderNo: r.merchantOrderNo || r.raw?.merchantOrderNo || null,
@@ -5584,31 +5656,55 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
         total_gross: a.g, total_fee: a.f, total_net: a.n, n: good.length, dup_n: dupN,
         rejected_n: bad.length, uploaded_by: uploaderId || null,
       });
-      if (b.error) throw b.error;
+      if (b.error) throwSendError("batch", b.error);
+      batchInserted = true;
 
       const rr = await supabase.from("receipts").insert(recs);
-      if (rr.error) throw rr.error;
+      if (rr.error) throwSendError("receipts", rr.error);
 
       try {
-        await supabase.from("notes").insert({
+        const nr = await supabase.from("notes").insert({
           id: uid(), user_id: null, kind: "receipt",
           title: tr("کۆمەڵەی فیشی نوێ"),
-          body: `${customerName || tr("نەزانراو")} · ${good.length} ${tr("فیش")}${mainCur ? ` · ${fmt(agg[mainCur].n, 0)} ${mainCur}` : ""}`,
+          body: `${customerName || tr("نەزانراو")} · ${good.length} ${tr("فیش")}${mainCur ? ` · ${fmtMoney(data, agg[mainCur].n, mainCur)} ${mainCur}` : ""}`,
           link: "receipts", ref_id: batchId,
         });
-      } catch {}
+        if (nr.error) console.warn("receipt notification", nr.error);
+      } catch (notifyErr) {
+        console.warn("receipt notification", notifyErr);
+      }
 
-      flash(`${good.length} ${tr("فیش نێردرا")} ✓${bad.length ? ` — ${bad.length} ${tr("ڕەتکراو تۆمار کران")}` : ""}`);
+      flash(`${good.length} ${tr("فیش نێردرا")} ✓${persistableBad.length ? ` — ${persistableBad.length} ${tr("ڕەتکراو تۆمار کران")}` : ""}${skippedBad ? ` — ${skippedBad} ڕەتکراوی بێ زانیاری تۆمار نەکرا` : ""}`);
       commitRows([]);
       setEditingId(null);
       setSelectedRows([]);
       setReviewTab("all");
       setReviewSearch("");
       setReviewPlatform("all");
+      setSendError(null);
       onDone && onDone();
     } catch (e) {
-      console.error(e);
-      flash("هەڵە لە ناردن — دووبارە هەوڵ بدە");
+      console.error("receipt send failed", e);
+
+      // Best-effort rollback: do not leave a half-created batch or orphaned images.
+      try {
+        if (batchInserted) {
+          const rd = await supabase.from("receipts").delete().eq("batch_id", batchId);
+          if (rd.error) console.warn("receipt rollback rows", rd.error);
+          const bd = await supabase.from("receipt_batches").delete().eq("id", batchId);
+          if (bd.error) console.warn("receipt rollback batch", bd.error);
+        }
+        if (uploadedPaths.length) {
+          const sd = await supabase.storage.from("receipts").remove(uploadedPaths);
+          if (sd.error) console.warn("receipt rollback storage", sd.error);
+        }
+      } catch (cleanupErr) {
+        console.warn("receipt rollback", cleanupErr);
+      }
+
+      const info = receiptSendErrorInfo(e?.stage || "unknown", e);
+      setSendError(info);
+      flash(`ناردن سەرکەوتوو نەبوو — ${info.stageLabel}`);
     } finally {
       setSending(false);
     }
@@ -5812,6 +5908,7 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
                           {Number(r.fee) > 0 && <span className="text-[10px]" style={{ ...num, color: "var(--txt-3)" }}>فی {fmtMoney(data, r.fee, r.currency)} · نەت {fmtMoney(data, r.net, r.currency)}</span>}
                           <Pill tone={st.tone}>{st.t}</Pill>
                           {confidenceLabel(r) && <span className="text-[10px] font-semibold" style={{ ...num, color: clamp01(r.confidence) >= .8 ? "var(--pos)" : clamp01(r.confidence) >= .65 ? "var(--warn)" : "var(--neg)" }}>AI {confidenceLabel(r)}</span>}
+                          {ocrProviderLabel(r) && <span className="text-[9.5px] font-semibold px-2 py-1 rounded-full" style={{ background: "var(--surf-3)", color: "var(--txt-3)", border: "1px solid var(--line)" }}>{ocrProviderLabel(r)}</span>}
                         </div>
                         <div className="text-[11px] text-[var(--txt-2)] mt-1 truncate">
                           {r.receiver ? <>{tr("بۆ")} <b>{r.receiver}</b></> : "وەرگر: —"}
@@ -5889,6 +5986,23 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
           )}
 
           {bad.length > 0 && <RejectedReceipts rows={bad} data={data} title={tr("ئەمانە هەژمار ناکرێن")} />}
+
+          {sendError && (
+            <Card className="p-4" style={{ borderColor: "color-mix(in srgb, var(--neg) 35%, var(--line))", background: "color-mix(in srgb, var(--neg) 7%, var(--surf))" }}>
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "var(--neg)" }} />
+                <div className="min-w-0 flex-1">
+                  <div className="text-[12px] font-bold" style={{ color: "var(--neg)" }}>ناردن سەرکەوتوو نەبوو</div>
+                  <div className="text-[11px] mt-1" style={{ color: "var(--txt-2)" }}>قۆناغ: {sendError.stageLabel}</div>
+                  <div className="text-[10.5px] mt-1 break-words" dir="ltr" style={{ color: "var(--txt-3)" }}>
+                    {sendError.code ? `[${sendError.code}] ` : ""}{sendError.message}
+                  </div>
+                  <div className="text-[10.5px] mt-2" style={{ color: "var(--txt-3)" }}>فیشەکان لێرە ماونەتەوە؛ دوای چارەسەرکردنی هەڵەکە دەتوانیت هەمان ناردن دووبارە بکەیتەوە.</div>
+                </div>
+                <button onClick={() => setSendError(null)} className="p-1.5 rounded-lg" style={{ color: "var(--txt-3)" }}><X className="w-4 h-4" /></button>
+              </div>
+            </Card>
+          )}
 
           <Btn className="w-full" onClick={send}
             disabled={sending || working || processing.length > 0 || review.length > 0 || retrying.length > 0 || (!good.length && !bad.length)}>

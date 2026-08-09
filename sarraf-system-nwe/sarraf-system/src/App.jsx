@@ -4674,6 +4674,40 @@ const D = ({ k, v, tone }) => (
 );
 
 const waitMs = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const durationTextToMs = (value) => {
+  const s = String(value || "").trim();
+  if (!s) return 0;
+  let total = 0;
+  const re = /([0-9]+(?:\.[0-9]+)?)(ms|s|m|h)/gi;
+  let m;
+  while ((m = re.exec(s))) {
+    const n = Number(m[1]);
+    const unit = m[2].toLowerCase();
+    if (unit === "ms") total += n;
+    else if (unit === "s") total += n * 1000;
+    else if (unit === "m") total += n * 60000;
+    else if (unit === "h") total += n * 3600000;
+  }
+  return Math.ceil(total);
+};
+
+const ocrPaceAfterResult = (d) => {
+  const meta = d?._meta || {};
+  const provider = String(meta.provider || "").toLowerCase();
+
+  // Groq exposes the token-bucket reset window in response headers.
+  // Waiting through that window is deliberately conservative for free-tier OCR batches.
+  if (provider === "groq") {
+    const resetMs = durationTextToMs(meta.resetTokens);
+    return Math.max(5000, Math.min(15000, resetMs ? resetMs + 500 : 7000));
+  }
+
+  // Fallback providers still get a small gap so a retry batch cannot burst.
+  if (provider === "gemini" || provider === "claude") return 1800;
+  return 2500;
+};
+
 const clamp01 = (v, fallback = 0) => {
   const n = Number(v);
   return Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : fallback;
@@ -5188,13 +5222,18 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
       };
     }
 
-    const feeV = Number(d?.fee) || 0;
-    const amountV = Number(d?.amount) || 0;
-    const feeOrig = d?.feeOriginal != null ? Number(d.feeOriginal) || 0 : feeV;
-    const feeDisc = Number(d?.feeDiscount) || 0;
+    // API v5 normalizes receipt money to positive accounting magnitudes.
+    // Keep this defensive Math.abs for older/cached responses too.
+    const feeV = Math.abs(Number(d?.fee) || 0);
+    const amountV = Math.abs(Number(d?.amount) || 0);
+    const feeOrig = d?.feeOriginal != null ? Math.abs(Number(d.feeOriginal) || 0) : feeV;
+    const feeDisc = Math.abs(Number(d?.feeDiscount) || 0);
+    const orderAmountV = d?.orderAmount != null && Number.isFinite(Number(d.orderAmount))
+      ? Math.abs(Number(d.orderAmount))
+      : null;
     const netV = d?.netAmount != null && Number.isFinite(Number(d.netAmount))
-      ? Number(d.netAmount)
-      : Math.max(0, amountV - feeV);
+      ? Math.abs(Number(d.netAmount))
+      : (orderAmountV != null ? orderAmountV : Math.max(0, amountV - feeV));
     const plat = detectPlatform(`${d?.platform || ""} ${d?.bank || ""} ${d?.platformEvidence || ""}`) || d?.platform || null;
     const rn = normRef(d?.refNo);
     const fc = d?.fieldConfidence && typeof d.fieldConfidence === "object" ? d.fieldConfidence : {};
@@ -5246,6 +5285,29 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
       reviewCode = reviewCode || "unknown_platform";
     }
 
+    // Do not trust vision alone when the tested WeChat layout exposes all three
+    // accounting values. Validate gross ≈ order amount + fee deterministically.
+    let weChatValidation = d?.validation || null;
+    if (plat === "WeChat" && amountV > 0 && orderAmountV != null) {
+      const expectedGross = orderAmountV + feeV;
+      const delta = Math.abs(amountV - expectedGross);
+      const tolerance = Math.max(0.02, amountV * 0.00005);
+      const grossMatches = delta <= tolerance;
+      weChatValidation = {
+        ...(weChatValidation || {}),
+        type: "wechat_gross_equation",
+        checked: true,
+        grossMatches,
+        expectedGross,
+        delta,
+        tolerance,
+      };
+      if (!grossMatches) {
+        reviewReasons.push(`وی‌چات: کۆی گشتی لەگەڵ بڕی بنەڕەتی + فی یەک ناگرێتەوە`);
+        reviewCode = reviewCode || "amount_validation";
+      }
+    }
+
     const sameAmountTime = rowsRef.current.find((r) =>
       r.id !== id && r.status !== "dup" && r.status !== "error" &&
       Number(r.amount) > 0 && Number(r.amount) === amountV &&
@@ -5288,7 +5350,8 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
       rejectReason: status === "suspect" ? note : null,
       note, ageDays,
       amount: amountV, fee: feeV, feeOriginal: feeOrig, feeDiscount: feeDisc, net: netV,
-      orderAmount: d?.orderAmount ?? null,
+      orderAmount: orderAmountV,
+      validation: weChatValidation,
       currency: d?.currency, sender: d?.sender, receiver: d?.receiver, refNo: d?.refNo,
       merchantOrderNo: d?.merchantOrderNo || null,
       paymentMethod: d?.paymentMethod || null, cardLast4: d?.cardLast4 || null,
@@ -5315,15 +5378,22 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
     ]);
 
     const seen = new Map(rowsRef.current.filter((r) => r.hash).map((r) => [r.hash, r.id]));
-    const pacedBatch = tasks.length > 5;
-    let cursor = 0;
     let done = 0;
-    const worker = async () => {
-      while (true) {
-        const pos = cursor++;
-        if (pos >= tasks.length) return;
-        const { id, file } = tasks[pos];
-        try {
+    let cooldownUntil = 0;
+
+    // One OCR worker is intentional: vision requests can hit token-per-minute
+    // limits long before request-per-minute limits. This queue uses provider
+    // reset metadata and Retry-After instead of blind concurrency.
+    for (let pos = 0; pos < tasks.length; pos++) {
+      const { id, file } = tasks[pos];
+
+      const cooldownMs = Math.max(0, cooldownUntil - Date.now());
+      if (cooldownMs > 0) {
+        patchRow(id, { note: `چاوەڕوانی سنووری AI... ${Math.ceil(cooldownMs / 1000)} چرکە` });
+        await waitMs(cooldownMs);
+      }
+
+      try {
           patchRow(id, { note: "ئامادەکردنی وێنە...", status: "processing" });
           const img = await prepImage(file);
           patchRow(id, { url: img.url, blob: img.blob, hash: img.hash, ocrImage: img.b64, mediaType: img.mediaType, note: "پشکنینی دووبارەبوونەوە..." });
@@ -5359,6 +5429,12 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
           patchRow(id, { note: "پشتڕاستکردنەوەی زانیاری..." });
           const ready = await classifyParsed(id, img, d);
           patchRow(id, ready);
+
+          // Respect the provider's token reset window before the next image.
+          if (pos < tasks.length - 1) {
+            const paceMs = ocrPaceAfterResult(d);
+            cooldownUntil = Math.max(cooldownUntil, Date.now() + paceMs);
+          }
         } catch (e) {
           const temporary = isTemporaryOcrError(e);
           const reason = temporary
@@ -5373,24 +5449,21 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
             note: reason,
             retryAfterSeconds: Number(e?.retryAfterSeconds) || null,
           });
+
+          if (temporary && pos < tasks.length - 1) {
+            const retryMs = Number(e?.retryAfterSeconds) > 0
+              ? Math.ceil(Number(e.retryAfterSeconds) * 1000) + 500
+              : 8000;
+            cooldownUntil = Math.max(cooldownUntil, Date.now() + Math.min(30000, retryMs));
+          }
         } finally {
           done += 1;
           setProg(`${done} لە ${tasks.length}`);
-          // Groq's free tier is fast enough that a single worker can still burst.
-          // Pace larger batches so requests do not arrive back-to-back.
-          if (pacedBatch && done < tasks.length) await waitMs(2200);
         }
       }
-    };
 
-    try {
-      // Small batches use two workers for speed. Larger batches use one paced queue.
-      const nWorkers = pacedBatch ? 1 : Math.min(2, tasks.length);
-      await Promise.all(Array.from({ length: nWorkers }, () => worker()));
-    } finally {
-      setWorking(false);
-      setProg(null);
-    }
+    setWorking(false);
+    setProg(null);
   };
 
   const retryRow = async (id) => {
@@ -5551,27 +5624,64 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
   };
 
   const retrySelected = async () => {
-    const ids = selectedActual.filter((r) => r.status !== "processing" && r.status !== "dup" && r.ocrImage).map((r) => r.id);
-    if (!ids.length) return flash("هیچ فیشێکی گونجاو بۆ دووبارە خوێندنەوە هەڵنەبژێردراوە");
-    let cursor = 0;
-    const worker = async () => {
-      while (true) {
-        const pos = cursor++;
-        if (pos >= ids.length) return;
-        await retryRow(ids[pos]);
+    // Never re-read receipts that are already confirmed unless the user explicitly
+    // changed their status. This keeps quota focused on failed / review rows.
+    const ids = selectedActual
+      .filter((r) => ["retry", "suspect", "error"].includes(r.status) && r.status !== "dup" && r.ocrImage)
+      .map((r) => r.id);
+
+    if (!ids.length) return flash("هەڵبژاردراوەکان پێویستیان بە دووبارە خوێندنەوە نییە");
+
+    let cooldownUntil = 0;
+    for (let i = 0; i < ids.length; i++) {
+      const waitFor = Math.max(0, cooldownUntil - Date.now());
+      if (waitFor > 0) await waitMs(waitFor);
+
+      const id = ids[i];
+      const before = rowsRef.current.find((r) => r.id === id);
+      await retryRow(id);
+      const after = rowsRef.current.find((r) => r.id === id);
+
+      if (i < ids.length - 1) {
+        if (after?.status === "retry") {
+          const retryMs = Number(after.retryAfterSeconds) > 0
+            ? Math.ceil(Number(after.retryAfterSeconds) * 1000) + 500
+            : 8000;
+          cooldownUntil = Date.now() + Math.min(30000, retryMs);
+        } else {
+          const paceMs = ocrPaceAfterResult(after?.raw);
+          cooldownUntil = Date.now() + paceMs;
+        }
       }
-    };
-    const pacedRetry = ids.length > 5;
-    if (pacedRetry) {
-      for (let i = 0; i < ids.length; i++) {
-        await retryRow(ids[i]);
-        if (i < ids.length - 1) await waitMs(2200);
-      }
-    } else {
-      const retryWorkers = Math.min(2, ids.length);
-      await Promise.all(Array.from({ length: retryWorkers }, () => worker()));
     }
+
     setSelectedRows((prev) => prev.filter((id) => !ids.includes(id)));
+  };
+
+  const retryWaitingRows = async () => {
+    const ids = rowsRef.current.filter((r) => r.status === "retry" && r.ocrImage).map((r) => r.id);
+    if (!ids.length) return flash("هیچ فیشێکی چاوەڕوانی AI نییە");
+    setSelectedRows(ids);
+    // Run directly because React state selection is asynchronous.
+    let cooldownUntil = 0;
+    for (let i = 0; i < ids.length; i++) {
+      const waitFor = Math.max(0, cooldownUntil - Date.now());
+      if (waitFor > 0) await waitMs(waitFor);
+
+      await retryRow(ids[i]);
+      const after = rowsRef.current.find((r) => r.id === ids[i]);
+      if (i < ids.length - 1) {
+        if (after?.status === "retry") {
+          const retryMs = Number(after.retryAfterSeconds) > 0
+            ? Math.ceil(Number(after.retryAfterSeconds) * 1000) + 500
+            : 8000;
+          cooldownUntil = Date.now() + Math.min(30000, retryMs);
+        } else {
+          cooldownUntil = Date.now() + ocrPaceAfterResult(after?.raw);
+        }
+      }
+    }
+    setSelectedRows([]);
   };
 
   const receiptSendErrorInfo = (stage, err) => {
@@ -5656,7 +5766,7 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
           uploaded_by: uploaderId || null,
           raw: {
             ...(r.raw || {}),
-            ocr_v: 4,
+            ocr_v: 5,
             confidence: r.confidence ?? r.raw?.confidence ?? null,
             fieldConfidence: r.fieldConfidence || r.raw?.fieldConfidence || null,
             merchantOrderNo: r.merchantOrderNo || r.raw?.merchantOrderNo || null,
@@ -5667,6 +5777,9 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
             recipientNote: r.recipientNote || r.raw?.recipientNote || null,
             merchantName: r.merchantName || r.raw?.merchantName || null,
             platformEvidence: r.platformEvidence || r.raw?.platformEvidence || null,
+            sourceSignedAmount: r.raw?.sourceSignedAmount ?? null,
+            sourceAmountDirection: r.raw?.sourceAmountDirection || null,
+            validation: r.validation || r.raw?.validation || null,
             reviewedManually: !!r.reviewedManually,
             manualEdited: !!r.manualEdited,
           },
@@ -5872,13 +5985,10 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
                     <div className="text-xs mt-1 opacity-90">ئەم فیشانە ڕەت نەکراونەتەوە و لە کۆی ڕەتکراوەکاندا هەژمار ناکرێن. کەمێک دواتر دووبارە بخوێنەرەوە.</div>
                   </div>
                 </div>
-                <button onClick={async () => {
-                    setSelectedRows(retrying.map((r) => r.id));
-                    await Promise.resolve();
-                  }}
-                  className="px-3 py-2 rounded-lg text-[11px] font-semibold"
+                <button onClick={retryWaitingRows} disabled={working}
+                  className="px-3 py-2 rounded-lg text-[11px] font-semibold disabled:opacity-50"
                   style={{ background: "var(--surf)", color: "var(--txt-2)", border: "1px solid var(--line)" }}>
-                  هەڵبژاردنی ئەمانە
+                  دووبارە خوێندنەوەی چاوەڕوانەکان
                 </button>
               </div>
             </Card>
@@ -5929,11 +6039,24 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-bold text-[var(--txt)] text-[15px]" style={num}>{Number(r.amount) > 0 ? fmtMoney(data, r.amount, r.currency) : "—"}</span>
                           <span className="text-xs text-[var(--txt-2)]">{r.currency || "—"}</span>
-                          {Number(r.fee) > 0 && <span className="text-[10px]" style={{ ...num, color: "var(--txt-3)" }}>فی {fmtMoney(data, r.fee, r.currency)} · نەت {fmtMoney(data, r.net, r.currency)}</span>}
+                          {Number(r.fee) > 0 && !Number(r.orderAmount) && <span className="text-[10px]" style={{ ...num, color: "var(--txt-3)" }}>فی {fmtMoney(data, r.fee, r.currency)} · نەت {fmtMoney(data, r.net, r.currency)}</span>}
                           <Pill tone={st.tone}>{st.t}</Pill>
                           {confidenceLabel(r) && <span className="text-[10px] font-semibold" style={{ ...num, color: clamp01(r.confidence) >= .8 ? "var(--pos)" : clamp01(r.confidence) >= .65 ? "var(--warn)" : "var(--neg)" }}>AI {confidenceLabel(r)}</span>}
                           {ocrProviderLabel(r) && <span className="text-[9.5px] font-semibold px-2 py-1 rounded-full" style={{ background: "var(--surf-3)", color: "var(--txt-3)", border: "1px solid var(--line)" }}>{ocrProviderLabel(r)}</span>}
                         </div>
+                        {Number(r.orderAmount) > 0 && (
+                          <div className="text-[10.5px] mt-1 flex flex-wrap gap-x-2 gap-y-0.5" style={{ ...num, color: "var(--txt-3)" }}>
+                            <span>Gross {fmtMoney(data, r.amount, r.currency)}</span>
+                            <span>· Order {fmtMoney(data, r.orderAmount, r.currency)}</span>
+                            <span>· Fee {fmtMoney(data, r.fee, r.currency)}</span>
+                            <span>· Net {fmtMoney(data, r.net, r.currency)}</span>
+                            {r.validation?.checked && (
+                              <span style={{ color: r.validation.grossMatches ? "var(--pos)" : "var(--warn)" }}>
+                                · {r.validation.grossMatches ? "✓ ژمارەکان یەکدەگرنەوە" : "⚠ پشکنینی ژمارەکان"}
+                              </span>
+                            )}
+                          </div>
+                        )}
                         <div className="text-[11px] text-[var(--txt-2)] mt-1 truncate">
                           {r.receiver ? <>{tr("بۆ")} <b>{r.receiver}</b></> : "وەرگر: —"}
                           {r.refNo && <span style={num}> · {r.refNo}</span>}

@@ -536,6 +536,69 @@ async function callClaude(key, image, mediaType, currentDate) {
   }
 }
 
+
+const supabaseServerConfig = () => ({
+  url: process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "",
+  key: process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "",
+});
+
+async function requireSarrafUser(req, allowedRoles = null) {
+  const authHeader = String(req?.headers?.authorization || req?.headers?.Authorization || "");
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+  if (!token) {
+    const e = new Error("authentication required");
+    e.status = 401;
+    throw e;
+  }
+
+  const { url, key } = supabaseServerConfig();
+  if (!url || !key) {
+    const e = new Error("server authentication is not configured");
+    e.status = 500;
+    throw e;
+  }
+
+  const userRes = await fetch(`${url.replace(/\/$/, "")}/auth/v1/user`, {
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${token}`,
+      Accept: "application/json",
+    },
+  });
+  const user = await userRes.json().catch(() => ({}));
+  if (!userRes.ok || !user?.id) {
+    const e = new Error("invalid or expired session");
+    e.status = 401;
+    throw e;
+  }
+
+  const profileRes = await fetch(
+    `${url.replace(/\/$/, "")}/rest/v1/app_users?auth_id=eq.${encodeURIComponent(user.id)}&deleted=eq.false&select=id,role&limit=1`,
+    {
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+      },
+    }
+  );
+  const profiles = await profileRes.json().catch(() => []);
+  const profile = Array.isArray(profiles) ? profiles[0] : null;
+  if (!profileRes.ok || !profile?.id) {
+    const e = new Error("active Sarraf account required");
+    e.status = 403;
+    throw e;
+  }
+
+  if (Array.isArray(allowedRoles) && allowedRoles.length && !allowedRoles.includes(profile.role)) {
+    const e = new Error("this account is not allowed to use receipt reading");
+    e.status = 403;
+    throw e;
+  }
+
+  return { user, profile, token };
+}
+
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store, max-age=0");
   res.setHeader("Pragma", "no-cache");
@@ -546,11 +609,22 @@ export default async function handler(req, res) {
     return;
   }
 
+  try {
+    await requireSarrafUser(req, ["admin", "office", "customer", "partner"]);
+  } catch (authError) {
+    const status = Number(authError?.status) || 401;
+    res.status(status).json({
+      error: status === 401 ? "کاتی چوونەژوورەوەت بەسەرچووە — دووبارە بچۆ ژوورەوە" : "ڕێگەپێدان بۆ خوێندنەوەی فیش نییە",
+      retryable: false,
+    });
+    return;
+  }
+
   const qKey = process.env.GROQ_API_KEY;
   const gKey = process.env.GEMINI_API_KEY;
   const aKey = process.env.ANTHROPIC_API_KEY;
   if (!qKey && !gKey && !aKey) {
-    res.status(500).json({ error: "GROQ_API_KEY یان GEMINI_API_KEY یان ANTHROPIC_API_KEY لە Vercel دانەنراوە" });
+    res.status(500).json({ error: "خزمەتگوزاری خوێندنەوە لە سێرڤەر ڕێک نەخراوە" });
     return;
   }
 

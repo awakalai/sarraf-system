@@ -114,6 +114,22 @@ const fmt = (n, d=0) => {
   if (!Number.isFinite(value)) return "—";
   return value.toLocaleString("en-US", { minimumFractionDigits:d, maximumFractionDigits:d });
 };
+
+const currencyDecimals = (data, code) => {
+  const key = String(code || "").trim().toUpperCase();
+  const found = (data?.currencies || []).find((c) =>
+    String(c?.code || "").trim().toUpperCase() === key ||
+    String(c?.id || "").trim().toUpperCase() === key
+  );
+  // Receipt values must preserve the decimals printed by the payment service.
+  // CNY receipts in the real benchmark always use fen (2 decimals).
+  if (key === "CNY") return 2;
+  if (["IQD", "JPY", "KRW"].includes(key)) return 0;
+  const explicit = Number(found?.dec);
+  if (Number.isInteger(explicit) && explicit >= 0 && explicit <= 6) return explicit;
+  return 2;
+};
+const fmtMoney = (data, n, code) => fmt(n, currencyDecimals(data, code));
 const num = { fontVariantNumeric: "tabular-nums", direction: "ltr", unicodeBidi: "embed" };
 
 /* ── Currency-pair rate helpers ──────────────────────────────────────────
@@ -4753,6 +4769,17 @@ async function prepImage(file) {
   };
 }
 
+const isTemporaryOcrError = (e) => {
+  const s = Number(e?.status);
+  return [429, 502, 503, 504].includes(s) ||
+    /quota|rate limit|سنووری API|timed out|درێژەی کێشا|temporar|gateway|service unavailable/i.test(String(e?.message || ""));
+};
+
+const ocrRetryNote = (e, prefix = "AI کاتێک بەردەست نییە") => {
+  const sec = Number(e?.retryAfterSeconds);
+  return `${prefix} — فیشەکە ڕەت نەکراوەتەوە${sec > 0 ? `؛ نزیکەی ${Math.ceil(sec)} چرکەی تر دووبارە هەوڵ بدە` : "؛ کەمێک دواتر دووبارە هەوڵ بدە"}`;
+};
+
 async function readReceiptAI(image, mediaType = "image/jpeg", retryNetwork = true) {
   if (!image || image.length > OCR_MAX_BASE64_CHARS) {
     throw new Error("قەبارەی وێنەکە بۆ خوێندنەوە زۆر گەورەیە");
@@ -4770,9 +4797,10 @@ async function readReceiptAI(image, mediaType = "image/jpeg", retryNetwork = tru
     });
     const raw = await resp.text();
 
-    const fail = (message, status = resp.status) => {
+    const fail = (message, status = resp.status, extra = {}) => {
       const err = new Error(message);
       err.status = status;
+      Object.assign(err, extra || {});
       throw err;
     };
 
@@ -4788,7 +4816,14 @@ async function readReceiptAI(image, mediaType = "image/jpeg", retryNetwork = tru
     }
 
     if (!resp.ok || data?.error) {
-      fail(data?.error || `هەڵەی خوێندنەوە (${resp.status})`, resp.status);
+      fail(
+        data?.error || `هەڵەی خوێندنەوە (${resp.status})`,
+        resp.status,
+        {
+          retryable: !!data?.retryable,
+          retryAfterSeconds: Number(data?.retryAfterSeconds) || null,
+        }
+      );
     }
     return data;
   } catch (e) {
@@ -4846,6 +4881,7 @@ const REJECT_KU = {
   possible_duplicate: "گومانی دووبارەبوونەوە",
   manual_reject: "بە دەست ڕەتکرایەوە",
   missing_required: "زانیاری گرنگ کەمە",
+  api_retry: "چاوەڕوانی دووبارەی AI",
 };
 
 function ReceiptImg({ path, className }) {
@@ -4889,8 +4925,8 @@ function ReceiptTotals({ rows, data, title, compact }) {
       {mainCur && (
         <div className="relative pt-3 pb-1 aura">
           <Hero label={title || tr("گەیشتوو (بێ فی)")}
-            value={fmt(net[mainCur], 0)} unit={mainCur}
-            sub={`${counted.length} ${tr("فیش")}${fees[mainCur] > 0 ? ` · ${tr("فی")} ${fmt(fees[mainCur], 0)}` : ""}${u(net[mainCur], mainCur) != null ? ` · ≈ ${fmt(u(net[mainCur], mainCur), 0)} $` : ""}`} />
+            value={fmtMoney(data, net[mainCur], mainCur)} unit={mainCur}
+            sub={`${counted.length} ${tr("فیش")}${fees[mainCur] > 0 ? ` · ${tr("فی")} ${fmtMoney(data, fees[mainCur], mainCur)}` : ""}${u(net[mainCur], mainCur) != null ? ` · ≈ ${fmt(u(net[mainCur], mainCur), 2)} $` : ""}`} />
         </div>
       )}
 
@@ -4904,17 +4940,17 @@ function ReceiptTotals({ rows, data, title, compact }) {
               </div>
               <div className="flex justify-between text-[13px] py-1">
                 <span style={{ color: "var(--txt-3)" }}>{tr("کۆی گشتی (بە فییەوە)")}</span>
-                <span style={{ ...num, color: "var(--txt-2)" }}>{fmt(gross[c], 0)}</span>
+                <span style={{ ...num, color: "var(--txt-2)" }}>{fmtMoney(data, gross[c], c)}</span>
               </div>
               <div className="flex justify-between text-[13px] py-1">
                 <span style={{ color: "var(--txt-3)" }}>{tr("فی")}</span>
                 <span style={{ ...num, color: fees[c] ? "var(--neg)" : "var(--txt-3)" }}>
-                  {fees[c] ? "−" + fmt(fees[c], 0) : "0"}
+                  {fees[c] ? "−" + fmtMoney(data, fees[c], c) : fmtMoney(data, 0, c)}
                 </span>
               </div>
               <div className="flex justify-between items-baseline pt-2.5 mt-1" style={{ borderTop: "1px solid var(--line)" }}>
                 <span className="text-[13px] font-semibold" style={{ color: "var(--txt)" }}>{tr("گەیشتوو")}</span>
-                <span className="text-[20px] font-semibold" style={{ ...num, color: "var(--pos)" }}>{fmt(net[c], 0)}</span>
+                <span className="text-[20px] font-semibold" style={{ ...num, color: "var(--pos)" }}>{fmtMoney(data, net[c], c)}</span>
               </div>
             </div>
           ))}
@@ -4926,7 +4962,7 @@ function ReceiptTotals({ rows, data, title, compact }) {
           <div className="pt-2"><SecLbl>{tr("بەپێی پلاتفۆرم")}</SecLbl></div>
           {platList.map(([pl, v]) => (
             <Row key={pl} title={platMeta(pl).ku} sub={`${v.n} ${tr("فیش")}`}
-              right={Object.entries(v.cur).map(([c, a]) => `${fmt(a, 0)} ${c}`).join(" / ")} />
+              right={Object.entries(v.cur).map(([c, a]) => `${fmtMoney(data, a, c)} ${c}`).join(" / ")} />
           ))}
         </Card>
       )}
@@ -4936,7 +4972,7 @@ function ReceiptTotals({ rows, data, title, compact }) {
           <div className="pt-2"><SecLbl>{tr("بەپێی وەرگر")}</SecLbl></div>
           {whoList.map(([name, v]) => (
             <Row key={name} title={name} sub={`${v.n} ${tr("فیش")}`}
-              right={Object.entries(v.cur).map(([c, a]) => `${fmt(a, 0)} ${c}`).join(" / ")}
+              right={Object.entries(v.cur).map(([c, a]) => `${fmtMoney(data, a, c)} ${c}`).join(" / ")}
               rightSub={Object.entries(v.cur).map(([c, a]) => u(a, c) != null ? `≈ ${fmt(u(a, c), 0)} $` : null).filter(Boolean)[0]} />
           ))}
         </Card>
@@ -4952,7 +4988,7 @@ function ReceiptTotals({ rows, data, title, compact }) {
 }
 
 /* ─────────── فیشە ڕەتکراوەکان — بە هۆکارەوە ─────────── */
-function RejectedReceipts({ rows, title = "فیشە ڕەتکراوەکان" }) {
+function RejectedReceipts({ rows, data, title = "فیشە ڕەتکراوەکان" }) {
   const bad = (rows || []).filter((r) => r.counted === false || r.status === "dup" || r.status === "error");
   const [open, setOpen] = useState(false);
   if (!bad.length) return null;
@@ -4995,7 +5031,7 @@ function RejectedReceipts({ rows, title = "فیشە ڕەتکراوەکان" }) {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline gap-2 flex-wrap">
                     <span className="text-base font-bold text-[var(--txt-3)] line-through" style={num}>
-                      {r.amount ? fmt(r.net_amount ?? r.net ?? r.amount, 0) : "—"}
+                      {r.amount ? fmtMoney(data, r.net_amount ?? r.net ?? r.amount, r.currency) : "—"}
                     </span>
                     <span className="text-xs text-[var(--txt-3)]">{r.currency || ""}</span>
                     <Pill tone="red">{tr("هەژمار نەکراوە")}</Pill>
@@ -5231,6 +5267,7 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
       note, ageDays,
       amount: amountV, fee: feeV, feeOriginal: feeOrig, feeDiscount: feeDisc, net: netV,
       currency: d?.currency, sender: d?.sender, receiver: d?.receiver, refNo: d?.refNo,
+      merchantOrderNo: d?.merchantOrderNo || null,
       txTime: d?.txTime, txDate: d?.txDate, bank: d?.bank, platform: plat,
       confidence: conf, fieldConfidence: fc, raw: d,
     };
@@ -5296,10 +5333,18 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
           const ready = await classifyParsed(id, img, d);
           patchRow(id, ready);
         } catch (e) {
-          const reason = `نەتوانرا بخوێندرێتەوە: ${String(e?.message || e)}`;
+          const temporary = isTemporaryOcrError(e);
+          const reason = temporary
+            ? ocrRetryNote(e)
+            : `نەتوانرا بخوێندرێتەوە: ${String(e?.message || e)}`;
           patchRow(id, {
-            status: "error", counted: false, reviewRequired: true,
-            rejectCode: "unreadable", rejectReason: reason, note: reason,
+            status: temporary ? "retry" : "error",
+            counted: false,
+            reviewRequired: !temporary,
+            rejectCode: temporary ? "api_retry" : "unreadable",
+            rejectReason: reason,
+            note: reason,
+            retryAfterSeconds: Number(e?.retryAfterSeconds) || null,
           });
         } finally {
           done += 1;
@@ -5309,9 +5354,9 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
     };
 
     try {
-      // Two controlled workers: materially faster than the old serial + 1.5s delay,
-      // while remaining gentle enough for free-tier OCR APIs.
-      const nWorkers = Math.min(2, tasks.length);
+      // Small batches use two workers for speed. Larger batches use one paced queue
+      // to avoid bursting free-tier OCR rate limits (observed in real 10-receipt tests).
+      const nWorkers = tasks.length > 5 ? 1 : Math.min(2, tasks.length);
       await Promise.all(Array.from({ length: nWorkers }, () => worker()));
     } finally {
       setWorking(false);
@@ -5328,8 +5373,19 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
       const ready = await classifyParsed(id, r, d);
       patchRow(id, ready);
     } catch (e) {
-      const reason = `نەتوانرا دووبارە بخوێندرێتەوە: ${String(e?.message || e)}`;
-      patchRow(id, { status: "error", counted: false, reviewRequired: true, rejectCode: "unreadable", rejectReason: reason, note: reason });
+      const temporary = isTemporaryOcrError(e);
+      const reason = temporary
+        ? ocrRetryNote(e, "AI هێشتا کاتێک بەردەست نییە")
+        : `نەتوانرا دووبارە بخوێندرێتەوە: ${String(e?.message || e)}`;
+      patchRow(id, {
+        status: temporary ? "retry" : "error",
+        counted: false,
+        reviewRequired: !temporary,
+        rejectCode: temporary ? "api_retry" : "unreadable",
+        rejectReason: reason,
+        note: reason,
+        retryAfterSeconds: Number(e?.retryAfterSeconds) || null,
+      });
     }
   };
 
@@ -5372,6 +5428,7 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
   const good = rows.filter((r) => r.status === "ok" && r.counted !== false);
   const review = rows.filter((r) => r.status === "suspect");
   const processing = rows.filter((r) => r.status === "processing");
+  const retrying = rows.filter((r) => r.status === "retry");
   const bad = rows.filter((r) => r.status === "dup" || r.status === "error");
   const dupN = rows.filter((r) => r.status === "dup").length;
   const errN = rows.filter((r) => r.status === "error").length;
@@ -5389,6 +5446,7 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
     all: rows.length,
     ok: good.length,
     suspect: review.length,
+    retry: retrying.length,
     dup: dupN,
     error: errN,
   };
@@ -5396,8 +5454,9 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
     ["all", "هەموو", receiptTabCounts.all],
     ["ok", "پشتڕاستکراو", receiptTabCounts.ok],
     ["suspect", "پشکنین", receiptTabCounts.suspect],
+    ["retry", "چاوەڕوانی AI", receiptTabCounts.retry],
     ["dup", "دووبارە", receiptTabCounts.dup],
-    ["error", "هەڵە", receiptTabCounts.error],
+    ["error", "ڕەتکراو/هەڵە", receiptTabCounts.error],
   ];
   const platformOptions = Array.from(new Set(rows.map((r) => r.platform || detectPlatform(r.bank)).filter(Boolean))).sort();
   const normalizedReceiptSearch = normalizeSearchText(reviewSearch);
@@ -5407,7 +5466,7 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
     if (reviewPlatform !== "all" && rp !== reviewPlatform) return false;
     if (!normalizedReceiptSearch) return true;
     return [
-      r.amount, r.currency, r.refNo, r.receiver, r.sender, r.bank, rp, r.fileName, r.note
+      r.amount, r.currency, r.refNo, r.merchantOrderNo, r.receiver, r.sender, r.bank, rp, r.fileName, r.note
     ].some((v) => normalizeSearchText(v).includes(normalizedReceiptSearch));
   });
   const visibleIds = visibleRows.map((r) => r.id);
@@ -5473,13 +5532,15 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
         await retryRow(ids[pos]);
       }
     };
-    await Promise.all(Array.from({ length: Math.min(2, ids.length) }, () => worker()));
+    const retryWorkers = ids.length > 5 ? 1 : Math.min(2, ids.length);
+    await Promise.all(Array.from({ length: retryWorkers }, () => worker()));
     setSelectedRows((prev) => prev.filter((id) => !ids.includes(id)));
   };
 
   const send = async () => {
     if (working || processing.length) return flash("هێشتا هەندێک فیش دەخوێندرێنەوە");
     if (review.length) return flash(`${review.length} فیش پێویستیان بە پشکنینی دەستی هەیە`);
+    if (retrying.length) return flash(`${retrying.length} فیش بەهۆی سنووری AI چاوەڕوانی دووبارە خوێندنەوەن — ڕەت نەکراونەتەوە`);
     if (!good.length && !bad.length) return flash("هیچ فیشێک نییە");
     setSending(true);
     try {
@@ -5509,6 +5570,7 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
             ocr_v: 2,
             confidence: r.confidence ?? r.raw?.confidence ?? null,
             fieldConfidence: r.fieldConfidence || r.raw?.fieldConfidence || null,
+            merchantOrderNo: r.merchantOrderNo || r.raw?.merchantOrderNo || null,
             reviewedManually: !!r.reviewedManually,
             manualEdited: !!r.manualEdited,
           },
@@ -5557,7 +5619,8 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
     ok: { tone: "green", t: "پشتڕاستکراو" },
     dup: { tone: "red", t: "دووبارە" },
     suspect: { tone: "amber", t: "پشکنین پێویستە" },
-    error: { tone: "slate", t: "هەڵە" },
+    retry: { tone: "amber", t: "چاوەڕوانی AI" },
+    error: { tone: "red", t: "ڕەتکراو/هەڵە" },
   };
 
   const confidenceLabel = (r) => {
@@ -5602,12 +5665,13 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
 
       {rows.length > 0 && (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2.5">
             {[
               ["پشتڕاستکراو", good.length, "var(--pos)"],
               ["پشکنین پێویستە", review.length, "var(--warn)"],
+              ["چاوەڕوانی AI", retrying.length, "var(--warn)"],
               ["دووبارە", dupN, "var(--neg)"],
-              ["هەڵە", errN, "var(--txt-3)"],
+              ["ڕەتکراو/هەڵە", errN, "var(--neg)"],
             ].map(([label, value, color]) => (
               <Card key={label} className="p-3.5">
                 <div className="text-[10.5px]" style={{ color: "var(--txt-3)" }}>{label}</div>
@@ -5678,6 +5742,28 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
             )}
           </Card>
 
+          {retrying.length > 0 && (
+            <Card className="p-4 border-[color-mix(in_srgb,var(--warn)_34%,transparent)] bg-[color-mix(in_srgb,var(--warn)_8%,transparent)]">
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div className="flex items-start gap-2 text-sm text-[var(--warn)]">
+                  <RotateCcw className="w-4 h-4 mt-0.5 shrink-0" />
+                  <div>
+                    <div className="font-semibold">{retrying.length} فیش بەهۆی سنووری/کاتی AI نەخوێندرایەوە</div>
+                    <div className="text-xs mt-1 opacity-90">ئەم فیشانە ڕەت نەکراونەتەوە و لە کۆی ڕەتکراوەکاندا هەژمار ناکرێن. کەمێک دواتر دووبارە بخوێنەرەوە.</div>
+                  </div>
+                </div>
+                <button onClick={async () => {
+                    setSelectedRows(retrying.map((r) => r.id));
+                    await Promise.resolve();
+                  }}
+                  className="px-3 py-2 rounded-lg text-[11px] font-semibold"
+                  style={{ background: "var(--surf)", color: "var(--txt-2)", border: "1px solid var(--line)" }}>
+                  هەڵبژاردنی ئەمانە
+                </button>
+              </div>
+            </Card>
+          )}
+
           {review.length > 0 && (
             <Card className="p-4 border-[color-mix(in_srgb,var(--warn)_34%,transparent)] bg-[color-mix(in_srgb,var(--warn)_9%,transparent)]">
               <div className="flex items-start gap-2 text-sm text-[var(--warn)]">
@@ -5721,9 +5807,9 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
                           </div>}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-bold text-[var(--txt)] text-[15px]" style={num}>{Number(r.amount) > 0 ? fmt(r.amount, 0) : "—"}</span>
+                          <span className="font-bold text-[var(--txt)] text-[15px]" style={num}>{Number(r.amount) > 0 ? fmtMoney(data, r.amount, r.currency) : "—"}</span>
                           <span className="text-xs text-[var(--txt-2)]">{r.currency || "—"}</span>
-                          {Number(r.fee) > 0 && <span className="text-[10px]" style={{ ...num, color: "var(--txt-3)" }}>فی {fmt(r.fee, 0)} · نەت {fmt(r.net, 0)}</span>}
+                          {Number(r.fee) > 0 && <span className="text-[10px]" style={{ ...num, color: "var(--txt-3)" }}>فی {fmtMoney(data, r.fee, r.currency)} · نەت {fmtMoney(data, r.net, r.currency)}</span>}
                           <Pill tone={st.tone}>{st.t}</Pill>
                           {confidenceLabel(r) && <span className="text-[10px] font-semibold" style={{ ...num, color: clamp01(r.confidence) >= .8 ? "var(--pos)" : clamp01(r.confidence) >= .65 ? "var(--warn)" : "var(--neg)" }}>AI {confidenceLabel(r)}</span>}
                         </div>
@@ -5731,6 +5817,7 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
                           {r.receiver ? <>{tr("بۆ")} <b>{r.receiver}</b></> : "وەرگر: —"}
                           {r.refNo && <span style={num}> · {r.refNo}</span>}
                         </div>
+                        {r.merchantOrderNo && <div className="text-[10px] text-[var(--txt-3)] mt-0.5" style={num}>Merchant order: {r.merchantOrderNo}</div>}
                         {r.platform && <div className="text-[10px] text-[var(--txt-3)] mt-0.5">{platMeta(r.platform).ku}</div>}
                         {r.note && <div className={`text-[10.5px] mt-1.5 leading-relaxed ${r.status === "suspect" ? "text-[var(--warn)]" : r.status === "dup" ? "text-[var(--neg)]" : "text-[var(--txt-3)]"}`}>{r.note}</div>}
                       </div>
@@ -5763,7 +5850,8 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
                           <div><div className="flex justify-between"><Lbl>دراو</Lbl>{fieldConf(r, "currency")}</div><Inp value={r.currency ?? ""} onChange={(e) => editField(r.id, "currency", e.target.value.toUpperCase())} placeholder="IQD / USD / CNY..." /></div>
                           <div><div className="flex justify-between"><Lbl>فی / عمولە</Lbl>{fieldConf(r, "fee")}</div><Inp type="number" value={r.fee ?? ""} onChange={(e) => editField(r.id, "fee", e.target.value)} /></div>
                           <div><Lbl>بڕی نەت</Lbl><Inp type="number" value={r.net ?? ""} onChange={(e) => editField(r.id, "net", e.target.value)} /></div>
-                          <div><div className="flex justify-between"><Lbl>ژمارەی مامەڵە / Reference</Lbl>{fieldConf(r, "refNo")}</div><Inp value={r.refNo ?? ""} onChange={(e) => editField(r.id, "refNo", e.target.value)} /></div>
+                          <div><div className="flex justify-between"><Lbl>ژمارەی مامەڵە / Order No.</Lbl>{fieldConf(r, "refNo")}</div><Inp value={r.refNo ?? ""} onChange={(e) => editField(r.id, "refNo", e.target.value)} /></div>
+                          <div><div className="flex justify-between"><Lbl>Merchant order No.</Lbl>{fieldConf(r, "merchantOrderNo")}</div><Inp value={r.merchantOrderNo ?? ""} onChange={(e) => editField(r.id, "merchantOrderNo", e.target.value)} /></div>
                           <div><div className="flex justify-between"><Lbl>وەرگر</Lbl>{fieldConf(r, "receiver")}</div><Inp value={r.receiver ?? ""} onChange={(e) => editField(r.id, "receiver", e.target.value)} /></div>
                           <div><div className="flex justify-between"><Lbl>ناردەر</Lbl>{fieldConf(r, "sender")}</div><Inp value={r.sender ?? ""} onChange={(e) => editField(r.id, "sender", e.target.value)} /></div>
                           <div><div className="flex justify-between"><Lbl>ئەپ / بانک</Lbl>{fieldConf(r, "platform")}</div><Inp value={r.bank ?? r.platform ?? ""} onChange={(e) => { editField(r.id, "bank", e.target.value); editField(r.id, "platform", detectPlatform(e.target.value) || r.platform); }} /></div>
@@ -5800,15 +5888,17 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
               flash={flash} onClose={() => setShare(false)} />
           )}
 
-          {bad.length > 0 && <RejectedReceipts rows={bad} title={tr("ئەمانە هەژمار ناکرێن")} />}
+          {bad.length > 0 && <RejectedReceipts rows={bad} data={data} title={tr("ئەمانە هەژمار ناکرێن")} />}
 
           <Btn className="w-full" onClick={send}
-            disabled={sending || working || processing.length > 0 || review.length > 0 || (!good.length && !bad.length)}>
+            disabled={sending || working || processing.length > 0 || review.length > 0 || retrying.length > 0 || (!good.length && !bad.length)}>
             {sending
               ? "ناردن..."
               : review.length
                 ? `${review.length} فیش پێویستی بە پشکنین هەیە`
-                : `ناردنی ${good.length} فیش${bad.length ? ` (+ ${bad.length} ڕەتکراو)` : ""}`}
+                : retrying.length
+                  ? `${retrying.length} فیش چاوەڕوانی دووبارە خوێندنەوەن`
+                  : `ناردنی ${good.length} فیش${bad.length ? ` (+ ${bad.length} ڕەتکراو)` : ""}`}
           </Btn>
         </>
       )}
@@ -5957,7 +6047,7 @@ function ShareTable({ rows, data, who, title, onClose, flash }) {
       L.push(`⚠️ *${rejected.length} فیش ڕەت کراوەتەوە*`);
       L.push("");
       rejected.forEach((r, i) => {
-        const amt = r.amount ? `${fmt(r.net_amount ?? r.net ?? r.amount, 0)} ${r.currency || ""}` : "—";
+        const amt = r.amount ? `${fmtMoney(data, r.net_amount ?? r.net ?? r.amount, r.currency)} ${r.currency || ""}` : "—";
         L.push(`${i + 1}. ${amt}`);
         L.push(`   ❌ ${r.reject_reason || r.rejectReason || r.note || "نەزانراو"}`);
         const bits = [];
@@ -5978,9 +6068,9 @@ function ShareTable({ rows, data, who, title, onClose, flash }) {
       counted.forEach((r, i) => {
         const n = r.net != null ? +r.net : (r.net_amount ?? r.amount);
         const num2 = String(i + 1).padEnd(3);
-        const am = fmt(r.amount, 0).padStart(9);
-        const fe = (r.fee ? fmt(r.fee, 0) : "—").padStart(5);
-        const nt = fmt(n, 0).padStart(9);
+        const am = fmtMoney(data, r.amount, r.currency).padStart(9);
+        const fe = (r.fee ? fmtMoney(data, r.fee, r.currency) : "—").padStart(5);
+        const nt = fmtMoney(data, n, r.currency).padStart(9);
         const rc = String(r.receiver || "—").slice(0, 12);
         L.push(`${num2} ${am} ${fe} ${nt}  ${rc}`);
       });
@@ -5991,7 +6081,7 @@ function ShareTable({ rows, data, who, title, onClose, flash }) {
     if (platList.length > 1) {
       L.push("*بەپێی پلاتفۆرم*");
       platList.forEach(([pl, v]) => {
-        const t = Object.entries(v.cur).map(([c, a]) => `${fmt(a, 0)} ${c}`).join(" / ");
+        const t = Object.entries(v.cur).map(([c, a]) => `${fmtMoney(data, a, c)} ${c}`).join(" / ");
         L.push(`• ${platMeta(pl).ku}: ${t}  (${v.n})`);
       });
       L.push("");
@@ -5999,7 +6089,7 @@ function ShareTable({ rows, data, who, title, onClose, flash }) {
 
     L.push("*بەپێی وەرگر*");
     whoList.forEach(([n, v]) => {
-      const t = Object.entries(v.cur).map(([c, a]) => `${fmt(a, 0)} ${c}`).join(" / ");
+      const t = Object.entries(v.cur).map(([c, a]) => `${fmtMoney(data, a, c)} ${c}`).join(" / ");
       L.push(`• ${n}: ${t}  (${v.n})`);
     });
     L.push("");
@@ -6007,9 +6097,9 @@ function ShareTable({ rows, data, who, title, onClose, flash }) {
     L.push("*کۆی گشتی*");
     curs.forEach((c) => {
       L.push(`${c}:`);
-      L.push(`   بە فییەوە: ${fmt(gross[c], 0)}`);
+      L.push(`   بە فییەوە: ${fmtMoney(data, gross[c], c)}`);
       if (fees[c] > 0) L.push(`   فی: −${fmt(fees[c], 0)}`);
-      L.push(`   ✅ گەیشتوو: ${fmt(net[c], 0)}`);
+      L.push(`   ✅ گەیشتوو: ${fmtMoney(data, net[c], c)}`);
       const usd = u(net[c], c);
       if (usd != null) L.push(`   ≈ ${fmt(usd, 0)} USD`);
     });
@@ -6021,7 +6111,7 @@ function ShareTable({ rows, data, who, title, onClose, flash }) {
       L.push(`⚠️ *${rejected.length} فیش ڕەت کراوەتەوە — هەژمار نەکراون*`);
       L.push("");
       rejected.forEach((r, i) => {
-        const amt = r.amount ? `${fmt(r.net_amount ?? r.net ?? r.amount, 0)} ${r.currency || ""}` : "—";
+        const amt = r.amount ? `${fmtMoney(data, r.net_amount ?? r.net ?? r.amount, r.currency)} ${r.currency || ""}` : "—";
         L.push(`${i + 1}. ${amt}`);
         L.push(`   ❌ ${r.reject_reason || r.rejectReason || r.note || REJECT_KU[r.reject_code || r.rejectCode] || "نەزانراو"}`);
         const bits = [];
@@ -6127,12 +6217,12 @@ function ShareTable({ rows, data, who, title, onClose, flash }) {
               {curs.map((c) => (
                 <div key={c} className="bg-[var(--line)] rounded-[var(--r-sm)] p-3">
                   <div className="text-[10px] font-bold text-[var(--txt-3)] mb-1">{c}</div>
-                  <div className="flex justify-between text-xs py-0.5"><span className="text-[var(--txt-2)]">{tr("بە فییەوە")}</span><span style={num}>{fmt(gross[c], 0)}</span></div>
+                  <div className="flex justify-between text-xs py-0.5"><span className="text-[var(--txt-2)]">{tr("بە فییەوە")}</span><span style={num}>{fmtMoney(data, gross[c], c)}</span></div>
                   {fees[c] > 0 && <div className="flex justify-between text-xs py-0.5"><span className="text-[var(--txt-2)]">{tr("فی")}</span><span style={num} className="text-[var(--neg)]">−{fmt(fees[c], 0)}</span></div>}
                   <div className="flex justify-between pt-1.5 mt-1 border-t border-[var(--line)] items-baseline">
                     <span className="text-xs font-bold">{tr("گەیشتوو")}</span>
                     <div className="text-left">
-                      <div className="text-lg font-bold text-[var(--pos)]" style={num}>{fmt(net[c], 0)}</div>
+                      <div className="text-lg font-bold text-[var(--pos)]" style={num}>{fmtMoney(data, net[c], c)}</div>
                       {u(net[c], c) != null && <div className="text-[10px] text-[var(--txt-3)]" style={num}>≈ {fmt(u(net[c], c), 0)} $</div>}
                     </div>
                   </div>

@@ -4,7 +4,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 
-const ROLE_SET = new Set(["customer", "partner", "investor", "office"]);
+const ROLE_SET = new Set(["customer", "partner", "investor", "office", "admin"]);
 
 const serverConfig = () => ({
   url: process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "",
@@ -40,7 +40,15 @@ const decodeJwtPayload = (token) => {
   }
 };
 
-const normalizePhone = (value) => String(value || "").replace(/\D/g, "");
+const normalizePhone = (value) => {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.startsWith("00964")) return digits.slice(2);
+  if (digits.startsWith("964")) return digits;
+  if (digits.startsWith("0")) return `964${digits.slice(1)}`;
+  if (digits.startsWith("7")) return `964${digits}`;
+  return digits;
+};
 const safeText = (value, max = 250) => {
   const s = String(value ?? "").trim();
   return s ? s.slice(0, max) : null;
@@ -77,7 +85,7 @@ async function requireAdminAal2(req, authClient, service) {
 
   const { data: profile, error: profileError } = await service
     .from("app_users")
-    .select("id,auth_id,name,role,deleted")
+    .select("id,auth_id,name,role,admin_level,deleted")
     .eq("auth_id", user.id)
     .eq("deleted", false)
     .maybeSingle();
@@ -90,6 +98,9 @@ async function requireAdminAal2(req, authClient, service) {
 
   return { token, user, profile };
 }
+
+const isOwner = (profile) =>
+  profile?.role === "admin" && profile?.admin_level === "owner";
 
 async function writeAudit(service, action, detail) {
   const { error } = await service.from("audit").insert({
@@ -148,6 +159,9 @@ export default async function handler(req, res) {
       const password = String(body.password || "");
       const role = String(body.role || "");
       const rate = Number(body.rate || 0);
+      if (role === "admin" && !isOwner(actor.profile)) {
+        return res.status(403).json({ error: "تەنها خاوەنی سیستەم دەتوانێت ئەدمینی نوێ درووست بکات", code: "owner_required" });
+      }
       const scope = Array.isArray(body.scope)
         ? [...new Set(body.scope.map((x) => String(x).trim()).filter(Boolean))].slice(0, 100)
         : [];
@@ -167,7 +181,7 @@ export default async function handler(req, res) {
         email,
         password,
         email_confirm: true,
-        user_metadata: { name, role, phone },
+        user_metadata: { name, role, phone, admin_level: role === "admin" ? "admin" : null },
       });
       if (createError || !created?.user?.id) throw createError || new Error("Auth user creation failed");
 
@@ -181,6 +195,7 @@ export default async function handler(req, res) {
         auth_id: authId,
         name,
         role,
+        admin_level: role === "admin" ? "admin" : null,
         rate,
         scope_curs: scope,
         phone,
@@ -191,6 +206,17 @@ export default async function handler(req, res) {
 
       if (insertError) {
         try { await service.auth.admin.deleteUser(authId); } catch {}
+        if (
+          String(insertError?.code || "") === "23505" ||
+          /sarraf_app_users_auth_phone_uq|duplicate key|unique constraint/i.test(
+            String(insertError?.message || "")
+          )
+        ) {
+          return res.status(409).json({
+            error: "ئەم ژمارەیە پێشتر بۆ ئەکاونتێکی چالاک بەکارهاتووە",
+            code: "duplicate_login_identity",
+          });
+        }
         throw insertError;
       }
 
@@ -202,7 +228,7 @@ export default async function handler(req, res) {
 
       return res.status(200).json({
         ok: true,
-        user: { id: profileId, authId, name, role, phone, rate, scope },
+        user: { id: profileId, authId, name, role, adminLevel: role === "admin" ? "admin" : null, phone, rate, scope },
       });
     }
 
@@ -215,12 +241,19 @@ export default async function handler(req, res) {
 
       const { data: target, error: targetError } = await service
         .from("app_users")
-        .select("id,name,role,deleted")
+        .select("id,name,role,admin_level,deleted")
         .eq("id", userId)
         .maybeSingle();
       if (targetError) throw targetError;
       if (!target?.id) return res.status(404).json({ error: "ئەکاونت نەدۆزرایەوە" });
-      if (target.role === "admin") return res.status(403).json({ error: "ئەکاونتی ئەدمین لێرە ناچالاک ناکرێت" });
+      if (target.role === "admin") {
+        if (!isOwner(actor.profile)) {
+          return res.status(403).json({ error: "تەنها خاوەنی سیستەم دەتوانێت ئەدمین ناچالاک بکات", code: "owner_required" });
+        }
+        if (target.admin_level === "owner") {
+          return res.status(403).json({ error: "ئەکاونتی خاوەنی سیستەم لەم ڕێگایە ناچالاک ناکرێت" });
+        }
+      }
 
       const { error: updateError } = await service
         .from("app_users")

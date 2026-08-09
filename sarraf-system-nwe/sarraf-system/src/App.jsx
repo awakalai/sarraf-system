@@ -129,8 +129,6 @@ const fmt = (n, d=0) => {
     const value = Number(n);
     if (!Number.isFinite(value)) return "—";
     return value.toLocaleString("en-US", { minimumFractionDigits:d, maximumFractionDigits:d });
-  };
-  return Number(n).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: dec });
 };
 const num = { fontVariantNumeric: "tabular-nums", direction: "ltr", unicodeBidi: "embed" };
 

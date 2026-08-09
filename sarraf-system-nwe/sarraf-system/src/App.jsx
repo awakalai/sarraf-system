@@ -126,9 +126,9 @@ const now = () => new Date().toISOString();
 const ROLE_KU = { admin: "ئەدمین", customer: "کڕیار-فرۆشیار", partner: "هاوبەشی سین", investor: "وەبەرهێنەر", office: "نووسینگە" };
 
 const fmt = (n, d=0) => {
-    const value = Number(n);
-    if (!Number.isFinite(value)) return "—";
-    return value.toLocaleString("en-US", { minimumFractionDigits:d, maximumFractionDigits:d });
+  const value = Number(n);
+  if (!Number.isFinite(value)) return "—";
+  return value.toLocaleString("en-US", { minimumFractionDigits:d, maximumFractionDigits:d });
 };
 const num = { fontVariantNumeric: "tabular-nums", direction: "ltr", unicodeBidi: "embed" };
 

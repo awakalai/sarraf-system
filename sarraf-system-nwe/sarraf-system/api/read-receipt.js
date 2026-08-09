@@ -1,9 +1,9 @@
 // api/read-receipt.js
 // Receipt OCR v2 — structured multimodal extraction for Sarraf.
-// Uses Gemini by default. Claude remains an optional fallback/provider.
+// Uses Groq Qwen Vision as primary when configured, with Gemini and Claude fallbacks.
 // No Supabase writes happen in this endpoint.
 
-const MAX_BASE64_CHARS = 3_900_000;
+const MAX_BASE64_CHARS = 3_500_000;
 const RETRYABLE = new Set([502, 503, 504]);
 
 const RECEIPT_SCHEMA = {
@@ -177,6 +177,102 @@ function extractText(json) {
     .trim();
 }
 
+
+const parseJsonObject = (raw, provider = "OCR") => {
+  const text = String(raw || "").replace(/```json/gi, "").replace(/```/g, "").trim();
+  if (!text) {
+    const e = new Error(`${provider}: empty JSON response`);
+    e.status = 502;
+    throw e;
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    const e = new Error(`${provider}: invalid JSON response`);
+    e.status = 502;
+    throw e;
+  }
+};
+
+const receiptShapePrompt = (currentDate) => `Read this payment receipt. Current date: ${currentDate}.
+Return ONE JSON object only with exactly these fields:
+ok, amount, fee, feeOriginal, feeDiscount, netAmount, currency, sender, receiver,
+refNo, merchantOrderNo, txTime, txDate, bank, platform, kind, confidence,
+fieldConfidence, note.
+fieldConfidence must contain: amount, fee, currency, sender, receiver, refNo,
+merchantOrderNo, txDate, txTime, platform.
+Use null when a value is not visible/reliable. Confidence values must be 0..1.
+Follow all system accuracy rules exactly.`;
+
+async function callGroq(key, image, mediaType, currentDate) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 25000);
+  const started = Date.now();
+  const model = process.env.GROQ_MODEL || "qwen/qwen3.6-27b";
+
+  try {
+    const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "authorization": `Bearer ${key}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: "system", content: SYSTEM },
+          {
+            role: "user",
+            content: [
+              { type: "text", text: receiptShapePrompt(currentDate) },
+              {
+                type: "image_url",
+                image_url: { url: `data:${mediaType};base64,${image}` },
+              },
+            ],
+          },
+        ],
+        response_format: { type: "json_object" },
+        reasoning_effort: "none",
+        temperature: 0.2,
+        max_completion_tokens: 1600,
+        stream: false,
+      }),
+      signal: controller.signal,
+    });
+
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j?.error) {
+      const e = new Error(`Groq: ${j?.error?.message || `HTTP ${r.status}`}`);
+      e.status = r.status || j?.error?.code || 500;
+      e.retryAfterSeconds = retryAfterSecondsFrom(r, j);
+      throw e;
+    }
+
+    const raw = j?.choices?.[0]?.message?.content;
+    const parsed = parseJsonObject(raw, "Groq");
+    return {
+      data: normalizeResult(parsed),
+      meta: {
+        provider: "groq",
+        model,
+        latencyMs: Date.now() - started,
+        remainingRequests: r.headers.get("x-ratelimit-remaining-requests") || null,
+        remainingTokens: r.headers.get("x-ratelimit-remaining-tokens") || null,
+      },
+    };
+  } catch (e) {
+    if (e?.name === "AbortError") {
+      const err = new Error("Groq: request timed out");
+      err.status = 504;
+      throw err;
+    }
+    throw e;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function geminiOnce(model, key, image, mediaType, currentDate) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 25000);
@@ -221,12 +317,7 @@ async function geminiOnce(model, key, image, mediaType, currentDate) {
       throw e;
     }
 
-    let parsed;
-    try { parsed = JSON.parse(raw); }
-    catch {
-      const cleaned = raw.replace(/```json/gi, "").replace(/```/g, "").trim();
-      parsed = JSON.parse(cleaned);
-    }
+    const parsed = parseJsonObject(raw, model);
 
     return {
       data: normalizeResult(parsed),
@@ -300,8 +391,7 @@ async function callClaude(key, image, mediaType, currentDate) {
       throw e;
     }
     const raw = (j.content || []).filter((b) => b.type === "text").map((b) => b.text).join("").trim();
-    const clean = raw.replace(/```json/gi, "").replace(/```/g, "").trim();
-    const parsed = JSON.parse(clean);
+    const parsed = parseJsonObject(raw, "Claude");
 
     return {
       data: normalizeResult(parsed),
@@ -329,10 +419,11 @@ export default async function handler(req, res) {
     return;
   }
 
+  const qKey = process.env.GROQ_API_KEY;
   const gKey = process.env.GEMINI_API_KEY;
   const aKey = process.env.ANTHROPIC_API_KEY;
-  if (!gKey && !aKey) {
-    res.status(500).json({ error: "GEMINI_API_KEY یان ANTHROPIC_API_KEY لە Vercel دانەنراوە" });
+  if (!qKey && !gKey && !aKey) {
+    res.status(500).json({ error: "GROQ_API_KEY یان GEMINI_API_KEY یان ANTHROPIC_API_KEY لە Vercel دانەنراوە" });
     return;
   }
 
@@ -355,39 +446,75 @@ export default async function handler(req, res) {
     }
 
     const currentDate = new Date().toISOString().slice(0, 10);
-    const provider = String(process.env.OCR_PROVIDER || "gemini").toLowerCase();
+    const requestedProvider = String(process.env.OCR_PROVIDER || "").toLowerCase().trim();
 
-    const run = async () => {
-      if (provider === "claude" && aKey) return callClaude(aKey, image, mediaType, currentDate);
-      if (gKey) {
-        try {
-          return await callGemini(gKey, image, mediaType, currentDate);
-        } catch (e) {
-          // Optional second-provider fallback. It is used only when already configured.
-          if (Number(e?.status) === 429 && aKey) return callClaude(aKey, image, mediaType, currentDate);
-          throw e;
-        }
-      }
-      return callClaude(aKey, image, mediaType, currentDate);
+    const providers = [];
+    const addProvider = (name, key, fn) => {
+      if (key && !providers.some((p) => p.name === name)) providers.push({ name, key, fn });
     };
 
-    let result;
-    try {
-      result = await run();
-    } catch (e) {
-      if (RETRYABLE.has(Number(e?.status))) {
-        await sleep(800);
-        result = await run();
-      } else {
-        throw e;
+    // Default order: Groq -> Gemini -> Claude.
+    // OCR_PROVIDER can force the first provider without disabling fallbacks.
+    if (requestedProvider === "gemini") addProvider("gemini", gKey, callGemini);
+    else if (requestedProvider === "claude") addProvider("claude", aKey, callClaude);
+    else addProvider("groq", qKey, callGroq);
+
+    addProvider("groq", qKey, callGroq);
+    addProvider("gemini", gKey, callGemini);
+    addProvider("claude", aKey, callClaude);
+
+    if (!providers.length) throw new Error("No OCR provider is configured");
+
+    const attempts = [];
+    let result = null;
+    let lastError = null;
+
+    for (let i = 0; i < providers.length; i++) {
+      const p = providers[i];
+      try {
+        result = await p.fn(p.key, image, mediaType, currentDate);
+        result.meta = {
+          ...(result.meta || {}),
+          fallbackFrom: attempts.length ? attempts.map((x) => x.provider) : [],
+        };
+        break;
+      } catch (e) {
+        lastError = e;
+        attempts.push({
+          provider: p.name,
+          status: Number(e?.status) || null,
+          message: String(e?.message || e).slice(0, 220),
+        });
+
+        const status = Number(e?.status);
+        const fallbackable = status === 429 || status === 404 || status === 500 || RETRYABLE.has(status) ||
+          /rate limit|quota|timed out|temporar|service unavailable|model.*not found/i.test(String(e?.message || ""));
+
+        if (!fallbackable) throw e;
+
+        // If there is no second provider configured, retry transient upstream errors once.
+        if (i === providers.length - 1 && RETRYABLE.has(status)) {
+          await sleep(500);
+          result = await p.fn(p.key, image, mediaType, currentDate);
+          result.meta = { ...(result.meta || {}), fallbackFrom: attempts.map((x) => x.provider) };
+          break;
+        }
       }
+    }
+
+    if (!result) {
+      if (lastError) {
+        lastError.attempts = attempts;
+        throw lastError;
+      }
+      throw new Error("OCR providers failed");
     }
 
     res.setHeader("Cache-Control", "no-store");
     res.status(200).json({
       ...result.data,
       _meta: result.meta,
-      ocrVersion: 2
+      ocrVersion: 3
     });
   } catch (e) {
     const status = Number(e?.status);
@@ -402,6 +529,7 @@ export default async function handler(req, res) {
       error: friendly,
       retryable: status === 429 || RETRYABLE.has(status) || status === 504,
       retryAfterSeconds: Number(e?.retryAfterSeconds) || null,
+      providersTried: Array.isArray(e?.attempts) ? e.attempts.map((x) => x.provider) : undefined,
     });
   }
 }

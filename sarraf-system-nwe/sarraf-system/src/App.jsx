@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "./lib/supabase";
-import { createClient } from "@supabase/supabase-js";
 import {
   LayoutDashboard, Vault, ArrowLeftRight, ListOrdered, Users, Handshake,
   TrendingUp, Building2, UserCog, PieChart, History, Plus, Trash2, Pencil,
   CheckCircle2, AlertTriangle, Eye, LogOut, Wallet, ChevronLeft, Coins,
-  Receipt, TrendingDown, ScanLine, Upload, XCircle, SlidersHorizontal, Search, MoreHorizontal, Zap, ArrowDownLeft, ArrowUpRight, X, Share2, Database, Download, ClipboardCheck, RotateCcw, MessageCircle, Moon, Sun, WifiOff, Wifi, EyeOff, Bell, QrCode, Camera, Fingerprint
+  Receipt, TrendingDown, ScanLine, Upload, XCircle, SlidersHorizontal, Search, MoreHorizontal, Zap, ArrowDownLeft, ArrowUpRight, X, Share2, Database, Download, ClipboardCheck, RotateCcw, MessageCircle, Moon, Sun, WifiOff, Wifi, EyeOff, Bell, QrCode, Camera, Fingerprint, ShieldCheck, KeyRound
 } from "lucide-react";
 
 /* ══════════════════ یارمەتیدەرەکان ══════════════════ */
@@ -1502,6 +1501,9 @@ export default function App() {
   const [session, setSession] = useState(undefined);
   const [data, setData] = useState(null);
   const [profile, setProfile] = useState(null);
+  const [accessState, setAccessState] = useState("checking"); // checking | mfa | ready | missing | error
+  const [accessEpoch, setAccessEpoch] = useState(0);
+  const [accessError, setAccessError] = useState("");
   const [page, setPage] = useState("dash");
   const [viewAs, setViewAs] = useState(null);
   const [detailId, setDetailId] = useState(null);
@@ -1550,15 +1552,14 @@ export default function App() {
     const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
     return () => sub.subscription.unsubscribe();
   }, []);
-  useEffect(() => { if (session) loadAll(); }, [session]);
   useEffect(() => {
-    if (!profile) return;
+    if (!profile || accessState !== "ready") return;
     loadNotes();
     const id = setInterval(loadNotes, 45000);   // هەر ٤٥ چرکە
     return () => clearInterval(id);
-  }, [profile]);
-  useEffect(() => { if (online && stale && session) { setStale(null); loadAll(); } }, [online]);
-  useEffect(() => { if (profile?.role === "admin") { const id = setTimeout(() => autoBackup(), 4000); return () => clearTimeout(id); } }, [profile]);
+  }, [profile, accessState]);
+  useEffect(() => { if (online && stale && session && accessState === "ready") { setStale(null); loadAll(); } }, [online, stale, session, accessState]);
+  useEffect(() => { if (profile?.role === "admin" && accessState === "ready") { const id = setTimeout(() => autoBackup(), 4000); return () => clearTimeout(id); } }, [profile, accessState]);
 
   const flash = (t) => { setMsg(t); setTimeout(() => setMsg(null), 3000); };
 
@@ -1615,6 +1616,77 @@ export default function App() {
       flash("هەڵە لە بارکردنی داتا — پەیوەندی بپشکنە و دووبارە هەوڵ بدەوە");
     }
   };
+
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const boot = async () => {
+      if (!session) {
+        setData(null);
+        setProfile(null);
+        setAccessError("");
+        setAccessState("checking");
+        return;
+      }
+
+      setData(null);
+      setAccessError("");
+      setAccessState("checking");
+
+      try {
+        const { data: rawProfile, error: profileError } = await supabase.rpc("sarraf_self_profile");
+        if (profileError) throw profileError;
+
+        const p = rawProfile && typeof rawProfile === "object" ? rawProfile : null;
+        if (!p?.id || p?.deleted) {
+          if (!cancelled) {
+            setProfile(null);
+            setAccessState("missing");
+          }
+          return;
+        }
+
+        const gateProfile = {
+          id: p.id,
+          authId: p.auth_id || session.user.id,
+          name: p.name || "",
+          role: p.role,
+          rate: Number(p.rate) || 0,
+          scope: Array.isArray(p.scope_curs) ? p.scope_curs : [],
+          phone: p.phone || "",
+          address: p.address || null,
+          note: p.note || null,
+          deleted: !!p.deleted,
+        };
+
+        if (cancelled) return;
+        setProfile(gateProfile);
+
+        if (gateProfile.role === "admin" || gateProfile.role === "office") {
+          const { data: aal, error: aalError } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+          if (aalError) throw aalError;
+          if (aal?.currentLevel !== "aal2") {
+            if (!cancelled) setAccessState("mfa");
+            return;
+          }
+        }
+
+        if (cancelled) return;
+        setAccessState("ready");
+        await loadAll();
+      } catch (err) {
+        console.error("security bootstrap", err);
+        if (!cancelled) {
+          setAccessError(err?.message || "نەتوانرا پشکنینی پاراستن تەواو بکرێت");
+          setAccessState("error");
+        }
+      }
+    };
+
+    boot();
+    return () => { cancelled = true; };
+  }, [session?.access_token, accessEpoch]);
 
   const A = (action, detail) => supabase.from("audit").insert({ id: uid(), date: now(), action, detail });
   const LR = (e) => ({ id: e.id, type: e.type, owner: e.owner || null, investor_id: e.investorId || null, cur_id: e.curId, amount: e.amount, partner_id: e.partnerId || null, tx_id: e.txId || null, note: e.note || null, date: e.date });
@@ -2298,35 +2370,75 @@ export default function App() {
 
     const addCurrency = (nc) => run(async () => {
     const nextDec = Number.isInteger(Number(nc.dec)) ? Math.max(0, Math.min(6, Number(nc.dec))) : 2;
-    const r = await supabase.from("currencies").insert({ id: nc.code.toLowerCase(), code: nc.code, name: nc.name, symbol: nc.symbol, dec: nextDec, external: !!nc.external });
-    if (r.error) throw r.error;
-    await A("زیادکردنی دراو", nc.code);
+    await rpcStrict("sarraf_add_currency", {
+      p_row: {
+        id: String(nc.code || "").trim().toLowerCase(),
+        code: String(nc.code || "").trim().toUpperCase(),
+        name: String(nc.name || "").trim(),
+        symbol: String(nc.symbol || "").trim(),
+        dec: nextDec,
+        external: !!nc.external,
+      },
+      p_command_key: commandKey("currency"),
+    });
     flash("دراو زیاد کرا ✓");
   });
 
+  const adminUserRequest = async (payload) => {
+    const token = session?.access_token;
+    if (!token) throw new Error("کاتی چوونەژوورەوە بەسەرچووە");
+    const response = await fetch("/api/admin-user", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const e = new Error(body?.error || "نەتوانرا کردارەکە جێبەجێ بکرێت");
+      e.code = body?.code || response.status;
+      throw e;
+    }
+    return body;
+  };
+
   const createUser = (f) => run(async () => {
-    if (!f.name || !f.phone || !f.password || f.password.length < 12) { flash("ناو، ژمارە، و وشەی نهێنی بەهێز (لانیکەم ١٢ پیت) پێویستن"); return; }
-    const fakeEmail = f.phone.replace(/\s/g, "") + "@sarraf.local";
-    const temp = createClient(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_ANON_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
-    const { data: sd, error: se } = await temp.auth.signUp({ email: fakeEmail, password: f.password });
-    if (se && !String(se.message).includes("already registered")) throw se;
-    const r = await supabase.from("app_users").insert({ id: uid(), auth_id: sd?.user?.id || null, name: f.name, role: f.role, rate: +f.rate || 0, scope_curs: f.scope || [], phone: f.phone, address: f.address || null, note: f.note || null });
-    if (r.error) throw r.error;
-    await A("درووستکردنی ئەکاونت", `${f.name} (${ROLE_KU[f.role]}) — ${f.phone}`);
+    if (!f.name || !f.phone || !f.password || f.password.length < 12) {
+      flash("ناو، ژمارە، و وشەی نهێنی بەهێز (لانیکەم ١٢ پیت) پێویستن");
+      return false;
+    }
+    await adminUserRequest({
+      action: "create",
+      name: f.name,
+      phone: f.phone,
+      password: f.password,
+      role: f.role,
+      rate: Number(f.rate) || 0,
+      scope: f.scope || [],
+      address: f.address || null,
+      note: f.note || null,
+    });
     flash("ئەکاونت درووست کرا ✓");
   });
 
   const deleteUser = (u) => {
-    if (!window.confirm(`سڕینەوەی ئەکاونتی «${u.name}»؟ مێژووی مامەڵەکانی دەمێنێتەوە.`)) return;
+    if (!window.confirm(`ناچالاککردنی ئەکاونتی «${u.name}»؟ مێژووی دارایی دەمێنێتەوە.`)) return;
     run(async () => {
-      const r = await supabase.from("app_users").update({ deleted: true }).eq("id", u.id); if (r.error) throw r.error;
-      await A("سڕینەوەی ئەکاونت", u.name);
-      flash("سڕایەوە");
+      await adminUserRequest({ action: "deactivate", userId: u.id });
+      flash("ئەکاونت ناچالاک کرا ✓");
     });
   };
+
   const setUserRate = (u, rate) => run(async () => {
-    const r = await supabase.from("app_users").update({ rate: +rate || 0 }).eq("id", u.id); if (r.error) throw r.error;
-    await A("گۆڕینی ڕێژە", `${u.name} → ${rate}%`);
+    const n = Number(rate);
+    if (!Number.isFinite(n) || n < 0 || n > 100) {
+      flash("ڕێژە دەبێت لە نێوان ٠ تا ١٠٠ بێت");
+      return false;
+    }
+    await adminUserRequest({ action: "update_rate", userId: u.id, rate: n });
+    flash("ڕێژە نوێ کرایەوە ✓");
   });
 
   /* ── پارە دانان/دەرهێنان لە حسابی هەر کەسێک ── */
@@ -2564,8 +2676,11 @@ export default function App() {
   /* ───────── ڕەندەر ───────── */
   if (session === undefined) return <><Styles /><Splash t={tr("بارکردنی سیستەم...")} /></>;
   if (!session) return <><Styles /><Login /></>;
-  if (!data || !calc) return <><Styles /><Splash t={tr("بارکردنی داتا...")} /></>;
-  if (!profile) return <><Styles /><Splash t={tr("ئەکاونتەکەت بە سیستەمەکە نەبەستراوە — پەیوەندی بە ئەدمینەوە بکە.")} signOut={signOut} /></>;
+  if (accessState === "checking") return <><Styles /><Splash t={tr("پشکنینی پاراستنی ئەکاونت...")} signOut={signOut} /></>;
+  if (accessState === "mfa") return <><Styles /><MfaGate profile={profile} onReady={() => setAccessEpoch((x) => x + 1)} onSignOut={signOut} /></>;
+  if (accessState === "error") return <><Styles /><Splash t={accessError || tr("هەڵە لە پشکنینی پاراستن")} signOut={signOut} /></>;
+  if (accessState === "missing" || !profile) return <><Styles /><Splash t={tr("ئەکاونتەکەت بە سیستەمەکە نەبەستراوە — پەیوەندی بە ئەدمینەوە بکە.")} signOut={signOut} /></>;
+  if (!data || !calc) return <><Styles /><Splash t={tr("بارکردنی داتا...")} signOut={signOut} /></>;
 
   const isAdmin = profile.role === "admin";
   const va = viewAs ? usr(viewAs) : null;
@@ -2919,6 +3034,164 @@ const bioLogin = async () => {
   try { localStorage.removeItem("bio"); } catch {}
   return null;
 };
+
+
+function MfaGate({ profile, onReady, onSignOut }) {
+  const [mode, setMode] = useState("loading"); // loading | challenge | enroll
+  const [factorId, setFactorId] = useState("");
+  const [qr, setQr] = useState("");
+  const [secret, setSecret] = useState("");
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const verifiedFactors = (data) => {
+    const all = [
+      ...(Array.isArray(data?.totp) ? data.totp : []),
+      ...(Array.isArray(data?.phone) ? data.phone : []),
+      ...(Array.isArray(data?.all) ? data.all : []),
+    ];
+    const seen = new Set();
+    return all.filter((f) => {
+      if (!f?.id || f.status !== "verified" || seen.has(f.id)) return false;
+      seen.add(f.id);
+      return true;
+    });
+  };
+
+  const prepare = async () => {
+    setBusy(true);
+    setErr("");
+    try {
+      const { data: aal, error: aalError } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+      if (aalError) throw aalError;
+      if (aal?.currentLevel === "aal2") {
+        onReady?.();
+        return;
+      }
+
+      const { data: factors, error: listError } = await supabase.auth.mfa.listFactors();
+      if (listError) throw listError;
+      const verified = verifiedFactors(factors);
+
+      if (verified.length) {
+        setFactorId(verified[0].id);
+        setMode("challenge");
+        return;
+      }
+
+      const { data: enrolled, error: enrollError } = await supabase.auth.mfa.enroll({
+        factorType: "totp",
+        friendlyName: `Sarraf ${profile?.role || "staff"}`,
+      });
+      if (enrollError) throw enrollError;
+      if (!enrolled?.id || !enrolled?.totp?.qr_code) throw new Error("نەتوانرا 2FA ئامادە بکرێت");
+      setFactorId(enrolled.id);
+      setQr(enrolled.totp.qr_code);
+      setSecret(enrolled.totp.secret || "");
+      setMode("enroll");
+    } catch (e) {
+      console.error("MFA prepare", e);
+      setErr(e?.message || "هەڵە لە ئامادەکردنی پاراستنی دوو هەنگاوی");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  useEffect(() => { prepare(); }, []);
+
+  const verify = async () => {
+    const clean = String(code || "").replace(/\D/g, "").slice(0, 6);
+    if (clean.length !== 6 || !factorId) {
+      setErr("کۆدی ٦ ژمارەیی Authenticator داخڵ بکە");
+      return;
+    }
+
+    setBusy(true);
+    setErr("");
+    try {
+      const { data: challenge, error: challengeError } = await supabase.auth.mfa.challenge({ factorId });
+      if (challengeError) throw challengeError;
+      const { error: verifyError } = await supabase.auth.mfa.verify({
+        factorId,
+        challengeId: challenge.id,
+        code: clean,
+      });
+      if (verifyError) throw verifyError;
+      await supabase.auth.refreshSession();
+      onReady?.();
+    } catch (e) {
+      console.error("MFA verify", e);
+      setErr("کۆدەکە دروست نییە یان کاتی بەسەرچووە — کۆدی نوێ بنووسە");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div dir={LANGS[_lang]?.dir || "rtl"} data-role={profile?.role || "admin"}
+      className="min-h-screen flex items-center justify-center p-6"
+      style={{ background: "var(--bg)", color: "var(--txt)" }}>
+      <div className="w-full max-w-[430px]">
+        <Card className="p-6 md:p-7">
+          <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-5"
+            style={{ background: "var(--pos-bg)", color: "var(--pos)" }}>
+            <ShieldCheck className="w-7 h-7" />
+          </div>
+
+          <h1 className="text-xl font-bold">{mode === "enroll" ? "چالاککردنی پاراستنی دوو هەنگاوی" : "پشتڕاستکردنەوەی پاراستن"}</h1>
+          <p className="text-sm mt-2 leading-6" style={{ color: "var(--txt-2)" }}>
+            بۆ ئەکاونتی {ROLE_KU[profile?.role] || profile?.role}، کۆدی Authenticator پێویستە پێش دەستگەیشتن بە داتای دارایی.
+          </p>
+
+          {mode === "loading" && (
+            <div className="py-8"><StatePanel type="loading" title="ئامادەکردنی پاراستن..." compact /></div>
+          )}
+
+          {mode === "enroll" && qr && (
+            <div className="mt-5 space-y-4">
+              <div className="rounded-2xl p-4 flex justify-center" style={{ background: "#fff", border: "1px solid var(--line)" }}>
+                <img src={qr} alt="Authenticator QR" className="w-52 h-52 max-w-full" />
+              </div>
+              <div className="text-xs leading-5" style={{ color: "var(--txt-2)" }}>
+                QR ـەکە بە Google Authenticator، Microsoft Authenticator یان 1Password scan بکە.
+                {secret && <div className="mt-2">ئەگەر scan نەکرا: <code dir="ltr" className="select-all">{secret}</code></div>}
+              </div>
+            </div>
+          )}
+
+          {(mode === "challenge" || mode === "enroll") && (
+            <div className="mt-5">
+              <Lbl>کۆدی ٦ ژمارەیی</Lbl>
+              <div className="relative">
+                <KeyRound className="w-4 h-4 absolute start-3 top-1/2 -translate-y-1/2" style={{ color: "var(--txt-3)" }} />
+                <input inputMode="numeric" autoComplete="one-time-code" dir="ltr" maxLength={6}
+                  value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  onKeyDown={(e) => e.key === "Enter" && verify()}
+                  className="w-full ps-10 pe-4 py-3.5 rounded-xl text-center tracking-[.35em] text-lg outline-none"
+                  style={{ background: "var(--surf-2)", border: "1px solid var(--line)", color: "var(--txt)", ...num }} />
+              </div>
+              <Btn className="w-full mt-3" disabled={busy || code.length !== 6} onClick={verify}>
+                {busy ? "پشکنین..." : "پشتڕاستکردنەوە"}
+              </Btn>
+            </div>
+          )}
+
+          {err && (
+            <div className="mt-4 p-3 rounded-xl text-sm" style={{ background: "var(--neg-bg)", color: "var(--neg)", border: "1px solid color-mix(in srgb,var(--neg) 20%,transparent)" }}>
+              {err}
+            </div>
+          )}
+
+          <div className="mt-5 flex justify-between gap-2">
+            {err && <button onClick={prepare} disabled={busy} className="text-xs font-semibold" style={{ color: "var(--txt-2)" }}>دووبارە هەوڵدان</button>}
+            <button onClick={onSignOut} className="text-xs font-semibold ms-auto" style={{ color: "var(--txt-3)" }}>دەرچوون</button>
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
 
 function Login() {
   const [id, setId] = useState("");
@@ -4947,14 +5220,6 @@ const ocrRetryNote = (e, prefix = "خزمەتگوزاری خوێندنەوە ک�
   return `${prefix} — فیشەکە ڕەت نەکراوەتەوە${sec > 0 ? `؛ نزیکەی ${Math.ceil(sec)} چرکەی تر دووبارە هەوڵ بدە` : "؛ کەمێک دواتر دووبارە هەوڵ بدە"}`;
 };
 
-const ocrProviderLabel = (r) => {
-  const p = String(r?.raw?._meta?.provider || "").toLowerCase();
-  if (p === "groq") return "Groq";
-  if (p === "gemini") return "Gemini";
-  if (p === "claude") return "Claude";
-  return null;
-};
-
 async function readReceiptAI(image, mediaType = "image/jpeg", retryNetwork = true) {
   if (!image || image.length > OCR_MAX_BASE64_CHARS) {
     throw new Error("قەبارەی وێنەکە بۆ خوێندنەوە زۆر گەورەیە");
@@ -5009,7 +5274,7 @@ async function readReceiptAI(image, mediaType = "image/jpeg", retryNetwork = tru
     return data;
   } catch (e) {
     if (e?.name === "AbortError") {
-      throw new Error("خوێندنەوە زۆر درێژەی کێشا — لە Review Center دووبارە بخوێنەرەوە");
+      throw new Error("خوێندنەوە زۆر درێژەی کێشا — کەمێک دواتر دووبارە هەوڵ بدەوە");
     }
     // Retry only a browser/network transport failure. HTTP/API failures are
     // already retried once on the server where rate limits can be controlled.
@@ -6239,10 +6504,10 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
                         </div>
                         {Number(r.orderAmount) > 0 && (
                           <div className="text-[10.5px] mt-1 flex flex-wrap gap-x-2 gap-y-0.5" style={{ ...num, color: "var(--txt-3)" }}>
-                            <span>Gross {fmtMoney(data, r.amount, r.currency)}</span>
-                            <span>· Order {fmtMoney(data, r.orderAmount, r.currency)}</span>
-                            <span>· Fee {fmtMoney(data, r.fee, r.currency)}</span>
-                            <span>· Net {fmtMoney(data, r.net, r.currency)}</span>
+                            <span>کۆی گشتی {fmtMoney(data, r.amount, r.currency)}</span>
+                            <span>· بڕی بنەڕەتی {fmtMoney(data, r.orderAmount, r.currency)}</span>
+                            <span>· فی {fmtMoney(data, r.fee, r.currency)}</span>
+                            <span>· نەت {fmtMoney(data, r.net, r.currency)}</span>
                             {r.validation?.checked && (
                               <span style={{ color: r.validation.grossMatches ? "var(--pos)" : "var(--warn)" }}>
                                 · {r.validation.grossMatches ? "✓ ژمارەکان یەکدەگرنەوە" : "⚠ پشکنینی ژمارەکان"}

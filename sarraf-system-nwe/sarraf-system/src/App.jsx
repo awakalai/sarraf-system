@@ -460,6 +460,31 @@ const Quick = ({ icon: Ic, label, onClick, active }) => (
   </button>
 );
 
+/* ── پۆرتاڵی پڕۆفیشناڵ — یەک دیزاین بۆ هەموو ڕۆڵەکان ── */
+const PortalHeader = ({ user, role, icon: Ic = Users, subtitle }) => (
+  <div className="portal-welcome">
+    <div className="portal-avatar"><Ic className="w-5 h-5" /></div>
+    <div className="min-w-0 flex-1">
+      <div className="portal-eyebrow"><span className="portal-live-dot" /> SARRAF</div>
+      <div className="portal-welcome-name">{user?.name || tr("ئەکاونتی من")}</div>
+      <div className="portal-welcome-sub">
+        <span className="portal-role-badge">{role}</span>
+        {subtitle && <span className="truncate">{subtitle}</span>}
+      </div>
+    </div>
+  </div>
+);
+
+const PortalAction = ({ icon: Ic, label, hint, onClick, primary = false }) => (
+  <button onClick={onClick} className={`portal-action tap ${primary ? "portal-action-primary" : ""}`}>
+    <span className="portal-action-icon"><Ic className="w-[18px] h-[18px]" /></span>
+    <span className="min-w-0 text-start">
+      <span className="portal-action-label">{label}</span>
+      {hint && <span className="portal-action-hint">{hint}</span>}
+    </span>
+  </button>
+);
+
 const H = ({ children, sub }) => (
   <div className="mb-5">
     <h2 className="text-[26px] font-semibold tracking-tight leading-tight" style={{ color: "var(--txt)" }}>{children}</h2>
@@ -1162,6 +1187,202 @@ body{
 @media(max-width:390px){
   .quick-action-card{padding:10px}
   .quick-action-icon{width:32px;height:32px;flex-basis:32px}
+}
+
+
+/* ==========================================================
+   PHASE 5 — ROLE PORTALS / RESPONSIVE POLISH
+   PRESENTATION ONLY — NO FINANCIAL LOGIC
+   ========================================================== */
+.portal-shell{
+  width:100%;
+  max-width:1180px;
+  margin-inline:auto;
+}
+.portal-welcome{
+  display:flex;
+  align-items:center;
+  gap:13px;
+  padding:15px 17px;
+  border:1px solid var(--line);
+  border-radius:20px;
+  background:
+    radial-gradient(180px 100px at 100% 0%,rgba(var(--ac-gl),.09),transparent 72%),
+    color-mix(in srgb,var(--surf) 98%,var(--ac) 2%);
+  box-shadow:var(--sh-1);
+}
+.portal-avatar{
+  width:44px;height:44px;flex:0 0 44px;
+  display:flex;align-items:center;justify-content:center;
+  border-radius:14px;
+  color:var(--ac);
+  background:rgba(var(--ac-gl),.10);
+  border:1px solid rgba(var(--ac-gl),.16);
+}
+.portal-eyebrow{
+  display:flex;align-items:center;gap:6px;
+  color:var(--txt-3);
+  font-size:9px;font-weight:800;letter-spacing:.11em;
+}
+.portal-live-dot{
+  width:6px;height:6px;border-radius:50%;
+  background:var(--pos);
+  box-shadow:0 0 0 4px rgba(var(--ac-gl),.08);
+}
+.portal-welcome-name{
+  margin-top:2px;
+  color:var(--txt);
+  font-size:18px;
+  line-height:1.25;
+  font-weight:800;
+  letter-spacing:-.015em;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.portal-welcome-sub{
+  display:flex;align-items:center;gap:7px;
+  margin-top:5px;
+  min-width:0;
+  color:var(--txt-3);
+  font-size:10.5px;
+}
+.portal-role-badge{
+  flex:0 0 auto;
+  display:inline-flex;align-items:center;
+  min-height:22px;
+  padding:3px 8px;
+  border-radius:999px;
+  color:var(--ac);
+  background:rgba(var(--ac-gl),.08);
+  border:1px solid rgba(var(--ac-gl),.14);
+  font-size:9.5px;
+  font-weight:700;
+}
+.portal-hero-card{
+  position:relative;
+  overflow:hidden;
+  padding:21px 18px;
+  border-radius:24px;
+  border:1px solid color-mix(in srgb,var(--line) 82%,var(--ac) 18%);
+  background:
+    radial-gradient(220px 130px at 88% -15%,rgba(var(--ac-gl),.12),transparent 70%),
+    linear-gradient(180deg,color-mix(in srgb,var(--surf) 98%,var(--ac) 2%),var(--surf));
+  box-shadow:0 14px 36px rgba(15,23,42,.055);
+}
+.portal-hero-card::after{
+  content:"";
+  position:absolute;
+  width:118px;height:118px;
+  inset-inline-end:-54px;bottom:-70px;
+  border-radius:50%;
+  background:rgba(var(--ac-gl),.055);
+  pointer-events:none;
+}
+.portal-actions-grid{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:9px;
+}
+.portal-action{
+  width:100%;
+  min-width:0;
+  min-height:68px;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:10px 11px;
+  border-radius:16px;
+  color:var(--txt);
+  text-align:start;
+  background:var(--surf);
+  border:1px solid var(--line);
+  box-shadow:0 1px 2px rgba(15,23,42,.025);
+  transition:transform .16s ease,border-color .16s ease,background .16s ease,box-shadow .16s ease;
+}
+.portal-action:hover{
+  transform:translateY(-1px);
+  border-color:rgba(var(--ac-gl),.24);
+  box-shadow:0 7px 20px rgba(15,23,42,.055);
+}
+.portal-action-primary{
+  border-color:rgba(var(--ac-gl),.22);
+  background:color-mix(in srgb,var(--surf) 92%,var(--ac) 8%);
+}
+.portal-action-icon{
+  width:35px;height:35px;flex:0 0 35px;
+  display:flex;align-items:center;justify-content:center;
+  border-radius:11px;
+  color:var(--ac);
+  background:rgba(var(--ac-gl),.09);
+}
+.portal-action-primary .portal-action-icon{
+  color:#07130D;
+  background:linear-gradient(145deg,#31E696,#21CD7F);
+  box-shadow:0 7px 15px rgba(var(--ac-gl),.14);
+}
+.portal-action-label{
+  display:block;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:var(--txt);
+  font-size:11px;
+  font-weight:750;
+}
+.portal-action-hint{
+  display:block;
+  margin-top:2px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:var(--txt-3);
+  font-size:8.5px;
+}
+.portal-kpi-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:10px;
+}
+.portal-kpi-card{
+  min-width:0;
+  min-height:102px;
+  padding:15px;
+  border-radius:18px;
+  background:var(--surf);
+  border:1px solid var(--line);
+  box-shadow:0 3px 14px rgba(15,23,42,.035);
+}
+.portal-tabs{
+  position:sticky;
+  top:65px;
+  z-index:12;
+  display:flex;
+  gap:4px;
+  padding:4px;
+  overflow-x:auto;
+  border:1px solid var(--line);
+  border-radius:16px;
+  background:color-mix(in srgb,var(--surf) 94%,transparent);
+  box-shadow:var(--sh-1);
+  backdrop-filter:blur(16px);
+}
+.portal-list-card{
+  border-radius:18px;
+  box-shadow:0 4px 18px rgba(15,23,42,.035);
+}
+@media(max-width:767px){
+  .portal-shell{max-width:100%}
+  .portal-actions-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .portal-welcome{padding:13px 14px;border-radius:17px}
+  .portal-hero-card{padding:18px 14px;border-radius:20px}
+  .portal-tabs{top:57px}
+}
+@media(max-width:390px){
+  .portal-action{min-height:64px;padding:9px}
+  .portal-action-icon{width:32px;height:32px;flex-basis:32px}
+  .portal-welcome-name{font-size:17px}
+  .portal-kpi-card{padding:13px}
 }
 
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
@@ -6921,6 +7142,7 @@ function InvestorDetail({ u, data, calc, cur, invUnpaid, mine }) {
 /* ══════════════════ نووسینگە ══════════════════ */
 function Office({ data, cur, usr, officePay, calc, accountMove, accountTransfer, flash, officeId, readOnlyUser }) {
   const [tab, setTab] = useState("pending");
+  const officeUser = officeId ? usr(officeId) : null;
   const [q, setQ] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -6933,7 +7155,7 @@ function Office({ data, cur, usr, officePay, calc, accountMove, accountTransfer,
   const m0 = new Date(t0.getFullYear(), t0.getMonth(), 1);
   const sums = (fn) => { const m = {}; paid.filter(fn).forEach((t) => (m[t.againstId] = (m[t.againstId] || 0) + t.total)); return m; };
   const S = ({ title, m }) => (
-    <Card className="p-4">
+    <>
       <div className="text-[11px] mb-1.5" style={{ color: "var(--txt-3)" }}>{title}</div>
       {Object.keys(m).length === 0 ? <div className="text-[17px]" style={{ color: "var(--txt-3)" }}>—</div> :
         Object.entries(m).map(([cid, v]) => (
@@ -6941,7 +7163,7 @@ function Office({ data, cur, usr, officePay, calc, accountMove, accountTransfer,
             {fmt(v, 0)} <span className="text-[11px] font-normal" style={{ color: "var(--txt-3)" }}>{cur(cid).code}</span>
           </div>
         ))}
-    </Card>
+    </>
   );
 
   // مێژووی پارەدانەکان بە گەڕان
@@ -6961,12 +7183,15 @@ function Office({ data, cur, usr, officePay, calc, accountMove, accountTransfer,
   if (officeId) TABS.push(["safe", tr("قاسەی نووسینگە")]);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 md:space-y-5 portal-shell">
+      <PortalHeader user={officeUser || { name: tr("نووسینگە") }} role={tr("نووسینگە")} icon={Building2}
+        subtitle={`${pending.length} ${tr("چاوەڕوان")}`} />
+
       {(() => {
         const td = sums((t) => new Date(t.paidAt) >= d0);
         const k = Object.keys(td)[0];
         return (
-          <div className="relative pt-3 pb-1 aura">
+          <div className="portal-hero-card">
             <Hero label={tr("پارەی دراوی ئەمڕۆ")}
               value={k ? fmt(td[k], 0) : "0"} unit={k ? cur(k).code : ""}
               sub={`${pending.length} ${tr("چاوەڕوان")}`} />
@@ -6974,14 +7199,14 @@ function Office({ data, cur, usr, officePay, calc, accountMove, accountTransfer,
         );
       })()}
 
-      <div className="grid grid-cols-2 gap-3">
-        <S title={tr("ئەم هەفتەیە")} m={sums((t) => new Date(t.paidAt) >= w0)} />
-        <S title={tr("ئەم مانگە")} m={sums((t) => new Date(t.paidAt) >= m0)} />
+      <div className="portal-kpi-grid">
+        <div className="portal-kpi-card"><S title={tr("ئەم هەفتەیە")} m={sums((t) => new Date(t.paidAt) >= w0)} /></div>
+        <div className="portal-kpi-card"><S title={tr("ئەم مانگە")} m={sums((t) => new Date(t.paidAt) >= m0)} /></div>
       </div>
 
       <MarketWatch compact />
 
-      <div className="flex gap-1 rounded-[var(--r)] p-1 overflow-x-auto" style={{ background: "var(--surf)", border: "1px solid var(--line)", boxShadow: "var(--sh-1)" }}>
+      <div className="portal-tabs">
         {TABS.map(([k, t]) => (
           <button key={k} onClick={() => setTab(k)}
             style={tab === k ? { background: "linear-gradient(180deg, var(--ac), var(--pos))", color: "#fff", boxShadow: "0 2px 8px -2px rgba(14,122,107,.4)" } : { color: "var(--txt-2)" }}
@@ -6992,7 +7217,7 @@ function Office({ data, cur, usr, officePay, calc, accountMove, accountTransfer,
       {tab === "pending" && (
         pending.length === 0 ? <Card><Empty t={tr("هیچ مامەڵەیەکی چاوەڕوان نییە ✓")} /></Card> :
           pending.map((t) => (
-            <Card key={t.id} className="p-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+            <Card key={t.id} className="p-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm portal-list-card">
               {t.code && <span className="text-[11px] font-bold text-[var(--txt-3)] bg-[var(--line)] px-2 py-0.5 rounded" style={num}>#{t.code}</span>}
               <span className="font-semibold text-[var(--txt)]">{t.cpId ? usr(t.cpId).name : t.cpName}</span>
               <span>{tr("بدرێتێ:")} <Money v={t.total} dec={0} /> {cur(t.againstId).code}</span>
@@ -7030,7 +7255,7 @@ function Office({ data, cur, usr, officePay, calc, accountMove, accountTransfer,
 
           {hist.length === 0 ? <Card><Empty t={tr("هیچ نەدۆزرایەوە")} /></Card> :
             hist.map((t) => (
-              <Card key={t.id} className="p-3.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+              <Card key={t.id} className="p-3.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm portal-list-card">
                 {t.code && <span className="text-[11px] font-bold text-[var(--txt-3)]" style={num}>#{t.code}</span>}
                 <Pill tone="green">{tr("دراوە")}</Pill>
                 <span className="font-semibold text-[var(--txt)]">{t.cpId ? usr(t.cpId).name : t.cpName}</span>
@@ -8161,11 +8386,14 @@ function CustomerPortal({ user, c, base, data, calc, cur, usr, flash, reloadBatc
   const mainCur = (owe[0] || due[0] || [])[0];
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4 md:space-y-5 portal-shell">
       {tab === "account" && (
         <>
+          <PortalHeader user={user} role={tr("کڕیار")} icon={Users}
+            subtitle={mainCur ? `${tr("باڵانس")} · ${cur(mainCur).code}` : tr("حیساب پاکە ✅")} />
+
           {/* ژمارەی سەرەکی */}
-          <div className="relative pt-4 pb-1 aura">
+          <div className="portal-hero-card">
             <Hero
               label={net >= 0 ? tr("پارەی من لای ئەوان") : tr("قەرزی من")}
               value={mainCur ? fmt(Math.abs(net), 0) : "0"}
@@ -8175,19 +8403,19 @@ function CustomerPortal({ user, c, base, data, calc, cur, usr, flash, reloadBatc
           </div>
 
           {/* کرداری خێرا */}
-          <div className="flex justify-around px-1">
-            <Quick icon={Upload} label={tr("ناردنی فیش")} onClick={() => setTab("send")} active />
-            <Quick icon={Vault} label={tr("قاسەم")} onClick={() => setTab("safe")} />
-            <Quick icon={ScanLine} label={tr("فیشەکانم")} onClick={() => setTab("archive")} />
-            <Quick icon={History} label={tr("مامەڵەکانم")} onClick={() => setTab("history")} />
+          <div className="portal-actions-grid">
+            <PortalAction icon={Upload} label={tr("ناردنی فیش")} hint={tr("فیشەکان")} onClick={() => setTab("send")} primary />
+            <PortalAction icon={Vault} label={tr("قاسەم")} hint={tr("باڵانس")} onClick={() => setTab("safe")} />
+            <PortalAction icon={ScanLine} label={tr("فیشەکانم")} hint={tr("ئەرشیفی فیشەکان")} onClick={() => setTab("archive")} />
+            <PortalAction icon={History} label={tr("مامەڵەکانم")} hint={tr("مێژوو")} onClick={() => setTab("history")} />
           </div>
 
           <MarketWatch compact />
 
           {/* دوو باڵانس */}
           {(owe.length > 0 || due.length > 0) && (
-            <div className="grid grid-cols-2 gap-3">
-              <Card className="p-4">
+            <div className="portal-kpi-grid">
+              <Card className="portal-kpi-card">
                 <div className="text-[11px] mb-2" style={{ color: "var(--txt-3)" }}>{tr("پارەی من لای ئەوان")}</div>
                 {owe.length === 0 ? <div className="text-[15px]" style={{ color: "var(--txt-3)" }}>—</div> :
                   owe.map(([cid, v]) => (
@@ -8196,7 +8424,7 @@ function CustomerPortal({ user, c, base, data, calc, cur, usr, flash, reloadBatc
                     </div>
                   ))}
               </Card>
-              <Card className="p-4">
+              <Card className="portal-kpi-card">
                 <div className="text-[11px] mb-2" style={{ color: "var(--txt-3)" }}>{tr("قەرزی من")}</div>
                 {due.length === 0 ? <div className="text-[15px]" style={{ color: "var(--txt-3)" }}>—</div> :
                   due.map(([cid, v]) => (
@@ -8209,7 +8437,7 @@ function CustomerPortal({ user, c, base, data, calc, cur, usr, flash, reloadBatc
           )}
 
           {/* دوا مامەڵەکان */}
-          <Card className="px-1 py-1">
+          <Card className="px-1 py-1 portal-list-card">
             <div className="flex items-center justify-between px-3 pt-3 pb-1">
               <SecLbl>{tr("دوا مامەڵەکان")}</SecLbl>
               <button onClick={() => setTab("history")} className="text-[12px] font-semibold tap" style={{ color: "var(--ac)" }}>
@@ -8258,7 +8486,7 @@ function CustomerPortal({ user, c, base, data, calc, cur, usr, flash, reloadBatc
           <Back onClick={() => setTab("account")} t={tr("گەڕانەوە")} />
           <TxFilterBar data={data} f={f} setF={setF} count={list.length} />
           {list.length === 0 ? <Card className="p-2"><Empty t={tr("هیچ مامەڵەیەک نەدۆزرایەوە")} /></Card> :
-            <Card className="px-1 py-1">
+            <Card className="px-1 py-1 portal-list-card">
               {list.map((t, i) => (
                 <div key={t.id} style={i ? { borderTop: "1px solid var(--line)" } : {}}>
                   <TxRow t={t} cur={cur} usr={usr} flip lite />
@@ -8282,10 +8510,13 @@ function PartnerPortal({ user, data, calc, cur, usr, flash, reloadBatches, accou
   const main = rows[0];
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4 md:space-y-5 portal-shell">
       {tab === "balance" && (
         <>
-          <div className="relative pt-4 pb-1 aura">
+          <PortalHeader user={user} role={tr("هاوبەش")} icon={Handshake}
+            subtitle={main ? `${tr("باڵانسی لای من")} · ${cur(main.c.id).code}` : tr("هیچ نییە")} />
+
+          <div className="portal-hero-card">
             <Hero label={tr("باڵانسی لای من")}
               value={main ? fmt(main.v, 0) : "0"}
               unit={main ? cur(main.c.id).code : ""}
@@ -8293,17 +8524,17 @@ function PartnerPortal({ user, data, calc, cur, usr, flash, reloadBatches, accou
               sub={main && main.v < 0 ? tr("· قەرز") : null} />
           </div>
 
-          <div className="flex justify-center gap-8">
-            <Quick icon={Upload} label={tr("ناردنی فیش")} onClick={() => setTab("send")} active />
-            <Quick icon={ScanLine} label={tr("فیشەکان")} onClick={() => setTab("receipts")} />
-            <Quick icon={Vault} label={tr("قاسە")} onClick={() => setTab("safe")} />
-            <Quick icon={History} label={tr("مێژوو")} onClick={() => setTab("history")} />
+          <div className="portal-actions-grid">
+            <PortalAction icon={Upload} label={tr("ناردنی فیش")} hint={tr("فیشەکان")} onClick={() => setTab("send")} primary />
+            <PortalAction icon={ScanLine} label={tr("فیشەکان")} hint={tr("ئەرشیفی فیشەکان")} onClick={() => setTab("receipts")} />
+            <PortalAction icon={Vault} label={tr("قاسە")} hint={tr("باڵانس")} onClick={() => setTab("safe")} />
+            <PortalAction icon={History} label={tr("مێژوو")} hint={tr("مێژووی ئاڵووگۆر")} onClick={() => setTab("history")} />
           </div>
 
           <MarketWatch compact />
 
           {rows.length > 1 && (
-            <Card className="px-4 py-2">
+            <Card className="px-4 py-2 portal-list-card">
               <div className="pt-2"><SecLbl>{tr("باڵانسی لای من")}</SecLbl></div>
               {rows.map(({ c, v }) => (
                 <Row key={c.id} icon={<CurBadge c={c} size="sm" />} title={c.name}
@@ -8313,7 +8544,7 @@ function PartnerPortal({ user, data, calc, cur, usr, flash, reloadBatches, accou
           )}
 
           {Object.keys(fees).length > 0 && (
-            <Card className="px-4 py-2">
+            <Card className="px-4 py-2 portal-list-card">
               <div className="pt-2"><SecLbl>{tr("عمولەی وەرگیراو")} ({user.rate}٪)</SecLbl></div>
               {Object.entries(fees).map(([cid, v]) => (
                 <Row key={cid} icon={<CurBadge c={cur(cid)} size="sm" />} title={cur(cid).name} right={fmt(v, 0)} tone="pos" />
@@ -8339,7 +8570,7 @@ function PartnerPortal({ user, data, calc, cur, usr, flash, reloadBatches, accou
       )}
       {tab === "history" && (
         hist.length === 0 ? <Card className="p-2"><Empty t={tr("هیچ نییە")} /></Card> :
-          <Card className="px-4 py-2">
+          <Card className="px-4 py-2 portal-list-card">
             {hist.map((e) => (
               <Row key={e.id}
                 icon={<span className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
@@ -8415,10 +8646,11 @@ function Portal({ user, data, calc, cur, usr, officePay, settle, invUnpaid, flas
 
   if (user.role === "investor") {
     return (
-      <div className="space-y-4">
-        <H sub={`بەخێربێیت، ${user.name}`}>{tr("ئەکاونتی من")}</H>
-        <InvestorDetail u={user} data={data} calc={calc} cur={cur} invUnpaid={invUnpaid} mine />
+      <div className="space-y-4 md:space-y-5 portal-shell">
+        <PortalHeader user={user} role={tr("وەبەرهێنەر")} icon={TrendingUp}
+          subtitle={tr("سەرمایە + خێری نەدراو")} />
         <MarketWatch compact />
+        <InvestorDetail u={user} data={data} calc={calc} cur={cur} invUnpaid={invUnpaid} mine />
       </div>
     );
   }

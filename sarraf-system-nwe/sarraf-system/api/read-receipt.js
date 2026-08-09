@@ -20,6 +20,7 @@ const RECEIPT_SCHEMA = {
     sender: { type: ["string", "null"] },
     receiver: { type: ["string", "null"] },
     refNo: { type: ["string", "null"] },
+    merchantOrderNo: { type: ["string", "null"] },
     txTime: { type: ["string", "null"] },
     txDate: { type: ["string", "null"] },
     bank: { type: ["string", "null"] },
@@ -36,17 +37,18 @@ const RECEIPT_SCHEMA = {
         sender: { type: "number", minimum: 0, maximum: 1 },
         receiver: { type: "number", minimum: 0, maximum: 1 },
         refNo: { type: "number", minimum: 0, maximum: 1 },
+        merchantOrderNo: { type: "number", minimum: 0, maximum: 1 },
         txDate: { type: "number", minimum: 0, maximum: 1 },
         txTime: { type: "number", minimum: 0, maximum: 1 },
         platform: { type: "number", minimum: 0, maximum: 1 }
       },
-      required: ["amount", "fee", "currency", "sender", "receiver", "refNo", "txDate", "txTime", "platform"]
+      required: ["amount", "fee", "currency", "sender", "receiver", "refNo", "merchantOrderNo", "txDate", "txTime", "platform"]
     },
     note: { type: ["string", "null"] }
   },
   required: [
     "ok", "amount", "fee", "feeOriginal", "feeDiscount", "netAmount",
-    "currency", "sender", "receiver", "refNo", "txTime", "txDate",
+    "currency", "sender", "receiver", "refNo", "merchantOrderNo", "txTime", "txDate",
     "bank", "platform", "kind", "confidence", "fieldConfidence", "note"
   ]
 };
@@ -68,9 +70,24 @@ Accuracy rules:
 10. If the image is not a payment/transfer receipt, set ok=false.
 11. If the image may be edited/tampered, mention that in note and reduce confidence.
 12. confidence is overall confidence. fieldConfidence is separate confidence for each extracted field.
-13. Return only data matching the JSON schema.`;
+13. Alipay-specific rule: when both the merchant/display name at the top and a field explicitly labeled "Full name of payee" are visible, receiver MUST come from "Full name of payee". Do not combine the two names.
+14. Alipay-specific rule: refNo MUST come from "Order No." when visible. merchantOrderNo MUST come from "Merchant order No." when visible. Never swap these two IDs.
+15. Preserve decimal cents/fen exactly as shown. Example: 1,262.78 must remain 1262.78, not 1263.
+16. Return only data matching the JSON schema.`;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+const retryAfterSecondsFrom = (response, json) => {
+  const header = Number(response?.headers?.get?.("retry-after"));
+  if (Number.isFinite(header) && header > 0) return header;
+  const details = json?.error?.details || [];
+  for (const d of details) {
+    const raw = d?.retryDelay || d?.retry_delay;
+    const m = String(raw || "").match(/([0-9]+(?:\.[0-9]+)?)s/i);
+    if (m) return Math.ceil(Number(m[1]));
+  }
+  return null;
+};
 
 const toLatinDigits = (value) => String(value ?? "")
   .replace(/[٠-٩]/g, (d) => "٠١٢٣٤٥٦٧٨٩".indexOf(d))
@@ -124,6 +141,7 @@ function normalizeResult(parsed) {
     sender: clamp01(fcIn.sender, 0.5),
     receiver: clamp01(fcIn.receiver, 0.5),
     refNo: clamp01(fcIn.refNo, parsed?.refNo ? 0.6 : 0),
+    merchantOrderNo: clamp01(fcIn.merchantOrderNo, parsed?.merchantOrderNo ? 0.6 : 0),
     txDate: clamp01(fcIn.txDate, txDate ? 0.6 : 0),
     txTime: clamp01(fcIn.txTime, parsed?.txTime ? 0.6 : 0),
     platform: clamp01(fcIn.platform, parsed?.platform || parsed?.bank ? 0.6 : 0),
@@ -140,6 +158,7 @@ function normalizeResult(parsed) {
     sender: cleanText(parsed?.sender),
     receiver: cleanText(parsed?.receiver),
     refNo: cleanText(parsed?.refNo),
+    merchantOrderNo: cleanText(parsed?.merchantOrderNo),
     txTime: cleanText(parsed?.txTime),
     txDate,
     bank: cleanText(parsed?.bank),
@@ -192,6 +211,7 @@ async function geminiOnce(model, key, image, mediaType, currentDate) {
     if (!r.ok || j?.error) {
       const e = new Error(`${model}: ${j?.error?.message || `HTTP ${r.status}`}`);
       e.status = j?.error?.code || r.status;
+      e.retryAfterSeconds = retryAfterSecondsFrom(r, j);
       throw e;
     }
     const raw = extractText(j);
@@ -339,7 +359,15 @@ export default async function handler(req, res) {
 
     const run = async () => {
       if (provider === "claude" && aKey) return callClaude(aKey, image, mediaType, currentDate);
-      if (gKey) return callGemini(gKey, image, mediaType, currentDate);
+      if (gKey) {
+        try {
+          return await callGemini(gKey, image, mediaType, currentDate);
+        } catch (e) {
+          // Optional second-provider fallback. It is used only when already configured.
+          if (Number(e?.status) === 429 && aKey) return callClaude(aKey, image, mediaType, currentDate);
+          throw e;
+        }
+      }
       return callClaude(aKey, image, mediaType, currentDate);
     };
 
@@ -370,6 +398,10 @@ export default async function handler(req, res) {
         ? "خوێندنەوە زۆر درێژەی کێشا — دووبارە هەوڵ بدە"
         : message;
     const httpStatus = status === 429 ? 429 : RETRYABLE.has(status) ? 503 : (status >= 400 && status < 500 ? status : 500);
-    res.status(httpStatus).json({ error: friendly });
+    res.status(httpStatus).json({
+      error: friendly,
+      retryable: status === 429 || RETRYABLE.has(status) || status === 504,
+      retryAfterSeconds: Number(e?.retryAfterSeconds) || null,
+    });
   }
 }

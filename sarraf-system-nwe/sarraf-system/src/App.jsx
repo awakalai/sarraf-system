@@ -132,6 +132,42 @@ const fmt = (n, d=0) => {
 };
 const num = { fontVariantNumeric: "tabular-nums", direction: "ltr", unicodeBidi: "embed" };
 
+/* ── Currency-pair rate helpers ──────────────────────────────────────────
+   Stored transaction rate is always:
+     1 curId = rate againstId
+   UI display prefers USD as the visible base whenever USD is in the pair.
+   This keeps:
+     1 USD = 1,410 IQD
+     1 USD = 7.20 CNY
+   while preserving one normalized calculation model internally.
+------------------------------------------------------------------------ */
+const preferredRateBaseId = (curId, againstId) =>
+  curId === "usd" || againstId === "usd" ? "usd" : curId;
+
+const storedRateToDisplay = (storedRate, curId, againstId, displayBaseId = preferredRateBaseId(curId, againstId)) => {
+  const r = Number(storedRate);
+  if (!(r > 0)) return null;
+  return displayBaseId === curId ? r : 1 / r;
+};
+
+const displayRateToStored = (displayRate, curId, againstId, displayBaseId = preferredRateBaseId(curId, againstId)) => {
+  const r = Number(displayRate);
+  if (!(r > 0)) return 0;
+  return displayBaseId === curId ? r : 1 / r;
+};
+
+const oppositePairId = (curId, againstId, displayBaseId) =>
+  displayBaseId === curId ? againstId : curId;
+
+const rateDigits = (value) => {
+  const n = Math.abs(Number(value));
+  if (!Number.isFinite(n)) return 3;
+  if (n >= 100) return 2;
+  if (n >= 1) return 4;
+  return 6;
+};
+
+
 /* ڕەنگ و هێمای دراوەکان */
 const CUR_STYLE = {
   usd:  { hi: "#3FBF95", mid: "#12876A", lo: "#075444", glow: "rgba(18,135,106,.45)",  txt: "text-[#0E7A6B]", sym: "$" },
@@ -1285,23 +1321,59 @@ export default function App() {
     return { list, total };
   }, [data, calc, mySafe]);
 
-  /* مامناوەندی نرخی کڕین (بۆ حیسابی خێر لە کاتی فرۆشتن) */
-  // مامناوەندی کێشدار — مامەڵەی ڕاستەوخۆ ناچێتە ناوی (چوونکە لە قاسەدا نامێنێتەوە)
-  const avgRate = (curId, againstId) => {
-    let a = 0, v = 0;
-    for (const t of data.txs)
-      if (!t.deleted && !t.direct && t.type === "buy" && t.curId === curId && t.againstId === againstId) { a += t.amount; v += t.amount * t.rate; }
-    return a > 0 ? v / a : null;
+  /* مامناوەندی کێشدار بۆ stock ـی ماوە
+     - Direct trade ناچێتە ناوی، چونکە asset لە قاسەدا نامێنێتەوە.
+     - Sell ـە پێشووەکان لە quantity/cost basis کەم دەکرێنەوە.
+     - excludeTxId بۆ edit ـکردنی مامەڵەیەکی هەبووە. */
+  const inventoryPosition = (curId, againstId, excludeTxId = null) => {
+    let qty = 0, cost = 0;
+    const txs = data.txs
+      .filter((t) => !t.deleted && !t.direct && t.id !== excludeTxId && t.curId === curId && t.againstId === againstId)
+      .sort((a, b) => new Date(a.date) - new Date(b.date) || (a.code || 0) - (b.code || 0));
+
+    for (const t of txs) {
+      const amount = Number(t.amount), rate = Number(t.rate);
+      if (!(amount > 0) || !(rate > 0)) continue;
+
+      if (t.type === "buy") {
+        qty += amount;
+        cost += amount * rate;
+      } else if (t.type === "sell" && qty > 0) {
+        const avg = cost / qty;
+        const used = Math.min(amount, qty);
+        qty -= used;
+        cost -= used * avg;
+        if (qty <= 1e-9) { qty = 0; cost = 0; }
+      }
+    }
+
+    return { qty, cost, avgRate: qty > 0 ? cost / qty : null };
   };
 
-  /* نرخی ئۆتۆماتیکی لە نرخی ڕۆژانەوە */
+  const avgRate = (curId, againstId, excludeTxId = null) =>
+    inventoryPosition(curId, againstId, excludeTxId).avgRate;
+
+  /* نرخی ئۆتۆماتیکی لە نرخی ڕۆژانەوە.
+     currencies.buyRate / sellRate واتە:
+       1 USD = X currency لە کاتی کڕین/فرۆشتنی USD.
+     بۆ pair ـێکی تر cross-rate بە USD و spread ـی دروست هەژمار دەکرێت. */
   const autoRate = (type, curId, againstId) => {
+    if (!curId || !againstId || curId === againstId) return null;
     const c = cur(curId), a = cur(againstId);
-    const side = (x) => (type === "buy" ? x.buyRate : x.sellRate);
-    const pc = c.id === "usd" ? 1 : side(c);
-    const pa = a.id === "usd" ? 1 : side(a);
-    if (!pc || !pa) return null;
-    return pa / pc;
+    const usdBuy = (x) => x.id === "usd" ? 1 : Number(x.buyRate) || 0;
+    const usdSell = (x) => x.id === "usd" ? 1 : Number(x.sellRate) || 0;
+
+    // Buying cur: acquire cur by selling USD, fund USD by buying it with against.
+    if (type === "buy") {
+      const curPerUsd = usdSell(c);
+      const againstPerUsd = usdBuy(a);
+      return curPerUsd > 0 && againstPerUsd > 0 ? againstPerUsd / curPerUsd : null;
+    }
+
+    // Selling cur: obtain USD by buying it with cur, then sell USD for against.
+    const curPerUsd = usdBuy(c);
+    const againstPerUsd = usdSell(a);
+    return curPerUsd > 0 && againstPerUsd > 0 ? againstPerUsd / curPerUsd : null;
   };
 
   /* ───────── کردارەکان ───────── */
@@ -1349,7 +1421,12 @@ export default function App() {
       flash("ئەم مامەڵەیە سڕاوەتەوە و ناتوانرێت دەستکاری بکرێت");
       return false;
     }
-    const amount = Math.round(+f.amount), rate = +f.rate, total = Math.round(amount * rate);
+    const roundCur = (value, curId) => {
+      const dec = Math.max(0, Math.min(6, Number(cur(curId).dec) || 0));
+      const m = 10 ** dec;
+      return Math.round(Number(value) * m) / m;
+    };
+    const amount = roundCur(+f.amount, f.curId), rate = +f.rate, total = roundCur(amount * rate, f.againstId);
     if (!(amount > 0)) { flash("بڕ دەبێت لە سفر گەورەتر بێت"); return false; }
     if (f.curId === f.againstId) { flash("ناکرێت دراوەکە لەگەڵ خۆی مامەڵەی پێبکرێت"); return false; }
 
@@ -1361,11 +1438,14 @@ export default function App() {
       if (!f.toId && !f.toName) { flash("بە کێ دەیفرۆشیت؟"); return false; }
 
       return await run(async () => {
-        const bq = Math.round((+f.buyQuote) * 1000) / 1000;
-        const sq = Math.round((+f.sellQuote) * 1000) / 1000;
-        const buyTotal = Math.round(amount / bq);
-        const sellTotal = Math.round(amount / sq);
-        const profit = sellTotal - buyTotal;
+        const bq = +f.buyQuote;
+        const sq = +f.sellQuote;
+        const displayBaseId = f.rateBaseId || preferredRateBaseId(f.curId, f.againstId);
+        const buyStoredRate = displayRateToStored(bq, f.curId, f.againstId, displayBaseId);
+        const sellStoredRate = displayRateToStored(sq, f.curId, f.againstId, displayBaseId);
+        const buyTotal = roundCur(amount * buyStoredRate, f.againstId);
+        const sellTotal = roundCur(amount * sellStoredRate, f.againstId);
+        const profit = roundCur(sellTotal - buyTotal, f.againstId);
         const pair = uid();
         const base = Math.max(1000, ...data.txs.map((x) => x.code || 0));
 
@@ -1373,7 +1453,7 @@ export default function App() {
         const t1 = {
           id: uid(), code: base + 1, type: "buy", direct: true, pairId: pair, directRole: "buy",
           ownMoney: true, cpId: f.fromId || null, cpName: f.fromId ? null : f.fromName,
-          curId: f.curId, amount, rate: 1 / bq, againstId: f.againstId, total: buyTotal,
+          curId: f.curId, amount, rate: buyStoredRate, againstId: f.againstId, total: buyTotal,
           partnerId: null, status: f.buyStatus || "completed", paidAt: null,
           profit: null, profitCurId: null, note: f.note || "", date: now(), edited: false,
         };
@@ -1381,8 +1461,8 @@ export default function App() {
         const t2 = {
           id: uid(), code: base + 2, type: "sell", direct: true, pairId: pair, directRole: "sell",
           ownMoney: true, cpId: f.toId || null, cpName: f.toId ? null : f.toName,
-          curId: f.curId, amount, rate: 1 / sq, againstId: f.againstId, total: sellTotal,
-          partnerId: null, status: f.sellStatus || "completed", paidAt: null,
+          curId: f.curId, amount, rate: sellStoredRate, againstId: f.againstId, total: sellTotal,
+          buyRate: buyStoredRate, buyTotal, partnerId: null, status: f.sellStatus || "completed", paidAt: null,
           profit, profitCurId: f.againstId, note: f.note || "", date: now(), edited: false,
         };
 
@@ -1412,8 +1492,11 @@ export default function App() {
     return await run(async () => {
       let profit = null, profitCurId = null;
       if (f.type === "sell") {
-        const av = avgRate(f.curId, f.againstId);
-        if (av !== null) { profit = Math.round(total - av * amount); profitCurId = f.againstId; }
+        const pos = inventoryPosition(f.curId, f.againstId, existing?.id || null);
+        if (pos.avgRate !== null && amount <= pos.qty + 1e-9) {
+          profit = roundCur(total - pos.avgRate * amount, f.againstId);
+          profitCurId = f.againstId;
+        }
       }
       const code = existing ? existing.code : Math.max(1000, ...data.txs.map((x) => x.code || 0)) + 1;
       const t = { id: existing ? existing.id : uid(), code, type: f.type, cpId: f.cpId || null,
@@ -1569,8 +1652,13 @@ export default function App() {
 
   const saveRates = (rows) => run(async () => {
     for (const r of rows) {
-      const r3 = (v) => (v === "" || v == null ? null : Math.round(+v * 1000) / 1000);
-      const e = await supabase.from("currencies").update({ buy_rate: r3(r.buyRate), sell_rate: r3(r.sellRate), rate_updated: now() }).eq("id", r.id);
+      for (const [label, value] of [["کڕین", r.buyRate], ["فرۆشتن", r.sellRate]]) {
+        if (value !== "" && value != null && !(Number(value) > 0)) {
+          throw new Error(`${cur(r.id).code} — نرخی ${label} دەبێت لە سفر گەورەتر بێت`);
+        }
+      }
+      const r6 = (v) => (v === "" || v == null ? null : Math.round(+v * 1_000_000) / 1_000_000);
+      const e = await supabase.from("currencies").update({ buy_rate: r6(r.buyRate), sell_rate: r6(r.sellRate), rate_updated: now() }).eq("id", r.id);
       if (e.error) throw e.error;
     }
     // مێژووی نرخ تۆمار بکە
@@ -1853,7 +1941,7 @@ export default function App() {
 
 
   const shared = { data, calc, cur, usr, mySafe, profitAll, profitIn, ownProfitIn, ownProfitAll,
-    inScope, scopedCap, investorsProfitIn, invShare, invUnpaid, autoRate, avgRate,
+    inScope, scopedCap, investorsProfitIn, invShare, invUnpaid, autoRate, avgRate, inventoryPosition,
     toUsd, sumUsd, ratesReady, owners, notify, waNotify };
 
   return (
@@ -2408,13 +2496,13 @@ function Dashboard({ data, calc, cur, mySafe, profitIn, ownProfitIn, investorsPr
         </section>
 
         <section className="fin-card p-5 md:p-6">
-          <div className="flex items-center justify-between mb-4"><h2 className="text-[16px] font-bold">Currency Rates</h2><button onClick={()=>go("rates")} className="text-[11px] font-semibold" style={{color:"var(--ac)"}}>{tr("هەمووی")}</button></div>
+          <div className="flex items-center justify-between mb-4"><h2 className="text-[16px] font-bold">Internal Rates</h2><button onClick={()=>go("rates")} className="text-[11px] font-semibold" style={{color:"var(--ac)"}}>{tr("هەمووی")}</button></div>
           <div className="space-y-1">
             {data.currencies.filter(c=>c.id!=="usd").slice(0,5).map(c=>(
               <div key={c.id} className="flex items-center gap-3 py-3 border-b last:border-0" style={{borderColor:"var(--line)"}}>
                 <Flag c={c}/><div className="min-w-0 flex-1"><div className="text-[13px] font-semibold">{c.code}</div><div className="text-[10px] truncate" style={{color:"var(--txt-3)"}}>{c.name}</div></div>
                 <div className="text-end" style={num}><div className="text-[12px] font-semibold">{c.buyRate?fmt(c.buyRate,3):"—"}</div><div className="text-[10px]" style={{color:"var(--txt-3)"}}>{c.sellRate?fmt(c.sellRate,3):"—"}</div></div>
-                <div className="text-[10px] font-semibold min-w-[38px] text-end" style={{color:c.buyRate?"var(--pos)":"var(--txt-3)"}}>{c.buyRate?"Live":"—"}</div>
+                <div className="text-[10px] font-semibold min-w-[38px] text-end" style={{color:c.buyRate?"var(--pos)":"var(--txt-3)"}}>{c.buyRate?"Internal":"—"}</div>
               </div>
             ))}
           </div>
@@ -2427,7 +2515,13 @@ function Dashboard({ data, calc, cur, mySafe, profitIn, ownProfitIn, investorsPr
           <div className="flex items-center justify-between mb-4"><h2 className="text-[16px] font-bold">Recent Transactions</h2><button onClick={()=>go("txs")} className="text-[11px] font-semibold" style={{color:"var(--ac)"}}>{tr("هەمووی")}</button></div>
           <div className="hidden md:grid grid-cols-[.8fr_.65fr_1fr_.7fr_.8fr_.8fr] gap-3 px-2 pb-2 text-[10px] font-semibold" style={{color:"var(--txt-3)"}}><span>Type</span><span>Currency</span><span>Amount</span><span>Rate</span><span>Profit</span><span>Status</span></div>
           <div className="space-y-1">
-            {recent.map(t=>{const c=cur(t.curId), positive=t.type==="buy"; return <button key={t.id} onClick={()=>go("txs")} className="w-full text-start grid grid-cols-[1fr_auto] md:grid-cols-[.8fr_.65fr_1fr_.7fr_.8fr_.8fr] gap-3 items-center px-2 py-3 rounded-xl tap hover:bg-[var(--surf-2)]"><div><div className="text-[12px] font-semibold">{t.type==="buy"?tr("کڕین"):tr("فرۆشتن")}</div><div className="text-[9px] md:hidden" style={{color:"var(--txt-3)"}}>{t.cpName||usrSafeName(data,t.cpId)||"—"}</div></div><div className="flex items-center gap-1.5 text-[11px] font-semibold"><span>{curFlag(c)}</span>{c.code}</div><div style={num} className="text-[12px] font-semibold">{fmt(t.amount,0)}</div><div style={num} className="hidden md:block text-[11px]">{fmt(t.rate,3)}</div><div style={{...num, color: t.profit == null ? "var(--txt-3)" : Number(t.profit) >= 0 ? "var(--pos)" : "var(--neg)"}} className="hidden md:block text-[11px]">
+            {recent.map(t=>{const c=cur(t.curId), positive=t.type==="buy"; return <button key={t.id} onClick={()=>go("txs")} className="w-full text-start grid grid-cols-[1fr_auto] md:grid-cols-[.8fr_.65fr_1fr_.7fr_.8fr_.8fr] gap-3 items-center px-2 py-3 rounded-xl tap hover:bg-[var(--surf-2)]"><div><div className="text-[12px] font-semibold">{t.type==="buy"?tr("کڕین"):tr("فرۆشتن")}</div><div className="text-[9px] md:hidden" style={{color:"var(--txt-3)"}}>{t.cpName||usrSafeName(data,t.cpId)||"—"}</div></div><div className="flex items-center gap-1.5 text-[11px] font-semibold"><span>{curFlag(c)}</span>{c.code}</div><div style={num} className="text-[12px] font-semibold">{fmt(t.amount,0)}</div><div style={num} className="hidden md:block text-[11px]">
+  {(() => {
+    const baseId = preferredRateBaseId(t.curId, t.againstId);
+    const shown = storedRateToDisplay(t.rate, t.curId, t.againstId, baseId);
+    return shown ? fmt(shown, rateDigits(shown)) : "—";
+  })()}
+</div><div style={{...num, color: t.profit == null ? "var(--txt-3)" : Number(t.profit) >= 0 ? "var(--pos)" : "var(--neg)"}} className="hidden md:block text-[11px]">
   {t.profit == null ? "—" : `${t.profit >= 0 ? "+" : "−"}${fmt(Math.abs(t.profit),0)} ${cur(t.profitCurId || t.againstId).code}`}
 </div><div className="text-end md:text-start"><Pill tone={t.status==="pending"?"amber":positive?"green":"slate"}>{t.status==="pending"?tr("چاوەڕوان"):tr("تەواوکراو")}</Pill></div></button>})}
             {!recent.length && <Empty t={tr("هیچ مامەڵەیەک نەدۆزرایەوە")}/>} 
@@ -2581,52 +2675,239 @@ function CurrencyBreakdown({ curId, data, calc, cur, owners, ratesReady }) {
 
 /* ══════════════════ نرخی ڕۆژانە ══════════════════ */
 function Rates({ data, saveRates }) {
-  const [rows, setRows] = useState(data.currencies.filter((c) => c.id !== "usd").map((c) => ({ id: c.id, code: c.code, name: c.name, c, buyRate: c.buyRate ?? "", sellRate: c.sellRate ?? "" })));
-  const upd = (id, k, v) => setRows(rows.map((r) => (r.id === id ? { ...r, [k]: v } : r)));
-  const last = data.currencies.find((c) => c.rateUpdated)?.rateUpdated;
+  const [rows, setRows] = useState(
+    data.currencies
+      .filter((c) => c.id !== "usd")
+      .map((c) => ({ id: c.id, code: c.code, name: c.name, c, buyRate: c.buyRate ?? "", sellRate: c.sellRate ?? "" }))
+  );
+  const [market, setMarket] = useState(null);
+  const [marketBusy, setMarketBusy] = useState(false);
+  const [marketErr, setMarketErr] = useState("");
+  const [marketOpen, setMarketOpen] = useState(false);
+  const [marketSearch, setMarketSearch] = useState("");
+
+  const upd = (id, k, v) => setRows((xs) => xs.map((r) => (r.id === id ? { ...r, [k]: v } : r)));
+  const last = data.currencies.map((c) => c.rateUpdated).filter(Boolean).sort().at(-1) || null;
+
+  const loadMarket = async (force = false) => {
+    if (marketBusy) return;
+    const cacheKey = "sarraf_market_rates_v1";
+    const maxAge = 12 * 60 * 60 * 1000;
+    if (!force) {
+      try {
+        const cached = JSON.parse(localStorage.getItem(cacheKey) || "null");
+        if (cached?.at && cached?.data && Date.now() - cached.at < maxAge) {
+          setMarket(cached.data);
+          return;
+        }
+      } catch {}
+    }
+
+    setMarketBusy(true);
+    setMarketErr("");
+    try {
+      const res = await fetch("/api/market-rates", { headers: { Accept: "application/json" } });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body?.ok) throw new Error(body?.message || "نرخی بازاڕ بەردەست نییە");
+      setMarket(body);
+      try { localStorage.setItem(cacheKey, JSON.stringify({ at: Date.now(), data: body })); } catch {}
+    } catch (err) {
+      console.error("market-rates", err);
+      setMarketErr(err?.message || "نەتوانرا نرخی بازاڕ بار بکرێت");
+    } finally {
+      setMarketBusy(false);
+    }
+  };
+
+  useEffect(() => { loadMarket(false); }, []);
+
+  const marketNames = {
+    IQD: "Iraqi Dinar", EUR: "Euro", GBP: "British Pound", CNY: "Chinese Yuan", JPY: "Japanese Yen",
+    TRY: "Turkish Lira", AED: "UAE Dirham", SAR: "Saudi Riyal", KWD: "Kuwaiti Dinar", QAR: "Qatari Riyal",
+    CAD: "Canadian Dollar", AUD: "Australian Dollar", CHF: "Swiss Franc", INR: "Indian Rupee", KRW: "South Korean Won"
+  };
+  const marketFlags = {
+    IQD:"🇮🇶", EUR:"🇪🇺", GBP:"🇬🇧", CNY:"🇨🇳", JPY:"🇯🇵", TRY:"🇹🇷", AED:"🇦🇪", SAR:"🇸🇦",
+    KWD:"🇰🇼", QAR:"🇶🇦", CAD:"🇨🇦", AUD:"🇦🇺", CHF:"🇨🇭", INR:"🇮🇳", KRW:"🇰🇷", USD:"🇺🇸"
+  };
+  const majors = ["IQD","EUR","GBP","CNY","JPY","TRY","AED","SAR","KWD","QAR","CAD","AUD","CHF","INR","KRW"];
+  const allMarketRates = Object.entries(market?.rates || {})
+    .filter(([code, value]) => code !== "USD" && Number(value) > 0)
+    .sort(([a], [b]) => {
+      const ai = majors.indexOf(a), bi = majors.indexOf(b);
+      if (ai !== -1 || bi !== -1) return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+      return a.localeCompare(b);
+    })
+    .filter(([code]) => !marketSearch || `${code} ${marketNames[code] || ""}`.toLowerCase().includes(marketSearch.toLowerCase()));
+
+  const visibleMarketRates = marketOpen || marketSearch ? allMarketRates : allMarketRates.slice(0, 10);
+  const metals = [
+    ["gold", "Gold", "🥇"],
+    ["silver", "Silver", "🥈"],
+    ["platinum", "Platinum", "⬜"],
+    ["palladium", "Palladium", "◻️"],
+  ].filter(([key]) => Number(market?.metals?.[key]) > 0);
+
   return (
     <div className="space-y-4">
-      <H sub="ڕەیتی هەر دراوێک بەرامبەر ١ دۆلار — لە مامەڵەکاندا ئۆتۆماتیکی بەکاردێت">{tr("نرخی ئەمڕۆ")}</H>
+      <H sub="نرخی ناوخۆی تۆ — تەنها ئەم نرخانە لە مامەڵە و حیسابەکاندا بەکاردێن">
+        {tr("نرخی ئەمڕۆ")}
+      </H>
+
       <Card className="p-5">
-        <div className="text-xs text-[var(--txt-2)] mb-4 bg-[var(--line)] rounded-[var(--r-sm)] p-3 leading-relaxed">
-          <b className="text-[var(--txt)]">{tr("١ دۆلار = چەند؟")}</b> — نموونە: گەر ١ دۆلار بە <b>{tr("٧.٢٠")}</b> یەن بکڕیت و بە <b>{tr("٧.١٥")}</b> یەن بیفرۆشیت، ئەو دوو ژمارەیە بنووسە.
+        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3 mb-4">
+          <div>
+            <div className="text-[14px] font-bold" style={{ color: "var(--txt)" }}>نرخی ناوخۆی سەراف</div>
+            <div className="text-[11.5px] mt-1 leading-relaxed" style={{ color: "var(--txt-3)" }}>
+              هەموو نرخەکان بە شێوەی <b style={{ color:"var(--txt)" }}>1 USD = X دراو</b> تۆمار دەکرێن.
+              بۆ نموونە: <b style={{ color:"var(--txt)" }}>1 USD = 1,410 IQD</b> یان <b style={{ color:"var(--txt)" }}>1 USD = 7.20 CNY</b>.
+            </div>
+          </div>
+          <div className="px-3 py-2 rounded-xl text-[10.5px] font-semibold shrink-0"
+            style={{ background:"var(--pos-bg)", color:"var(--pos)" }}>
+            INTERNAL · کاریگەر لە مامەڵەکان
+          </div>
         </div>
+
         <div className="space-y-4">
           {rows.map((r) => (
             <div key={r.id} className="pb-4 border-b border-[var(--line)] last:border-0 last:pb-0">
               <div className="flex items-center gap-2.5 mb-2.5">
+                <span className="text-xl" aria-hidden>{curFlag({ id: "usd" })}</span>
+                <span className="text-sm font-bold text-[var(--txt)]">USD</span>
+                <ArrowLeftRight className="w-3.5 h-3.5 text-[var(--txt-3)]" />
                 <CurBadge c={r.c} size="sm" />
-                <span className="text-sm font-semibold text-[var(--txt)]">{r.name}</span>
-                <span className="text-xs text-[var(--txt-3)]">({r.code})</span>
+                <span className="text-sm font-semibold text-[var(--txt)]">{r.code}</span>
+                <span className="text-xs text-[var(--txt-3)] hidden sm:inline">{r.name}</span>
               </div>
-              <div className="grid grid-cols-2 gap-2.5">
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 <div>
-                  <div className="text-[11px] font-semibold text-[var(--pos)] mb-1">{tr("١ دۆلار بە چەند دەکڕم")}</div>
+                  <div className="text-[11px] font-semibold text-[var(--pos)] mb-1">
+                    کاتێک USD دەکڕیت · 1 USD = ؟ {r.code}
+                  </div>
                   <Inp type="number" step="any" dir="ltr" value={r.buyRate}
                     onChange={(e) => upd(r.id, "buyRate", e.target.value)}
-                    className="text-center font-bold text-base" placeholder="7.20" />
+                    className="text-center font-bold text-base" placeholder={r.code === "IQD" ? "1410" : "7.20"} />
                 </div>
                 <div>
-                  <div className="text-[11px] font-semibold text-[var(--neg)] mb-1">{tr("١ دۆلار بە چەند دەفرۆشم")}</div>
+                  <div className="text-[11px] font-semibold text-[var(--neg)] mb-1">
+                    کاتێک USD دەفرۆشیت · 1 USD = ؟ {r.code}
+                  </div>
                   <Inp type="number" step="any" dir="ltr" value={r.sellRate}
                     onChange={(e) => upd(r.id, "sellRate", e.target.value)}
-                    className="text-center font-bold text-base" placeholder="7.15" />
+                    className="text-center font-bold text-base" placeholder={r.code === "IQD" ? "1420" : "7.25"} />
                 </div>
               </div>
-              {r.buyRate && r.sellRate && (
-                <div className="text-[11px] text-[var(--txt-3)] mt-1.5" style={num}>
-                  جیاوازی: {fmt(Math.abs(+r.buyRate - +r.sellRate), 3)} — خێری تۆ لە هەر دۆلارێک
+
+              {Number(r.buyRate) > 0 && Number(r.sellRate) > 0 && (
+                <div className="text-[11px] text-[var(--txt-3)] mt-1.5 flex flex-wrap gap-x-3 gap-y-1" style={num}>
+                  <span>Spread: {fmt(Math.abs(+r.sellRate - +r.buyRate), rateDigits(Math.abs(+r.sellRate - +r.buyRate)))}</span>
+                  <span>Mid: {fmt((+r.buyRate + +r.sellRate) / 2, rateDigits((+r.buyRate + +r.sellRate) / 2))}</span>
                 </div>
               )}
             </div>
           ))}
         </div>
-        <div className="mt-4 flex items-center gap-3">
+
+        <div className="mt-4 flex flex-wrap items-center gap-3">
           <Btn onClick={() => saveRates(rows)}>پاشەکەوتکردنی نرخەکان</Btn>
           {last && <span className="text-xs text-[var(--txt-3)]">دوا نوێکردنەوە: {new Date(last).toLocaleString("en-GB")}</span>}
         </div>
       </Card>
 
+      <Card className="p-5">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <TrendingUp className="w-4 h-4" style={{ color:"var(--ac)" }} />
+              <div className="text-[14px] font-bold" style={{ color:"var(--txt)" }}>نرخی بازاڕی جیهانی</div>
+              <span className="px-2 py-1 rounded-full text-[9.5px] font-semibold" style={{ background:"var(--surf-3)", color:"var(--txt-3)" }}>
+                REFERENCE ONLY
+              </span>
+            </div>
+            <div className="text-[11.5px] mt-1" style={{ color:"var(--txt-3)" }}>
+              تەنها بۆ زانیاری و جوانییە — هیچ کاریگەرییەکی لە نرخی ناوخۆ، مامەڵە، خێر یان باڵانس نییە.
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={() => loadMarket(true)} disabled={marketBusy}
+              className="px-3 py-2 rounded-xl text-[11px] font-semibold tap flex items-center gap-1.5"
+              style={{ background:"var(--surf-2)", border:"1px solid var(--line)", color:"var(--txt-2)" }}>
+              <RotateCcw className={`w-3.5 h-3.5 ${marketBusy ? "animate-spin" : ""}`} />
+              {marketBusy ? "..." : "نوێکردنەوە"}
+            </button>
+          </div>
+        </div>
+
+        {marketErr && (
+          <div className="mb-4 p-3 rounded-xl text-[11.5px] flex items-start gap-2"
+            style={{ background:"var(--warn-bg)", color:"var(--warn)" }}>
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>{marketErr}</span>
+          </div>
+        )}
+
+        {market && (
+          <>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 mb-5">
+              {metals.map(([key, name, icon]) => (
+                <div key={key} className="rounded-[var(--r-sm)] p-3.5" style={{ background:"var(--surf-2)", border:"1px solid var(--line)" }}>
+                  <div className="text-[11px] flex items-center gap-1.5" style={{ color:"var(--txt-3)" }}><span>{icon}</span>{name}</div>
+                  <div className="text-[16px] font-bold mt-1" style={{ ...num, color:"var(--txt)" }}>
+                    ${fmt(market.metals[key], 2)}
+                  </div>
+                  <div className="text-[9.5px] mt-0.5" style={{ color:"var(--txt-3)" }}>USD / troy oz</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-2 mb-3">
+              <div className="relative flex-1">
+                <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color:"var(--txt-3)" }} />
+                <input value={marketSearch} onChange={(e) => setMarketSearch(e.target.value)}
+                  placeholder="گەڕان بە USD, EUR, CNY..."
+                  className="w-full ps-9 pe-3 py-2.5 rounded-xl outline-none text-[12px]"
+                  style={{ background:"var(--surf-2)", border:"1px solid var(--line)", color:"var(--txt)" }} />
+              </div>
+              <div className="text-[10.5px] flex items-center" style={{ color:"var(--txt-3)" }}>
+                {market.provider} · {market.timestamp ? new Date(market.timestamp).toLocaleString("en-GB") : "—"}
+              </div>
+            </div>
+
+            <div className="max-h-[420px] overflow-y-auto rounded-[var(--r-sm)]" style={{ border:"1px solid var(--line)" }}>
+              {visibleMarketRates.map(([code, value]) => (
+                <div key={code} className="grid grid-cols-[auto_1fr_auto] items-center gap-3 px-3.5 py-3 border-b last:border-0"
+                  style={{ borderColor:"var(--line)" }}>
+                  <span className="text-[19px]">{marketFlags[code] || "🌐"}</span>
+                  <div className="min-w-0">
+                    <div className="text-[12.5px] font-semibold">{code}</div>
+                    <div className="text-[9.5px] truncate" style={{ color:"var(--txt-3)" }}>{marketNames[code] || "Global currency"}</div>
+                  </div>
+                  <div className="text-end">
+                    <div className="text-[12px] font-semibold" style={num}>1 USD = {fmt(value, rateDigits(value))}</div>
+                    <div className="text-[9.5px]" style={{ color:"var(--txt-3)" }}>{code}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {!marketSearch && allMarketRates.length > 10 && (
+              <button onClick={() => setMarketOpen((v) => !v)}
+                className="mt-3 w-full py-2.5 rounded-xl text-[11.5px] font-semibold tap"
+                style={{ background:"var(--surf-2)", color:"var(--txt-2)", border:"1px solid var(--line)" }}>
+                {marketOpen ? "کەمتر پیشان بدە" : `هەموو ${allMarketRates.length} دراوەکە پیشان بدە`}
+              </button>
+            )}
+          </>
+        )}
+
+        {!market && !marketErr && (
+          <div className="py-8 text-center text-[12px]" style={{ color:"var(--txt-3)" }}>
+            {marketBusy ? "نرخی بازاڕ بار دەکرێت..." : "نرخی بازاڕ هێشتا بار نەکراوە"}
+          </div>
+        )}
+      </Card>
     </div>
   );
 }
@@ -2807,68 +3088,176 @@ function Safes({ data, calc, cur, usr, mySafe, invUnpaid, owners, ratesReady, ad
 }
 
 /* ══════════════════ فۆرمی مامەڵە ══════════════════ */
-function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCancel, lockCp, batch, onClearBatch, busy }) {
+function TxForm({ data, cur, calc, usr, avgRate, inventoryPosition, autoRate, onSave, editing, onCancel, lockCp, batch, onClearBatch, busy }) {
   const e = editing;
   const [sending, setSending] = useState(false);
   const bCur = batch ? data.currencies.find((c) => c.code === batch.currency)?.id : null;
+
+  const pickAgainst = (curId) => {
+    if (curId !== "usd" && data.currencies.some((c) => c.id === "usd")) return "usd";
+    return data.currencies.find((c) => c.id === "iqd" && c.id !== curId)?.id
+      || data.currencies.find((c) => c.id !== curId)?.id
+      || "";
+  };
+
+  const initialCurId = e ? e.curId : (bCur || data.currencies.find((c) => c.id !== "usd")?.id || data.currencies[0]?.id || "");
+  const initialAgainstId = e ? e.againstId : pickAgainst(initialCurId);
+  const initialRateBaseId = preferredRateBaseId(initialCurId, initialAgainstId);
+
   const [f, setF] = useState({
     type: e ? e.type : (batch?.direction === "out" ? "sell" : "buy"),
-    curId: e ? e.curId : (bCur || data.currencies.find((c) => c.id !== "usd")?.id || data.currencies[0]?.id),
-    amount: e ? e.amount : (batch ? Math.round(batch.total_net) : ""),
-    againstId: e ? e.againstId : "usd",
-    quote: e && e.rate ? 1 / e.rate : "",
+    curId: initialCurId,
+    amount: e ? e.amount : (batch ? batch.total_net : ""),
+    againstId: initialAgainstId,
+    rateBaseId: initialRateBaseId,
+    quote: e && e.rate ? storedRateToDisplay(e.rate, initialCurId, initialAgainstId, initialRateBaseId) : "",
     manualRate: !!e,
     cpMode: e ? (e.cpId ? "acc" : "free") : "acc",
     cpId: e ? e.cpId || "" : (lockCp || batch?.customer_id || ""),
     cpName: e ? e.cpName || "" : "",
     partnerId: e ? e.partnerId || "" : (batch?.partner_id || ""),
     direct: e ? !!e.direct : false,
-    buyQuote: e && e.buyRate ? Math.round((1 / e.buyRate) * 1000) / 1000 : "",
-    sellQuote: e && e.direct && e.rate ? Math.round((1 / e.rate) * 1000) / 1000 : "",
+    buyQuote: e && e.buyRate ? storedRateToDisplay(e.buyRate, initialCurId, initialAgainstId, initialRateBaseId) : "",
+    sellQuote: e && e.direct && e.rate ? storedRateToDisplay(e.rate, initialCurId, initialAgainstId, initialRateBaseId) : "",
     fromId: "", fromName: "", toId: "", toName: "",
     buyStatus: "completed", sellStatus: "completed",
     status: e ? e.status : "completed",
     note: e ? e.note : "",
   });
+
   const customers = data.users.filter((u) => u.role === "customer" && !u.deleted);
   const partners = data.users.filter((u) => u.role === "partner" && !u.deleted);
 
-  const auto = autoRate(f.type, f.curId, f.againstId);          // نرخی یەک یەکە (ناوەکی)
-  const autoQuote = auto ? Math.round((1 / auto) * 1000) / 1000 : null;   // یەک بەرامبەر چەند — ٣ خانە
-  // نرخی ڕۆژ خۆکار دادەنرێت، بەڵام هەر کاتێک دەتوانیت بیگۆڕیت
+  const roundByCurrency = (value, curId) => {
+    const dec = Math.max(0, Math.min(6, Number(cur(curId).dec) || 0));
+    const m = 10 ** dec;
+    return Math.round((Number(value) || 0) * m) / m;
+  };
+
+  const autoStored = autoRate(f.type, f.curId, f.againstId);
+  const autoQuote = autoStored
+    ? storedRateToDisplay(autoStored, f.curId, f.againstId, f.rateBaseId)
+    : null;
+
+  const directBuyAutoStored = autoRate("buy", f.curId, f.againstId);
+  const directSellAutoStored = autoRate("sell", f.curId, f.againstId);
+  const directBuyAuto = directBuyAutoStored
+    ? storedRateToDisplay(directBuyAutoStored, f.curId, f.againstId, f.rateBaseId)
+    : null;
+  const directSellAuto = directSellAutoStored
+    ? storedRateToDisplay(directSellAutoStored, f.curId, f.againstId, f.rateBaseId)
+    : null;
+
   useEffect(() => {
-    if (!f.manualRate && autoQuote) setF((x) => (+x.quote === autoQuote ? x : { ...x, quote: autoQuote }));
-  }, [autoQuote, f.manualRate]);
-  const quote = +f.quote || 0;                                    // ئەوەی بەکارهێنەر دەینووسێت (٣ خانە)
-  const rate = quote ? 1 / quote : 0;                             // بۆ حیسابی ناوەکی
-  const offDay = autoQuote && quote && Math.abs(quote - autoQuote) > autoQuote * 0.0001;
+    if (!f.manualRate && autoQuote) {
+      setF((x) => {
+        const next = Number(autoQuote.toPrecision(10));
+        return Number(x.quote) === next ? x : { ...x, quote: next };
+      });
+    }
+  }, [autoQuote, f.manualRate, f.curId, f.againstId, f.type, f.rateBaseId]);
+
+  const quote = Number(f.quote) || 0;
+  const rate = displayRateToStored(quote, f.curId, f.againstId, f.rateBaseId);
+  const offDay = !!(autoQuote && quote && Math.abs(quote - autoQuote) > Math.abs(autoQuote) * 0.0001);
+
+  const amtR = roundByCurrency(f.amount, f.curId);
+  const total = rate > 0 ? roundByCurrency(amtR * rate, f.againstId) : 0;
+
   // ── مامەڵەی ڕاستەوخۆ ──
-  const bq = +f.buyQuote || 0, sq = +f.sellQuote || 0;
-  const dBuyTotal = bq ? Math.round((Math.round(+f.amount || 0)) / bq) : 0;
-  const dSellTotal = sq ? Math.round((Math.round(+f.amount || 0)) / sq) : 0;
-  const dProfit = bq && sq ? dSellTotal - dBuyTotal : null;
-  const amtR = Math.round(+f.amount || 0);
-  const total = quote ? Math.round(amtR / quote) : 0;             // بەشکردن، نەک لێکدان
-  const av = f.type === "sell" ? avgRate(f.curId, f.againstId) : null;
-  const estProfit = f.type === "sell" && av !== null ? Math.round(total - av * amtR) : null;
+  const bq = Number(f.buyQuote) || 0;
+  const sq = Number(f.sellQuote) || 0;
+  const dBuyRate = displayRateToStored(bq, f.curId, f.againstId, f.rateBaseId);
+  const dSellRate = displayRateToStored(sq, f.curId, f.againstId, f.rateBaseId);
+  const dBuyTotal = dBuyRate > 0 ? roundByCurrency(amtR * dBuyRate, f.againstId) : 0;
+  const dSellTotal = dSellRate > 0 ? roundByCurrency(amtR * dSellRate, f.againstId) : 0;
+  const dProfit = bq > 0 && sq > 0 ? roundByCurrency(dSellTotal - dBuyTotal, f.againstId) : null;
+
+  const pos = f.type === "sell" && inventoryPosition
+    ? inventoryPosition(f.curId, f.againstId, e?.id || null)
+    : null;
+  const av = f.type === "sell"
+    ? (pos?.avgRate ?? avgRate(f.curId, f.againstId, e?.id || null))
+    : null;
+  const enoughCostBasis = f.type !== "sell" || !pos || amtR <= pos.qty + 1e-9;
+  const estProfit = f.type === "sell" && av !== null && enoughCostBasis
+    ? roundByCurrency(total - av * amtR, f.againstId)
+    : null;
+
   const srcBal = f.partnerId ? ((calc.partner[f.partnerId] || {})[f.curId] || 0) : (calc.atMe[f.curId] || 0);
-  const willBeNeg = f.type === "sell" && srcBal - amtR < 0;
+  const willBeNeg = f.type === "sell" && srcBal - amtR < -1e-9;
   const feeRate = f.partnerId ? (usr(f.partnerId).rate || 0) : 0;
+  const rateQuoteId = oppositePairId(f.curId, f.againstId, f.rateBaseId);
+
+  const setPair = (nextCurId, nextAgainstId) => {
+    let c = nextCurId, a = nextAgainstId;
+    if (!c || !a) return;
+    if (c === a) a = pickAgainst(c);
+    if (!a || c === a) return;
+
+    const nextBase = preferredRateBaseId(c, a);
+    setF((x) => ({
+      ...x,
+      curId: c,
+      againstId: a,
+      rateBaseId: nextBase,
+      quote: "",
+      manualRate: false,
+      buyQuote: "",
+      sellQuote: "",
+      partnerId: cur(c).external ? x.partnerId : x.partnerId,
+    }));
+  };
+
+  const swapPair = () => {
+    if (!f.curId || !f.againstId) return;
+    const oldStored = displayRateToStored(f.quote, f.curId, f.againstId, f.rateBaseId);
+    const nextCur = f.againstId, nextAgainst = f.curId;
+    const nextBase = preferredRateBaseId(nextCur, nextAgainst);
+    const nextStored = oldStored > 0 ? 1 / oldStored : 0;
+    const nextQuote = nextStored > 0 ? storedRateToDisplay(nextStored, nextCur, nextAgainst, nextBase) : "";
+    setF((x) => ({
+      ...x,
+      curId: nextCur,
+      againstId: nextAgainst,
+      rateBaseId: nextBase,
+      quote: nextQuote || "",
+      manualRate: !!nextQuote,
+      buyQuote: "",
+      sellQuote: "",
+      partnerId: "",
+    }));
+  };
+
+  const flipRateView = () => {
+    const nextBase = f.rateBaseId === f.curId ? f.againstId : f.curId;
+    const invert = (value) => Number(value) > 0 ? 1 / Number(value) : "";
+    setF((x) => ({
+      ...x,
+      rateBaseId: nextBase,
+      quote: invert(x.quote),
+      buyQuote: invert(x.buyQuote),
+      sellQuote: invert(x.sellQuote),
+    }));
+  };
 
   const blank = {
-    type: f.type, curId: f.curId, amount: "", againstId: f.againstId, quote: f.quote,
+    type: f.type, curId: f.curId, amount: "", againstId: f.againstId, rateBaseId: f.rateBaseId, quote: f.quote,
     manualRate: f.manualRate, cpMode: "acc", cpId: lockCp || "", cpName: "",
     partnerId: "", status: "completed", note: "",
     direct: f.direct, buyQuote: f.buyQuote, sellQuote: f.sellQuote,
   };
+
   const submit = async () => {
-    if (sending || busy) return;                       // ڕێگری لە دوو جار کلیک
+    if (sending || busy) return;
+    if (!f.curId || !f.againstId || f.curId === f.againstId) return;
     setSending(true);
     try {
-      const q3 = Math.round(quote * 1000) / 1000;
-      const ok = await onSave({ ...f, rate: q3 ? 1 / q3 : 0, batchId: batch?.id }, e);
-      if (ok !== false && !e) setF(blank);              // سفرکردنەوەی خانەکان
-    } finally { setTimeout(() => setSending(false), 400); }
+      const ok = await onSave({ ...f, rate, batchId: batch?.id }, e);
+      if (ok !== false && !e) setF(blank);
+    } finally {
+      setTimeout(() => setSending(false), 400);
+    }
   };
 
   return (
@@ -2917,7 +3306,16 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
       </div>
 
       {!batch && !e && (
-        <button onClick={() => setF({ ...f, direct: !f.direct, partnerId: "" })}
+        <button onClick={() => {
+          const next = !f.direct;
+          setF({
+            ...f,
+            direct: next,
+            partnerId: "",
+            buyQuote: next && directBuyAuto ? Number(directBuyAuto.toPrecision(10)) : f.buyQuote,
+            sellQuote: next && directSellAuto ? Number(directSellAuto.toPrecision(10)) : f.sellQuote,
+          });
+        }}
           className="w-full flex items-center gap-3 p-3.5 rounded-[var(--r-sm)] tap text-start"
           style={f.direct
             ? { background: "var(--warn-bg)", border: "1px solid color-mix(in srgb, var(--warn) 34%, transparent)" }
@@ -2942,64 +3340,120 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
         </button>
       )}
 
-      {/* بڕ — خانەی گەورە */}
-      <Card className="p-5">
+      {/* دراوەکان + بڕ */}
+      <Card className="p-5 space-y-5">
+        <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-2.5">
+          <div>
+            <Lbl>دراوی مامەڵە</Lbl>
+            <Sel value={f.curId} onChange={(ev) => setPair(ev.target.value, f.againstId)}>
+              {data.currencies.map((c) => <option key={c.id} value={c.id}>{c.code} — {c.name}</option>)}
+            </Sel>
+          </div>
+          <button type="button" onClick={swapPair}
+            className="w-10 h-10 mb-[1px] rounded-xl tap flex items-center justify-center"
+            style={{ background:"var(--surf-3)", border:"1px solid var(--line)", color:"var(--txt-2)" }}
+            title="گۆڕینی ئاراستەی pair">
+            <ArrowLeftRight className="w-4 h-4" />
+          </button>
+          <div>
+            <Lbl>دراوی بەرامبەر</Lbl>
+            <Sel value={f.againstId} onChange={(ev) => setPair(f.curId, ev.target.value)}>
+              {data.currencies.filter((c) => c.id !== f.curId).map((c) => <option key={c.id} value={c.id}>{c.code} — {c.name}</option>)}
+            </Sel>
+          </div>
+        </div>
+
+        <div className="rounded-[var(--r-sm)] px-3 py-2.5 flex items-center justify-center gap-2 text-[11.5px]"
+          style={{ background:"var(--surf-2)", border:"1px solid var(--line)", color:"var(--txt-2)" }}>
+          <CurBadge c={cur(f.curId)} size="sm" />
+          <span className="font-semibold">{cur(f.curId).code}</span>
+          <ArrowLeftRight className="w-3.5 h-3.5" />
+          <CurBadge c={cur(f.againstId)} size="sm" />
+          <span className="font-semibold">{cur(f.againstId).code}</span>
+          <span className="ms-1" style={{ color:"var(--txt-3)" }}>هەر دوو دراوێک دەتوانرێت هەڵبژێردرێن</span>
+        </div>
+
         <div className="text-center">
-          <div className="text-[12px] mb-2" style={{ color: "var(--txt-3)" }}>{tr("بڕ")}</div>
-          <input type="number" inputMode="decimal" value={f.amount}
+          <div className="text-[12px] mb-2" style={{ color: "var(--txt-3)" }}>
+            {tr("بڕ")} · {cur(f.curId).code}
+          </div>
+          <input type="number" inputMode="decimal" min="0" step="any" value={f.amount}
             onChange={(ev) => setF({ ...f, amount: ev.target.value })} placeholder="0"
             className="w-full text-center bg-transparent outline-none"
             style={{ ...num, fontSize: 40, fontWeight: 600, letterSpacing: "-.03em", color: "var(--txt)", border: 0 }} />
-          <div className="flex gap-2 justify-center mt-3 flex-wrap">
-            {data.currencies.map((c) => (
-              <button key={c.id} onClick={() => setF({ ...f, curId: c.id, manualRate: false, quote: "" })}
-                className="px-3 py-1.5 rounded-full text-[12px] font-semibold tap flex items-center gap-1.5"
-                style={f.curId === c.id
-                  ? { background: "var(--surf-3)", color: "var(--txt)", border: "1px solid var(--line-2)" }
-                  : { color: "var(--txt-3)" }}>
-                <CurBadge c={c} size="sm" /> {c.code}
-              </button>
-            ))}
-          </div>
         </div>
       </Card>
 
       {/* ڕەیت + ئەنجام */}
       {f.direct ? (
         <Card className="p-5 space-y-4" style={{ borderColor: "color-mix(in srgb, var(--warn) 24%, transparent)" }}>
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-[11.5px]" style={{ color:"var(--txt-3)" }}>
+              1 {cur(f.rateBaseId).code} = X {cur(rateQuoteId).code}
+            </div>
+            <button type="button" onClick={flipRateView}
+              className="px-2.5 py-1.5 rounded-lg text-[10.5px] font-semibold tap"
+              style={{ background:"var(--surf-3)", border:"1px solid var(--line)", color:"var(--txt-2)" }}>
+              ⇄ گۆڕینی شێوازی نرخ
+            </button>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Lbl>{tr("بە چەند دەیکڕم")}</Lbl>
+              <Lbl>{tr("بە چەند دەیکڕم")} · 1 {cur(f.rateBaseId).code}</Lbl>
               <Inp type="number" step="any" dir="ltr" value={f.buyQuote}
                 onChange={(ev) => setF({ ...f, buyQuote: ev.target.value })}
-                className="!text-center !text-[17px] !font-semibold" placeholder={autoQuote ? String(autoQuote) : "7.20"} />
+                className="!text-center !text-[17px] !font-semibold"
+                placeholder={directBuyAuto ? String(Number(directBuyAuto.toPrecision(8))) : "0"} />
+              {directBuyAuto && (
+                <button type="button" onClick={() => setF((x) => ({ ...x, buyQuote: Number(directBuyAuto.toPrecision(10)) }))}
+                  className="mt-1 text-[10.5px] font-semibold tap" style={{ color:"var(--ac)" }}>
+                  نرخی ڕۆژ: {fmt(directBuyAuto, rateDigits(directBuyAuto))}
+                </button>
+              )}
             </div>
             <div>
-              <Lbl>{tr("بە چەند دەیفرۆشم")}</Lbl>
+              <Lbl>{tr("بە چەند دەیفرۆشم")} · 1 {cur(f.rateBaseId).code}</Lbl>
               <Inp type="number" step="any" dir="ltr" value={f.sellQuote}
                 onChange={(ev) => setF({ ...f, sellQuote: ev.target.value })}
-                className="!text-center !text-[17px] !font-semibold" placeholder="7.15" />
+                className="!text-center !text-[17px] !font-semibold"
+                placeholder={directSellAuto ? String(Number(directSellAuto.toPrecision(8))) : "0"} />
+              {directSellAuto && (
+                <button type="button" onClick={() => setF((x) => ({ ...x, sellQuote: Number(directSellAuto.toPrecision(10)) }))}
+                  className="mt-1 text-[10.5px] font-semibold tap" style={{ color:"var(--ac)" }}>
+                  نرخی ڕۆژ: {fmt(directSellAuto, rateDigits(directSellAuto))}
+                </button>
+              )}
             </div>
           </div>
+
           {bq > 0 && sq > 0 && amtR > 0 && (
             <div className="rounded-[var(--r-sm)] p-4 space-y-2" style={{ background: "var(--surf-3)" }}>
               <div className="flex justify-between text-[13px]">
                 <span style={{ color: "var(--txt-2)" }}>{tr("دەدەم (کڕین)")}</span>
-                <span className="font-semibold" style={{ ...num, color: "var(--neg)" }}>{fmt(dBuyTotal, 0)}</span>
+                <span className="font-semibold" style={{ ...num, color: "var(--neg)" }}>
+                  {fmt(dBuyTotal, cur(f.againstId).dec || 0)} {cur(f.againstId).code}
+                </span>
               </div>
               <div className="flex justify-between text-[13px]">
                 <span style={{ color: "var(--txt-2)" }}>{tr("وەردەگرم (فرۆشتن)")}</span>
-                <span className="font-semibold" style={{ ...num, color: "var(--pos)" }}>{fmt(dSellTotal, 0)}</span>
+                <span className="font-semibold" style={{ ...num, color: "var(--pos)" }}>
+                  {fmt(dSellTotal, cur(f.againstId).dec || 0)} {cur(f.againstId).code}
+                </span>
               </div>
               <div className="flex justify-between items-baseline pt-2.5" style={{ borderTop: "1px solid var(--line)" }}>
-                <span className="text-[13px] font-semibold" style={{ color: "var(--txt)" }}>{tr("خێر")}</span>
+                <span className="text-[13px] font-semibold" style={{ color: "var(--txt)" }}>
+                  {dProfit >= 0 ? tr("خێر") : tr("زەرەر")}
+                </span>
                 <span className="text-[24px] font-semibold"
                   style={{ ...num, color: dProfit >= 0 ? "var(--pos)" : "var(--neg)" }}>
-                  {dProfit > 0 ? "+" : ""}{fmt(dProfit, 0)} <span className="text-[12px] font-normal">{cur(f.againstId).code}</span>
+                  {dProfit >= 0 ? "+" : "−"}{fmt(Math.abs(dProfit), cur(f.againstId).dec || 0)}
+                  <span className="text-[12px] font-normal"> {cur(f.againstId).code}</span>
                 </span>
               </div>
             </div>
           )}
+
           <div className="grid grid-cols-2 gap-3 pt-1">
             <div>
               <Lbl>{tr("لە کێ دەیکڕم؟")}</Lbl>
@@ -3020,35 +3474,68 @@ function TxForm({ data, cur, calc, usr, avgRate, autoRate, onSave, editing, onCa
           </div>
         </Card>
       ) : (
-        <Card className="p-5">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex-1">
-              <Lbl>{tr("ڕەیت")} — 1 {cur(f.againstId).code}</Lbl>
+        <Card className="p-5 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-[11px]" style={{ color:"var(--txt-3)" }}>نرخی مامەڵە</div>
+              <div className="text-[13px] font-semibold mt-0.5" style={{ color:"var(--txt)" }}>
+                1 {cur(f.rateBaseId).code} = X {cur(rateQuoteId).code}
+              </div>
+            </div>
+            <button type="button" onClick={flipRateView}
+              className="px-2.5 py-1.5 rounded-lg text-[10.5px] font-semibold tap"
+              style={{ background:"var(--surf-3)", border:"1px solid var(--line)", color:"var(--txt-2)" }}>
+              ⇄ گۆڕینی شێوازی نرخ
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] items-end gap-4">
+            <div>
+              <Lbl>1 {cur(f.rateBaseId).code} = ؟ {cur(rateQuoteId).code}</Lbl>
               <Inp type="number" step="any" dir="ltr" value={f.quote}
                 onChange={(ev) => setF({ ...f, quote: ev.target.value, manualRate: true })}
                 className="!text-center !text-[19px] !font-semibold"
                 style={offDay ? { borderColor: "var(--warn)", background: "var(--warn-bg)" } : {}} />
             </div>
-            <div className="text-end shrink-0">
+            <div className="text-end md:min-w-[190px]">
               <div className="text-[11px]" style={{ color: "var(--txt-3)" }}>{tr("کۆی گشتی")}</div>
               <div className="text-[26px] font-semibold" style={{ ...num, color: "var(--txt)", letterSpacing: "-.02em" }}>
-                {fmt(total, 0)}
+                {fmt(total, cur(f.againstId).dec || 0)}
               </div>
               <div className="text-[11px]" style={{ color: "var(--txt-3)" }}>{cur(f.againstId).code}</div>
             </div>
           </div>
-          <div className="flex items-center gap-2 mt-3 text-[11.5px]" style={{ color: "var(--txt-3)" }}>
-            <span style={num}>{tr("نرخی ڕۆژ:")} {autoQuote ? fmt(autoQuote, 3) : "—"}</span>
+
+          <div className="flex flex-wrap items-center gap-2 text-[11.5px]" style={{ color: "var(--txt-3)" }}>
+            <span style={num}>
+              {tr("نرخی ڕۆژ:")} {autoQuote ? `1 ${cur(f.rateBaseId).code} = ${fmt(autoQuote, rateDigits(autoQuote))} ${cur(rateQuoteId).code}` : "—"}
+            </span>
             {offDay && (
               <button onClick={() => setF({ ...f, manualRate: false, quote: autoQuote })}
                 className="font-semibold tap" style={{ color: "var(--ac)" }}>{tr("گەڕانەوە")}</button>
             )}
+            {f.type === "sell" && av !== null && (
+              <span style={num}>
+                · مامناوەندی تێچوو: {fmt(storedRateToDisplay(av, f.curId, f.againstId, f.rateBaseId), rateDigits(storedRateToDisplay(av, f.curId, f.againstId, f.rateBaseId)))} {cur(rateQuoteId).code}
+              </span>
+            )}
             {estProfit !== null && (
-              <span className="ms-auto font-semibold" style={{ color: estProfit >= 0 ? "var(--pos)" : "var(--neg)" }}>
-                {tr("خێر")} {fmt(estProfit, 0)}
+              <span className="ms-auto font-bold" style={{ color: estProfit >= 0 ? "var(--pos)" : "var(--neg)" }}>
+                {estProfit >= 0 ? tr("خێر") : tr("زەرەر")} {estProfit >= 0 ? "+" : "−"}{fmt(Math.abs(estProfit), cur(f.againstId).dec || 0)} {cur(f.againstId).code}
               </span>
             )}
           </div>
+
+          {f.type === "sell" && pos && amtR > pos.qty + 1e-9 && (
+            <div className="p-3 rounded-xl text-[11.5px] flex items-start gap-2"
+              style={{ background:"var(--warn-bg)", color:"var(--warn)" }}>
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>
+                بڕی فرۆشتن لە stock ـی هەمان pair زیاترە ({fmt(pos.qty, cur(f.curId).dec || 0)} {cur(f.curId).code}).
+                خێر/زەرەر بە دڵنیایی پیشان نادرێت تا تێچووی stock ڕوون بێت.
+              </span>
+            </div>
+          )}
         </Card>
       )}
 
@@ -3333,8 +3820,18 @@ function TxRow({ t, cur, usr, onEdit, onDel, flip, lite, settle, unsettle }) {
           <div className="rounded-[var(--r-sm)] p-3.5 space-y-2.5" style={{ background: "var(--surf-3)" }}>
             <div className="grid grid-cols-2 gap-x-4 gap-y-2.5">
               {t.code ? <D k={tr("کۆد")} v={"#" + t.code} /> : null}
-              <D k={tr("ڕەیت")} v={t.rate ? fmt(1 / t.rate, 3) : "—"} />
-              {t.direct && t.buyRate ? <D k={tr("بە چەند دەیکڕم")} v={fmt(1 / t.buyRate, 3)} /> : null}
+              {(() => {
+                const baseId = preferredRateBaseId(t.curId, t.againstId);
+                const quoteId = oppositePairId(t.curId, t.againstId, baseId);
+                const shown = storedRateToDisplay(t.rate, t.curId, t.againstId, baseId);
+                const buyShown = t.buyRate ? storedRateToDisplay(t.buyRate, t.curId, t.againstId, baseId) : null;
+                return (
+                  <>
+                    <D k={tr("ڕەیت")} v={shown ? `1 ${cur(baseId).code} = ${fmt(shown, rateDigits(shown))} ${cur(quoteId).code}` : "—"} />
+                    {t.direct && buyShown ? <D k={tr("بە چەند دەیکڕم")} v={`1 ${cur(baseId).code} = ${fmt(buyShown, rateDigits(buyShown))} ${cur(quoteId).code}`} /> : null}
+                  </>
+                );
+              })()}
               {!lite && t.profit != null ? (
                 <D
                   k={t.profit >= 0 ? tr("خێر") : tr("زەرەر")}
@@ -3425,9 +3922,15 @@ function TxReceipt({ t, cur, usr, onClose }) {
         </div>
 
         <div className="px-6 pb-5 space-y-2.5">
-          {[[tr("لایەن"), name], [tr("ڕەیت"), t.rate ? fmt(1 / t.rate, 3) : "—"],
-            [tr("کۆی گشتی"), `${fmt(t.total, 0)} ${cur(t.againstId).code}`],
-            [tr("بەروار"), new Date(t.date).toLocaleString("en-GB")]].map(([k, v], i) => (
+          {(() => {
+            const baseId = preferredRateBaseId(t.curId, t.againstId);
+            const quoteId = oppositePairId(t.curId, t.againstId, baseId);
+            const shown = storedRateToDisplay(t.rate, t.curId, t.againstId, baseId);
+            return [[tr("لایەن"), name],
+              [tr("ڕەیت"), shown ? `1 ${cur(baseId).code} = ${fmt(shown, rateDigits(shown))} ${cur(quoteId).code}` : "—"],
+              [tr("کۆی گشتی"), `${fmt(t.total, cur(t.againstId).dec || 0)} ${cur(t.againstId).code}`],
+              [tr("بەروار"), new Date(t.date).toLocaleString("en-GB")]];
+          })().map(([k, v], i) => (
             <div key={i} className="flex justify-between text-[13px]">
               <span style={{ color: "var(--txt-3)" }}>{k}</span>
               <span className="font-semibold" style={{ ...num, color: "var(--txt)" }}>{v || "—"}</span>
@@ -5741,7 +6244,9 @@ function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare, s
   const exportCsv = () => {
     const head = ["کۆد", tr("جۆر"), "بەروار", "لایەن", tr("دراو"), tr("بڕ"), "ڕەیت", "بەرامبەر", "کۆ", "شوێن", tr("دۆخ"), tr("خێر")];
     const rows = txs.map((t) => [t.code || "", t.type === "buy" ? "کڕین" : "فرۆشتن", new Date(t.date).toLocaleString("en-GB"),
-      t.cpId ? usr(t.cpId).name : t.cpName, cur(t.curId).code, t.amount, t.rate ? +(1 / t.rate).toFixed(6) : "", cur(t.againstId).code, t.total,
+      t.cpId ? usr(t.cpId).name : t.cpName, cur(t.curId).code, t.amount,
+      (() => { const b = preferredRateBaseId(t.curId, t.againstId); const r = storedRateToDisplay(t.rate, t.curId, t.againstId, b); return r ? +r.toFixed(6) : ""; })(),
+      cur(t.againstId).code, t.total,
       t.partnerId ? "لای " + usr(t.partnerId).name : "قاسەی گشتی", t.status === "pending" ? "چاوەڕوان" : "تەواو", t.profit ?? ""]);
     const csv = "\uFEFF" + [head, ...rows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
     const a = document.createElement("a");

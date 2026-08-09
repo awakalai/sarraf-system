@@ -1,156 +1,372 @@
-// ═══════════════════════════════════════════════════════════
-//  api/read-receipt.js
-//  خوێندنەوەی فیشی پارەدان — پشتگیری Gemini (بەخۆڕایی) و Claude
-//
-//  لە Vercel یەکێک لەم کلیلانە دابنێ:
-//    GEMINI_API_KEY     ← بەخۆڕایی (aistudio.google.com)
-//    ANTHROPIC_API_KEY  ← بە پارە، وردتر (console.anthropic.com)
-//  گەر هەردووکیان دانرابن، Claude بەکاردێت.
-// ═══════════════════════════════════════════════════════════
+// api/read-receipt.js
+// Receipt OCR v2 — structured multimodal extraction for Sarraf.
+// Uses Gemini by default. Claude remains an optional fallback/provider.
+// No Supabase writes happen in this endpoint.
 
-const SYSTEM = `تۆ سیستەمێکی خوێندنەوەی فیشی پارەدانیت بۆ سەرافییەکی عێراقی/کوردی.
-وێنەی فیشێکی پارەدانت پێدەدرێت (لە ئەپەکانی FIB, FastPay, Zain Cash, NassWallet, بانک, Alipay, WeChat Pay, یان وەسڵی دەستنووس).
+const MAX_BASE64_CHARS = 12_000_000;
+const RETRYABLE = new Set([429, 502, 503, 504]);
 
-ئەرکی تۆ: زانیارییەکان دەربهێنە و تەنها JSONـێکی پاک بگەڕێنەوە — بێ هیچ دەقێکی زیادە، بێ markdown.
+const RECEIPT_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    ok: { type: "boolean" },
+    amount: { type: ["number", "null"] },
+    fee: { type: ["number", "null"] },
+    feeOriginal: { type: ["number", "null"] },
+    feeDiscount: { type: ["number", "null"] },
+    netAmount: { type: ["number", "null"] },
+    currency: { type: ["string", "null"] },
+    sender: { type: ["string", "null"] },
+    receiver: { type: ["string", "null"] },
+    refNo: { type: ["string", "null"] },
+    txTime: { type: ["string", "null"] },
+    txDate: { type: ["string", "null"] },
+    bank: { type: ["string", "null"] },
+    platform: { type: ["string", "null"] },
+    kind: { type: ["string", "null"] },
+    confidence: { type: "number", minimum: 0, maximum: 1 },
+    fieldConfidence: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        amount: { type: "number", minimum: 0, maximum: 1 },
+        fee: { type: "number", minimum: 0, maximum: 1 },
+        currency: { type: "number", minimum: 0, maximum: 1 },
+        sender: { type: "number", minimum: 0, maximum: 1 },
+        receiver: { type: "number", minimum: 0, maximum: 1 },
+        refNo: { type: "number", minimum: 0, maximum: 1 },
+        txDate: { type: "number", minimum: 0, maximum: 1 },
+        txTime: { type: "number", minimum: 0, maximum: 1 },
+        platform: { type: "number", minimum: 0, maximum: 1 }
+      },
+      required: ["amount", "fee", "currency", "sender", "receiver", "refNo", "txDate", "txTime", "platform"]
+    },
+    note: { type: ["string", "null"] }
+  },
+  required: [
+    "ok", "amount", "fee", "feeOriginal", "feeDiscount", "netAmount",
+    "currency", "sender", "receiver", "refNo", "txTime", "txDate",
+    "bank", "platform", "kind", "confidence", "fieldConfidence", "note"
+  ]
+};
 
-{
-  "ok": true,
-  "amount": <ژمارە — بڕی سەرەکی کە نێردراوە، بێ کۆما، بێ هێما>,
-  "fee": <ژمارە — عمولەی کۆتایی دوای داشکاندن. گەر فی ٤٥ بێت و ٣٠ داشکاندن هەبێت، بنووسە 15>,
-  "feeOriginal": <ژمارە — عمولەی سەرەتایی پێش داشکاندن (گەر داشکاندن هەبێت، ئەگینا هەمان fee)>,
-  "feeDiscount": <ژمارە — بڕی داشکاندن، ئەگینا 0>,
-  "platform": "<Alipay | WeChat | Bank | FIB | FastPay | ZainCash | نەزانراو — لە لۆگۆ و شێوازی فیشەکەوە>",
-  "netAmount": <ژمارە — ئەو بڕەی بە ڕاستی گەیشتووەتە وەرگر (amount − fee). گەر فیشەکە خۆی «بڕی وەرگیراو» نووسیبێت، ئەوە بەکاربهێنە>,
-  "currency": "<USD | IQD | CNY | EUR | TRY | نەزانراو>",
-  "sender": "<ناوی نێرەر یان ژمارەی هەژماری نێرەر>",
-  "receiver": "<ناوی وەرگر>",
-  "refNo": "<ژمارەی مامەڵە / Transaction ID / Reference — گرنگترین خانەیە>",
-  "txTime": "<بەروار و کات وەک لە وێنەکەدا نووسراوە>",
-  "txDate": "<هەمان بەروار بەڵام بە فۆرماتی YYYY-MM-DD — گەر نەزانرا: null>",
-  "bank": "<ناوی ئەپ یان بانک>",
-  "kind": "<transfer | deposit | withdrawal | unknown>",
-  "confidence": <0 بۆ 1>,
-  "note": "<تێبینی گرنگ، بۆ نموونە: وێنەکە ناڕوونە، یان دەستکاری کراوە دەردەکەوێت>"
-}
+const SYSTEM = `You extract payment-receipt data for an Iraqi/Kurdish currency-exchange system.
 
-ڕێنمایی:
-- ژمارە عەرەبی/فارسییەکان (٠١٢٣٤٥٦٧٨٩) بگۆڕە بۆ لاتینی.
-- عمولە/کرێ: بەدوای وشەکانی «عمولة، رسوم، أجور، fee, charge, commission, service, 手续费, 服务费» بگەڕێ.
-- ⚠️ داشکاندنی فی زۆر گرنگە: بەدوای «discount, waived, reduced, 减免, 优惠, 折扣, خصم» بگەڕێ.
-  گەر فیشەکە بڵێت «Fee: ¥45, Discount: ¥30» ئەوا: feeOriginal=45، feeDiscount=30، fee=15 (ئەوەی بە ڕاستی دراوە).
-  گەر فی بە شێوەی «¥45 → ¥15» یان «~~45~~ 15» بێت، ئەوا fee=15.
-  هەمیشە fee = ئەو بڕەیە کە بە ڕاستی وەرگیراوە، نەک ئەوەی لە سەرەتادا نووسراوە.
-- netAmount = amount − fee (بە فییە کۆتاییەکەوە، نەک هی سەرەتا).
-- پلاتفۆرم: لە ڕەنگ و لۆگۆ و ڕووکاری فیشەکە بیناسەوە — Alipay (شین)، WeChat (سەوز)، بانکەکان.
-- گەر فیشەکە دوو بڕی هەبوو (نموونە: «بڕی ناردراو ١٠٠٠» و «بڕی وەرگیراو ٩٩٠»)، ئەوا amount=1000، netAmount=990، fee=10.
-- گەر خانەیەک نەبوو، بیکە بە null — هەرگیز شتی هەڵبەستراو مەنووسە.
-- txDate هەمیشە بە فۆرماتی YYYY-MM-DD بێت (نموونە: 2026-07-29). گەر ساڵ لە وێنەکەدا نەبوو، ساڵی ئێستا دابنێ.
-- گەر وێنەکە فیشی پارەدان نەبێت: {"ok": false, "note": "ئەمە فیشی پارەدان نییە"}.
-- گەر نیشانەی دەستکاریکردن هەبوو (فۆنتی ناتەبا، لێواری ناسروشتی، پیکسڵی شێواو)، لە note ئاگاداری بدە و confidence نزم بکەرەوە.`;
+The image may come from FIB, FastPay, ZainCash, NassWallet, Qi Card, a bank app, Alipay, WeChat Pay, or another transfer/payment service.
 
-const USER_MSG = "ئەم فیشە بخوێنەوە و بە JSON بیگەڕێنەوە.";
+Accuracy rules:
+1. Never invent a value. If a field is not visible or not reliable, return null and lower that field's confidence.
+2. "amount" is the transaction amount, NOT account balance, wallet balance, available balance, exchange rate, or a random number elsewhere on the screen.
+3. "refNo" is the transaction/order/reference/trace/operation ID. Preserve letters and digits. Do not use phone numbers, account numbers, or timestamps as the reference unless the receipt explicitly labels them as transaction/reference/order/trace IDs.
+4. Normalize Arabic/Persian/Kurdish digits to Latin digits.
+5. Currency should be an uppercase ISO-style code when identifiable (IQD, USD, CNY, EUR, TRY, AED, SAR, etc.).
+6. fee = final fee actually charged. feeOriginal = fee before discount. feeDiscount = discount amount. If there is no fee, use 0 where clearly applicable.
+7. netAmount is the amount actually received when explicitly shown; otherwise amount - fee if that interpretation is valid for the receipt.
+8. txDate must be YYYY-MM-DD only when recoverable. If the year is absent, use the current year only when the rest of the date is clearly visible.
+9. platform should identify the app/service when visible, e.g. FIB, FastPay, ZainCash, NassWallet, QiCard, Alipay, WeChat, Bank.
+10. If the image is not a payment/transfer receipt, set ok=false.
+11. If the image may be edited/tampered, mention that in note and reduce confidence.
+12. confidence is overall confidence. fieldConfidence is separate confidence for each extracted field.
+13. Return only data matching the JSON schema.`;
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/* ── Gemini (بەخۆڕایی) ── */
-// زنجیرەی مۆدێلەکان — گەر یەکەم نەبوو، دواتری تاقی دەکرێتەوە
-const GEMINI_MODELS = [process.env.GEMINI_MODEL, "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3-flash"].filter(Boolean);
+const toLatinDigits = (value) => String(value ?? "")
+  .replace(/[٠-٩]/g, (d) => "٠١٢٣٤٥٦٧٨٩".indexOf(d))
+  .replace(/[۰-۹]/g, (d) => "۰۱۲۳۴۵۶۷۸۹".indexOf(d));
 
-async function geminiOnce(model, key, image, mediaType) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
-  const body = {
-    system_instruction: { parts: [{ text: SYSTEM }] },
-    contents: [{ parts: [{ inline_data: { mime_type: mediaType, data: image } }, { text: USER_MSG }] }],
-    generationConfig: { responseMimeType: "application/json", maxOutputTokens: 2000 },
+const cleanText = (v) => {
+  if (v == null) return null;
+  const s = toLatinDigits(v).trim();
+  return s && !/^(null|unknown|نەزانراو)$/i.test(s) ? s : null;
+};
+
+const numberOrNull = (v) => {
+  if (v == null || v === "") return null;
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  const s = toLatinDigits(v)
+    .replace(/[,\s٬،]/g, "")
+    .replace(/[^\d.+-]/g, "");
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+};
+
+const clamp01 = (v, fallback = 0) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : fallback;
+};
+
+function normalizeResult(parsed) {
+  const ok = parsed?.ok !== false;
+  const amount = numberOrNull(parsed?.amount);
+  let fee = numberOrNull(parsed?.fee);
+  let feeOriginal = numberOrNull(parsed?.feeOriginal);
+  let feeDiscount = numberOrNull(parsed?.feeDiscount);
+  let netAmount = numberOrNull(parsed?.netAmount);
+
+  if (fee == null) fee = 0;
+  if (feeOriginal == null) feeOriginal = fee;
+  if (feeDiscount == null) feeDiscount = Math.max(0, feeOriginal - fee);
+  if (netAmount == null && amount != null) netAmount = Math.max(0, amount - fee);
+
+  let currency = cleanText(parsed?.currency);
+  if (currency) currency = currency.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 6) || null;
+
+  let txDate = cleanText(parsed?.txDate);
+  if (txDate && !/^\d{4}-\d{2}-\d{2}$/.test(txDate)) txDate = null;
+
+  const fcIn = parsed?.fieldConfidence || {};
+  const fieldConfidence = {
+    amount: clamp01(fcIn.amount, amount != null ? 0.7 : 0),
+    fee: clamp01(fcIn.fee, 0.7),
+    currency: clamp01(fcIn.currency, currency ? 0.7 : 0),
+    sender: clamp01(fcIn.sender, 0.5),
+    receiver: clamp01(fcIn.receiver, 0.5),
+    refNo: clamp01(fcIn.refNo, parsed?.refNo ? 0.6 : 0),
+    txDate: clamp01(fcIn.txDate, txDate ? 0.6 : 0),
+    txTime: clamp01(fcIn.txTime, parsed?.txTime ? 0.6 : 0),
+    platform: clamp01(fcIn.platform, parsed?.platform || parsed?.bank ? 0.6 : 0),
   };
-  const r = await fetch(url, {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-goog-api-key": key },
-    body: JSON.stringify(body),
-  });
-  const j = await r.json();
-  if (j.error) {
-    const e = new Error(`${model}: ${j.error.message || "هەڵە"}`);
-    e.status = j.error.code || r.status;
-    throw e;
-  }
-  const out = (j.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("").trim();
-  if (!out) { const e = new Error(`${model}: وەڵامی بەتاڵ`); e.status = 500; throw e; }
-  return out;
+
+  return {
+    ok,
+    amount,
+    fee,
+    feeOriginal,
+    feeDiscount,
+    netAmount,
+    currency,
+    sender: cleanText(parsed?.sender),
+    receiver: cleanText(parsed?.receiver),
+    refNo: cleanText(parsed?.refNo),
+    txTime: cleanText(parsed?.txTime),
+    txDate,
+    bank: cleanText(parsed?.bank),
+    platform: cleanText(parsed?.platform),
+    kind: cleanText(parsed?.kind),
+    confidence: clamp01(parsed?.confidence, ok ? 0.5 : 0.2),
+    fieldConfidence,
+    note: cleanText(parsed?.note),
+  };
 }
 
-async function callGemini(key, image, mediaType) {
+function extractText(json) {
+  return (json?.candidates?.[0]?.content?.parts || [])
+    .map((p) => p?.text || "")
+    .join("")
+    .trim();
+}
+
+async function geminiOnce(model, key, image, mediaType, currentDate) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 25000);
+  const started = Date.now();
+  try {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+    const body = {
+      systemInstruction: { parts: [{ text: SYSTEM }] },
+      contents: [{
+        role: "user",
+        parts: [
+          { inline_data: { mime_type: mediaType, data: image } },
+          { text: `Read this receipt. Current date: ${currentDate}. Extract only visible/reliable transaction data.` }
+        ]
+      }],
+      generationConfig: {
+        responseMimeType: "application/json",
+        responseJsonSchema: RECEIPT_SCHEMA,
+        maxOutputTokens: 1800,
+        temperature: 0.1,
+        thinkingConfig: { thinkingLevel: "low" }
+      }
+    };
+
+    const r = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-goog-api-key": key },
+      body: JSON.stringify(body),
+      signal: controller.signal
+    });
+    const j = await r.json().catch(() => ({}));
+
+    if (!r.ok || j?.error) {
+      const e = new Error(`${model}: ${j?.error?.message || `HTTP ${r.status}`}`);
+      e.status = j?.error?.code || r.status;
+      throw e;
+    }
+    const raw = extractText(j);
+    if (!raw) {
+      const e = new Error(`${model}: empty response`);
+      e.status = 500;
+      throw e;
+    }
+
+    let parsed;
+    try { parsed = JSON.parse(raw); }
+    catch {
+      const cleaned = raw.replace(/```json/gi, "").replace(/```/g, "").trim();
+      parsed = JSON.parse(cleaned);
+    }
+
+    return {
+      data: normalizeResult(parsed),
+      meta: { provider: "gemini", model, latencyMs: Date.now() - started }
+    };
+  } catch (e) {
+    if (e?.name === "AbortError") {
+      const err = new Error(`${model}: request timed out`);
+      err.status = 504;
+      throw err;
+    }
+    throw e;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function callGemini(key, image, mediaType, currentDate) {
+  const models = [
+    process.env.GEMINI_MODEL,
+    "gemini-3.6-flash",
+    "gemini-3.5-flash",
+    "gemini-3.5-flash-lite"
+  ].filter((v, i, a) => v && a.indexOf(v) === i);
+
   let last;
-  for (const m of GEMINI_MODELS) {
-    try { return await geminiOnce(m, key, image, mediaType); }
-    catch (e) {
+  for (const model of models) {
+    try {
+      return await geminiOnce(model, key, image, mediaType, currentDate);
+    } catch (e) {
       last = e;
-      // تەنها گەر مۆدێلەکە نەبوو، دواتری تاقی بکەوە
-      if (e.status === 404 || /not found|not supported|deprecat/i.test(e.message)) continue;
+      if (e.status === 404 || /not found|not supported|deprecat/i.test(String(e.message))) continue;
       throw e;
     }
   }
-  throw last || new Error("هیچ مۆدێلێکی Gemini بەردەست نییە");
+  throw last || new Error("No Gemini OCR model is available");
 }
 
-/* ── Claude (بە پارە) ── */
-async function callClaude(key, image, mediaType) {
-  const r = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
-    body: JSON.stringify({
-      model: process.env.CLAUDE_MODEL || "claude-sonnet-5",
-      max_tokens: 800,
-      system: SYSTEM,
-      messages: [{
-        role: "user",
-        content: [
-          { type: "image", source: { type: "base64", media_type: mediaType, data: image } },
-          { type: "text", text: USER_MSG },
-        ],
-      }],
-    }),
-  });
-  const j = await r.json();
-  if (j.error) { const e = new Error(j.error.message || "هەڵەی Claude"); e.status = r.status; throw e; }
-  return (j.content || []).filter((b) => b.type === "text").map((b) => b.text).join("").trim();
+async function callClaude(key, image, mediaType, currentDate) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 25000);
+  const started = Date.now();
+  try {
+    const r = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": key,
+        "anthropic-version": "2023-06-01"
+      },
+      body: JSON.stringify({
+        model: process.env.CLAUDE_MODEL || "claude-sonnet-5",
+        max_tokens: 1600,
+        temperature: 0,
+        system: SYSTEM,
+        messages: [{
+          role: "user",
+          content: [
+            { type: "image", source: { type: "base64", media_type: mediaType, data: image } },
+            { type: "text", text: `Current date: ${currentDate}. Return only a JSON object matching the requested receipt fields.` }
+          ]
+        }]
+      }),
+      signal: controller.signal
+    });
+
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j?.error) {
+      const e = new Error(j?.error?.message || `Claude HTTP ${r.status}`);
+      e.status = r.status;
+      throw e;
+    }
+    const raw = (j.content || []).filter((b) => b.type === "text").map((b) => b.text).join("").trim();
+    const clean = raw.replace(/```json/gi, "").replace(/```/g, "").trim();
+    const parsed = JSON.parse(clean);
+
+    return {
+      data: normalizeResult(parsed),
+      meta: { provider: "claude", model: process.env.CLAUDE_MODEL || "claude-sonnet-5", latencyMs: Date.now() - started }
+    };
+  } catch (e) {
+    if (e?.name === "AbortError") {
+      const err = new Error("Claude request timed out");
+      err.status = 504;
+      throw err;
+    }
+    throw e;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") { res.status(405).json({ error: "POST only" }); return; }
+  if (req.method !== "POST") {
+    res.setHeader("Allow", "POST");
+    res.status(405).json({ error: "POST only" });
+    return;
+  }
 
   const gKey = process.env.GEMINI_API_KEY;
   const aKey = process.env.ANTHROPIC_API_KEY;
   if (!gKey && !aKey) {
-    res.status(500).json({ error: "هیچ کلیلێک دانەنراوە — GEMINI_API_KEY یان ANTHROPIC_API_KEY لە Vercel دابنێ" });
+    res.status(500).json({ error: "GEMINI_API_KEY یان ANTHROPIC_API_KEY لە Vercel دانەنراوە" });
     return;
   }
 
   try {
     const body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
-    const { image, mediaType = "image/jpeg" } = body;
-    if (!image) { res.status(400).json({ error: "وێنە نەنێردراوە" }); return; }
+    const image = body?.image;
+    const mediaType = String(body?.mediaType || "image/jpeg").toLowerCase();
 
-    const run = () => (aKey ? callClaude(aKey, image, mediaType) : callGemini(gKey, image, mediaType));
-
-    let text;
-    try { text = await run(); }
-    catch (e) {
-      // گەر سنووری خێرایی تێپەڕی بوو، جارێکی تر هەوڵ بدە
-      if (e.status === 429 || e.status === 503) { await sleep(7000); text = await run(); }
-      else throw e;
+    if (!image || typeof image !== "string") {
+      res.status(400).json({ error: "وێنە نەنێردراوە" });
+      return;
+    }
+    if (!mediaType.startsWith("image/")) {
+      res.status(400).json({ error: "جۆری فایل پشتگیری ناکرێت" });
+      return;
+    }
+    if (image.length > MAX_BASE64_CHARS) {
+      res.status(413).json({ error: "قەبارەی وێنە زۆر گەورەیە" });
+      return;
     }
 
-    const clean = String(text).replace(/```json/gi, "").replace(/```/g, "").trim();
-    let parsed;
-    try { parsed = JSON.parse(clean); }
-    catch { parsed = { ok: false, note: "نەتوانرا وەڵامەکە بخوێندرێتەوە", raw: clean.slice(0, 300) }; }
+    const currentDate = new Date().toISOString().slice(0, 10);
+    const provider = String(process.env.OCR_PROVIDER || "gemini").toLowerCase();
 
-    res.status(200).json(parsed);
+    const run = async () => {
+      if (provider === "claude" && aKey) return callClaude(aKey, image, mediaType, currentDate);
+      if (gKey) return callGemini(gKey, image, mediaType, currentDate);
+      return callClaude(aKey, image, mediaType, currentDate);
+    };
+
+    let result;
+    try {
+      result = await run();
+    } catch (e) {
+      if (RETRYABLE.has(Number(e?.status))) {
+        await sleep(1800);
+        result = await run();
+      } else {
+        throw e;
+      }
+    }
+
+    res.setHeader("Cache-Control", "no-store");
+    res.status(200).json({
+      ...result.data,
+      _meta: result.meta,
+      ocrVersion: 2
+    });
   } catch (e) {
-    const m = String(e?.message || e);
-    const friendly = /429|quota|rate/i.test(m)
-      ? "سنووری خێرایی تێپەڕی — چەند چرکەیەک چاوەڕێ بکە و دووبارە هەوڵ بدە"
-      : m;
-    res.status(500).json({ error: friendly });
+    const status = Number(e?.status);
+    const message = String(e?.message || e);
+    const friendly = status === 429 || /quota|rate limit/i.test(message)
+      ? "سنووری API پڕبووە — دووبارە هەوڵ بدە"
+      : status === 504 || /timed out/i.test(message)
+        ? "خوێندنەوە زۆر درێژەی کێشا — دووبارە هەوڵ بدە"
+        : message;
+    res.status(RETRYABLE.has(status) ? 503 : 500).json({ error: friendly });
   }
 }

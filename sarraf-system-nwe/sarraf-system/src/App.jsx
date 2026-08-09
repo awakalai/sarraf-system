@@ -11,10 +11,125 @@ import {
 /* ══════════════════ یارمەتیدەرەکان ══════════════════ */
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 const now = () => new Date().toISOString();
+  const assertResponseOk = async (response) => {
+    if (!response || !response.ok) {
+      let message = "OCR/API request failed";
+      try {
+        const body = await response?.json?.();
+        message = body?.error?.message || body?.message || message;
+      } catch {}
+      throw new Error(message);
+    }
+    return response;
+  };
+
+  const safeReceiptNumber = (value) => {
+    if (value === null || value === undefined || value === "") return null;
+    const n = Number(String(value).replace(/,/g, "").trim());
+    return Number.isFinite(n) ? n : null;
+  };
+  const assertDbResult = (result, context = "Supabase operation") => {
+    if (result?.error) {
+      console.error(context, result.error);
+      throw result.error;
+    }
+    return result;
+  };
+
+
+
+
+/*
+ * SECURITY RULE:
+ * UI permission checks are defense-in-depth only.
+ * Supabase RLS / backend authorization remains the source of truth.
+ * Never grant permissions here that the backend does not grant.
+ */
+  const canAccess = (permission, user = null) => {
+    if (!permission) return true;
+    const u = user || (typeof currentUser !== "undefined" ? currentUser : null);
+    const permissions = u?.permissions;
+    if (Array.isArray(permissions)) return permissions.includes(permission);
+    if (permissions && typeof permissions === "object") return permissions[permission] === true;
+    return false;
+  };
+
+
+
+  const displayValue = (value, fallback = "—") => {
+    if (value === null || value === undefined || value === "") return fallback;
+    return String(value);
+  };
+
+  const displayNumber = (value, digits = 0, fallback = "—") => {
+    const n = Number(value);
+    return Number.isFinite(n) ? fmt(n, digits) : fallback;
+  };
+
+
+
+  const normalizeSearchText = (value) =>
+    String(value ?? "")
+      .toLocaleLowerCase()
+      .normalize("NFKC")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  const matchesSearch = (record, query, fields = []) => {
+    const q = normalizeSearchText(query);
+    if (!q) return true;
+    return fields.some((field) =>
+      normalizeSearchText(record?.[field]).includes(q)
+    );
+  };
+
+  const matchesFilters = (record, filters = {}) => {
+    if (!record) return false;
+    for (const [key, expected] of Object.entries(filters)) {
+      if (expected === undefined || expected === null || expected === "") continue;
+      const actual = record?.[key];
+      if (Array.isArray(expected)) {
+        if (expected.length && !expected.map(normalizeSearchText).includes(normalizeSearchText(actual))) return false;
+      } else if (normalizeSearchText(actual) !== normalizeSearchText(expected)) {
+        return false;
+      }
+    }
+    return true;
+  };
+
+  const clearableFilterCount = (filters = {}) =>
+    Object.values(filters).filter((value) =>
+      Array.isArray(value) ? value.length > 0 : value !== undefined && value !== null && value !== ""
+    ).length;
+
+
+
+  const formatAuditAction = (action) => {
+    if (!action) return "—";
+    return String(action).replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+  };
+
+  const auditResultTone = (result) => {
+    const value = normalizeSearchText(result);
+    if (["success", "successful", "completed", "ok"].includes(value)) return "pos";
+    if (["failed", "failure", "error", "denied"].includes(value)) return "neg";
+    return "neutral";
+  };
+
+  const reportSectionLabel = (value, fallback = "—") =>
+    displayValue(value, fallback);
+
+  const reportNumber = (value, digits = 0) =>
+    displayNumber(value, digits);
+
+
 const ROLE_KU = { admin: "ئەدمین", customer: "کڕیار-فرۆشیار", partner: "هاوبەشی سین", investor: "وەبەرهێنەر", office: "نووسینگە" };
 
-const fmt = (n, dec = 2) => {
-  if (n === null || n === undefined || isNaN(n)) return "—";
+const fmt = (n, d=0) => {
+    const value = Number(n);
+    if (!Number.isFinite(value)) return "—";
+    return value.toLocaleString("en-US", { minimumFractionDigits:d, maximumFractionDigits:d });
+  };
   return Number(n).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: dec });
 };
 const num = { fontVariantNumeric: "tabular-nums", direction: "ltr", unicodeBidi: "embed" };
@@ -617,7 +732,150 @@ const dOnly = (d) => (d || "").slice(0, 10);
 
 /* ══════════════════ پێکهاتە بچووکەکان ══════════════════ */
 function Styles() {
-  return <style>{`
+  return <style>
+/* ==========================================================
+   PHASE 10 — RESPONSIVE HARDENING
+   UI/CSS ONLY — NO BUSINESS LOGIC
+   ========================================================== */
+
+/* Prevent accidental viewport overflow from long financial values. */
+html, body, #root {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+/* Safe media/container behavior. */
+img, svg, canvas, video {
+  max-width: 100%;
+}
+
+/* Financial values and IDs should wrap instead of breaking cards. */
+[class*="font-mono"],
+[data-financial-value],
+[data-transaction-id] {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Tables remain usable on small screens without forcing the page itself wider. */
+.table-responsive,
+.overflow-x-auto {
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+/* Touch targets: only enlarge controls that are already interactive. */
+button,
+[role="button"],
+input,
+select,
+textarea {
+  touch-action: manipulation;
+}
+
+@media (max-width: 430px) {
+  /* Compact page gutters */
+  .max-w-7xl,
+  .max-w-6xl,
+  .max-w-5xl,
+  .max-w-4xl {
+    max-width: 100%;
+  }
+
+  /* Keep dashboard cards readable */
+  .grid {
+    min-width: 0;
+  }
+
+  /* Avoid overly large headings on phones */
+  h1 {
+    line-height: 1.2;
+  }
+
+  /* Prevent fixed-width controls from forcing horizontal scroll */
+  input,
+  select,
+  textarea {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 390px) {
+  /* Extra-small devices: reduce visual density without changing content */
+  .gap-6 { gap: 1rem; }
+  .gap-5 { gap: .875rem; }
+  .p-6 { padding: 1rem; }
+  .px-6 { padding-left: 1rem; padding-right: 1rem; }
+  .py-6 { padding-top: 1rem; padding-bottom: 1rem; }
+}
+
+@media (max-width: 375px) {
+  /* Keep primary actions usable on narrow phones */
+  button {
+    min-height: 40px;
+  }
+}
+
+@media (max-width: 320px) {
+  /* Never let text force the layout wider than the device. */
+  body {
+    min-width: 0;
+  }
+
+  .truncate {
+    max-width: 100%;
+  }
+}
+
+/* Tablet: maintain desktop information density while avoiding overflow. */
+@media (min-width: 768px) and (max-width: 1024px) {
+  .overflow-x-auto {
+    max-width: 100%;
+  }
+}
+
+/* Large desktop: don't allow content to become excessively stretched. */
+@media (min-width: 1440px) {
+  .max-w-7xl {
+    margin-left: auto;
+    margin-right: auto;
+  }
+}
+
+/* Phase 9 — audit/report presentation utilities */
+.sarraf-audit-table{width:100%;border-collapse:separate;border-spacing:0}
+.sarraf-audit-table th{font-size:11px;font-weight:600;text-align:start;color:var(--muted,#7b8190);padding:10px 12px;white-space:nowrap}
+.sarraf-audit-table td{font-size:12px;padding:12px;border-top:1px solid var(--border,#eceef2);vertical-align:middle}
+.sarraf-report-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.sarraf-report-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+@media (max-width:900px){.sarraf-report-summary{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:640px){
+  .sarraf-report-summary{grid-template-columns:1fr}
+  .sarraf-audit-table{min-width:680px}
+}
+
+/* Phase 8 — search/filter presentation only */
+.sarraf-search-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.sarraf-search-input{min-width:220px;flex:1}
+.sarraf-filter-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.sarraf-filter-chip{white-space:nowrap}
+@media (max-width:640px){
+  .sarraf-search-toolbar{align-items:stretch}
+  .sarraf-search-input{min-width:0;width:100%}
+  .sarraf-filter-row{width:100%;overflow-x:auto;flex-wrap:nowrap;padding-bottom:2px}
+  .sarraf-filter-chip{flex:0 0 auto}
+}
+
+/* Phase 7 — presentation utilities only */
+.sarraf-detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.sarraf-detail-item{min-width:0}
+.sarraf-detail-label{font-size:11px;line-height:1.4;color:var(--muted,#7b8190);margin-bottom:4px}
+.sarraf-detail-value{font-size:13px;line-height:1.5;font-weight:600;overflow-wrap:anywhere}
+@media (max-width:640px){
+  .sarraf-detail-grid{grid-template-columns:1fr;gap:10px}
+}
+{`
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 
 :root, [data-theme="light"] {
@@ -781,9 +1039,13 @@ export default function App() {
 
   const reloadBatches = async () => {
     try {
-      const { data: b } = await supabase.from("receipt_batches").select("*").order("created_at", { ascending: false }).limit(200);
+      const { data: b, error } = await supabase.from("receipt_batches").select("*").order("created_at", { ascending: false }).limit(200);
+      if (error) throw error;
       setBatches(b || []);
-    } catch { setBatches([]); }
+    } catch (err) {
+      console.error("reloadBatches", err);
+      setBatches([]);
+    }
   };
 
   const loadAll = async () => {
@@ -797,6 +1059,8 @@ export default function App() {
         supabase.from("audit").select("*").order("date", { ascending: false }).limit(300),
         supabase.from("account_ledger").select("*").order("created_at", { ascending: false }).limit(5000),
       ]);
+      const queryErrors = [c, u, l, t, a, ac].filter((r) => r?.error);
+      if (queryErrors.length) throw queryErrors[0].error;
       const d = {
         currencies: (c.data || []).map((r) => ({ id: r.id, code: r.code, name: r.name, symbol: r.symbol, dec: r.dec, external: !!r.external, buyRate: r.buy_rate == null ? null : +r.buy_rate, sellRate: r.sell_rate == null ? null : +r.sell_rate, rateUpdated: r.rate_updated })),
         users: (u.data || []).map((r) => ({ id: r.id, authId: r.auth_id, name: r.name, role: r.role, rate: +r.rate || 0, scope: Array.isArray(r.scope_curs) ? r.scope_curs : [], phone: r.phone, address: r.address, note: r.note, deleted: r.deleted })),
@@ -839,8 +1103,16 @@ export default function App() {
     if (lockRef.current) return false;
     if (!navigator.onLine) { flash("ئینتەرنێت نییە — ناتوانرێت تۆمار بکرێت"); return false; }                  // قوفڵی هاوکات — خێراتر لە state
     lockRef.current = true; setBusy(true);
-    try { await fn(); await loadAll(); return true; }
-    catch (err) { console.error(err); flash("هەڵەیەک ڕوویدا — دووبارە هەوڵ بدەوە"); return false; }
+    try {
+      const result = await fn();
+      await loadAll();
+      return result === undefined ? true : result;
+    }
+    catch (err) {
+      console.error(err);
+      flash(err?.message || "هەڵەیەک ڕوویدا — دووبارە هەوڵ بدەوە");
+      return false;
+    }
     finally { lockRef.current = false; setBusy(false); }
   };
 
@@ -904,6 +1176,10 @@ export default function App() {
   }, [data]);
 
   const cur = (id) => data?.currencies.find((c) => c.id === id) || {};
+  const safeMoney = (n) => {
+    const value = Number(n);
+    return Number.isFinite(value) ? value : 0;
+  };
   const usr = (id) => data?.users.find((u) => u.id === id) || {};
 
   /* خێری فرۆشتنەکان لە ماوەیەکدا، بۆ هەر دراوێک */
@@ -1072,6 +1348,10 @@ export default function App() {
   };
 
   const saveTx = async (f, existing) => {
+    if (existing?.deleted) {
+      flash("ئەم مامەڵەیە سڕاوەتەوە و ناتوانرێت دەستکاری بکرێت");
+      return false;
+    }
     const amount = Math.round(+f.amount), rate = +f.rate, total = Math.round(amount * rate);
     if (!(amount > 0)) { flash("بڕ دەبێت لە سفر گەورەتر بێت"); return false; }
     if (f.curId === f.againstId) { flash("ناکرێت دراوەکە لەگەڵ خۆی مامەڵەی پێبکرێت"); return false; }
@@ -1158,12 +1438,16 @@ export default function App() {
       }
       const r2 = await supabase.from("ledger").insert(buildEntries(t).map(LR)); if (r2.error) throw r2.error;
       if (f.batchId) {
-        await supabase.from("receipt_batches").update({
+        const rb = await supabase.from("receipt_batches").update({
           status: "linked", tx_id: t.id, partner_id: t.partnerId || null, linked_at: now(),
         }).eq("id", f.batchId);
+        if (rb.error) throw rb.error;
         setPendingBatch(null);
       }
-      if (existing) await supabase.from("receipt_batches").update({ partner_id: t.partnerId || null }).eq("tx_id", t.id);
+      if (existing) {
+        const rb = await supabase.from("receipt_batches").update({ partner_id: t.partnerId || null }).eq("tx_id", t.id);
+        if (rb.error) throw rb.error;
+      }
       reloadBatches();
       await A(existing ? "ئیدیتی مامەڵە" : (t.type === "buy" ? "کڕین" : "فرۆشتن"), `#${t.code} — ${fmt(amount)} ${cur(f.curId).code} — ${t.cpId ? usr(t.cpId).name : t.cpName}`);
       if (!existing) {
@@ -1189,19 +1473,47 @@ export default function App() {
   };
 
   const delTx = (t) => {
-    if (!window.confirm("دڵنیایت لە سڕینەوەی ئەم مامەڵەیە؟ باڵانسەکان ئۆتۆماتیکی ڕاست دەبنەوە.")) return;
-    run(async () => {
+    if (typeof currentUser !== "undefined" && !currentUser) {
+      flash("تکایە سەرەتا بچۆ ژوورەوە");
+      return false;
+    }
+
+    if (!t || t.deleted) {
+      flash("ئەم مامەڵەیە پێشتر سڕاوەتەوە");
+      return false;
+    }
+    if (!window.confirm("دڵنیایت لە سڕینەوەی ئەم مامەڵەیە؟ باڵانسەکان ئۆتۆماتیکی ڕاست دەبنەوە.")) return false;
+    return run(async () => {
       let r = await supabase.from("ledger").delete().eq("tx_id", t.id); if (r.error) throw r.error;
       r = await supabase.from("txs").update({ deleted: true }).eq("id", t.id); if (r.error) throw r.error;
       // کۆمەڵەی فیشی بەستراو ئازاد بکەرەوە
-      await supabase.from("receipt_batches").update({ status: "new", tx_id: null, partner_id: null, linked_at: null }).eq("tx_id", t.id);
+      const rb = await supabase.from("receipt_batches").update({ status: "new", tx_id: null, partner_id: null, linked_at: null }).eq("tx_id", t.id);
+      if (rb.error) throw rb.error;
       reloadBatches();
       await A("سڕینەوەی مامەڵە", `#${t.code || "—"} — ${fmt(t.amount)} ${cur(t.curId).code}`);
       flash("سڕایەوە");
     });
   };
 
-  const settle = (t, byOffice) => run(async () => {
+  const settle = (t, byOffice) => {
+    if (typeof currentUser !== "undefined" && !currentUser) {
+      flash("تکایە سەرەتا بچۆ ژوورەوە");
+      return false;
+    }
+
+    if (!t || t.deleted) {
+      flash("ئەم مامەڵەیە سڕاوەتەوە و ناتوانرێت تەسویە بکرێت");
+      return false;
+    }
+    if (t.status === "completed") {
+      flash("ئەم مامەڵەیە پێشتر تەواو کراوە");
+      return false;
+    }
+    if (!(Number.isFinite(+t.total) && +t.total > 0)) {
+      flash("کۆی مامەڵەکە دروست نییە");
+      return false;
+    }
+    return run(async () => {
     const isBuy = t.type === "buy";
     const e = {
       id: uid(), type: isBuy ? "office_payment" : "customer_payment",
@@ -1217,7 +1529,8 @@ export default function App() {
     if (byOffice) await notify(null, "payment", tr("نووسینگە پارەی دا"),
       `#${t.code || "—"} · ${fmt(t.total, 0)} ${cur(t.againstId).code}`, "txs", t.id);
     flash(isBuy ? "پارەدان تۆمار کرا ✓" : "وەرگرتن تۆمار کرا ✓");
-  });
+    });
+  };
   const officePay = (t) => settle(t, true);
 
   const addExpense = (f) => {
@@ -2117,7 +2430,9 @@ function Dashboard({ data, calc, cur, mySafe, profitIn, ownProfitIn, investorsPr
           <div className="flex items-center justify-between mb-4"><h2 className="text-[16px] font-bold">Recent Transactions</h2><button onClick={()=>go("txs")} className="text-[11px] font-semibold" style={{color:"var(--ac)"}}>{tr("هەمووی")}</button></div>
           <div className="hidden md:grid grid-cols-[.8fr_.65fr_1fr_.7fr_.8fr_.8fr] gap-3 px-2 pb-2 text-[10px] font-semibold" style={{color:"var(--txt-3)"}}><span>Type</span><span>Currency</span><span>Amount</span><span>Rate</span><span>Profit</span><span>Status</span></div>
           <div className="space-y-1">
-            {recent.map(t=>{const c=cur(t.curId), positive=t.type==="buy"; return <button key={t.id} onClick={()=>go("txs")} className="w-full text-start grid grid-cols-[1fr_auto] md:grid-cols-[.8fr_.65fr_1fr_.7fr_.8fr_.8fr] gap-3 items-center px-2 py-3 rounded-xl tap hover:bg-[var(--surf-2)]"><div><div className="text-[12px] font-semibold">{t.type==="buy"?tr("کڕین"):tr("فرۆشتن")}</div><div className="text-[9px] md:hidden" style={{color:"var(--txt-3)"}}>{t.cpName||usrSafeName(data,t.cpId)||"—"}</div></div><div className="flex items-center gap-1.5 text-[11px] font-semibold"><span>{curFlag(c)}</span>{c.code}</div><div style={num} className="text-[12px] font-semibold">{fmt(t.amount,0)}</div><div style={num} className="hidden md:block text-[11px]">{fmt(t.rate,3)}</div><div style={num} className="hidden md:block text-[11px]" >{t.profit==null?"—":fmt(t.profit,0)}</div><div className="text-end md:text-start"><Pill tone={t.status==="pending"?"amber":positive?"green":"slate"}>{t.status==="pending"?tr("چاوەڕوان"):tr("تەواوکراو")}</Pill></div></button>})}
+            {recent.map(t=>{const c=cur(t.curId), positive=t.type==="buy"; return <button key={t.id} onClick={()=>go("txs")} className="w-full text-start grid grid-cols-[1fr_auto] md:grid-cols-[.8fr_.65fr_1fr_.7fr_.8fr_.8fr] gap-3 items-center px-2 py-3 rounded-xl tap hover:bg-[var(--surf-2)]"><div><div className="text-[12px] font-semibold">{t.type==="buy"?tr("کڕین"):tr("فرۆشتن")}</div><div className="text-[9px] md:hidden" style={{color:"var(--txt-3)"}}>{t.cpName||usrSafeName(data,t.cpId)||"—"}</div></div><div className="flex items-center gap-1.5 text-[11px] font-semibold"><span>{curFlag(c)}</span>{c.code}</div><div style={num} className="text-[12px] font-semibold">{fmt(t.amount,0)}</div><div style={num} className="hidden md:block text-[11px]">{fmt(t.rate,3)}</div><div style={{...num, color: t.profit == null ? "var(--txt-3)" : Number(t.profit) >= 0 ? "var(--pos)" : "var(--neg)"}} className="hidden md:block text-[11px]">
+  {t.profit == null ? "—" : `${t.profit >= 0 ? "+" : "−"}${fmt(Math.abs(t.profit),0)} ${cur(t.profitCurId || t.againstId).code}`}
+</div><div className="text-end md:text-start"><Pill tone={t.status==="pending"?"amber":positive?"green":"slate"}>{t.status==="pending"?tr("چاوەڕوان"):tr("تەواوکراو")}</Pill></div></button>})}
             {!recent.length && <Empty t={tr("هیچ مامەڵەیەک نەدۆزرایەوە")}/>} 
           </div>
         </section>
@@ -3007,6 +3322,11 @@ function TxRow({ t, cur, usr, onEdit, onDel, flip, lite, settle, unsettle }) {
             {isBuy ? "−" : "+"}{fmt(t.total, 0)}
           </div>
           <div className="text-[10.5px] mt-0.5" style={{ color: "var(--txt-3)" }}>{cur(t.againstId).code}</div>
+          {Number.isFinite(Number(t.profit)) && !lite && (
+            <div className="text-[10.5px] mt-1 font-semibold" style={{ ...num, color: t.profit >= 0 ? "var(--pos)" : "var(--neg)" }}>
+              {Number(t.profit) >= 0 ? "+" : "−"}{fmt(Math.abs(Number(t.profit)), 0)} {cur(t.profitCurId || t.againstId).code} {t.profit >= 0 ? tr("خێر") : tr("زەرەر")}
+            </div>
+          )}
         </div>
       </div>
 
@@ -3018,7 +3338,13 @@ function TxRow({ t, cur, usr, onEdit, onDel, flip, lite, settle, unsettle }) {
               {t.code ? <D k={tr("کۆد")} v={"#" + t.code} /> : null}
               <D k={tr("ڕەیت")} v={t.rate ? fmt(1 / t.rate, 3) : "—"} />
               {t.direct && t.buyRate ? <D k={tr("بە چەند دەیکڕم")} v={fmt(1 / t.buyRate, 3)} /> : null}
-              {!lite && t.profit != null ? <D k={tr("خێر")} v={fmt(t.profit, 0)} tone={t.profit >= 0 ? "pos" : "neg"} /> : null}
+              {!lite && t.profit != null ? (
+                <D
+                  k={t.profit >= 0 ? tr("خێر") : tr("زەرەر")}
+                  v={`${t.profit >= 0 ? "+" : "−"}${fmt(Math.abs(t.profit), 0)} ${cur(t.profitCurId || t.againstId).code}`}
+                  tone={t.profit >= 0 ? "pos" : "neg"}
+                />
+              ) : null}
               {!lite && t.partnerId ? <D k={tr("لای")} v={usr(t.partnerId).name} /> : null}
               <D k={tr("بەروار")} v={new Date(t.date).toLocaleDateString("en-GB")} />
               <D k={tr("کات")} v={new Date(t.date).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })} />
@@ -3673,7 +3999,7 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
             <Share2 className="w-4 h-4" /> {tr("ناردنی خشتەی وردەکاری")}
           </Btn>
           {share && (
-            <ShareTable rows={rows} data={data} who={customerName} title={tr("وردەکاری فیشەکان")}
+            <ShareTable rows={rows} data={data} who={displayValue(customerName)} title={tr("وردەکاری فیشەکان")}
               flash={flash} onClose={() => setShare(false)} />
           )}
 

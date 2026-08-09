@@ -126,9 +126,11 @@ const now = () => new Date().toISOString();
 const ROLE_KU = { admin: "ئەدمین", customer: "کڕیار-فرۆشیار", partner: "هاوبەشی سین", investor: "وەبەرهێنەر", office: "نووسینگە" };
 
 const fmt = (n, d=0) => {
-  const value = Number(n);
-  if (!Number.isFinite(value)) return "—";
-  return value.toLocaleString("en-US", { minimumFractionDigits:d, maximumFractionDigits:d });
+    const value = Number(n);
+    if (!Number.isFinite(value)) return "—";
+    return value.toLocaleString("en-US", { minimumFractionDigits:d, maximumFractionDigits:d });
+  };
+  return Number(n).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: dec });
 };
 const num = { fontVariantNumeric: "tabular-nums", direction: "ltr", unicodeBidi: "embed" };
 
@@ -730,7 +732,7 @@ const dOnly = (d) => (d || "").slice(0, 10);
 
 /* ══════════════════ پێکهاتە بچووکەکان ══════════════════ */
 function Styles() {
-  return <style>
+  return <style>{`
 /* ==========================================================
    PHASE 10 — RESPONSIVE HARDENING
    UI/CSS ONLY — NO BUSINESS LOGIC
@@ -873,7 +875,7 @@ textarea {
 @media (max-width:640px){
   .sarraf-detail-grid{grid-template-columns:1fr;gap:10px}
 }
-{`
+
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 
 :root, [data-theme="light"] {

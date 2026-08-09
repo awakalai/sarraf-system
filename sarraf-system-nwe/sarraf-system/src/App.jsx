@@ -130,6 +130,12 @@ const currencyDecimals = (data, code) => {
   return 2;
 };
 const fmtMoney = (data, n, code) => fmt(n, currencyDecimals(data, code));
+const roundMoney = (data, n, code) => {
+  const dec = currencyDecimals(data, code);
+  const m = 10 ** dec;
+  const v = Number(n);
+  return Number.isFinite(v) ? Math.round(v * m) / m : 0;
+};
 const num = { fontVariantNumeric: "tabular-nums", direction: "ltr", unicodeBidi: "embed" };
 
 /* ── Currency-pair rate helpers ──────────────────────────────────────────
@@ -1578,8 +1584,26 @@ export default function App() {
       ]);
       const queryErrors = [c, u, l, t, a, ac].filter((r) => r?.error);
       if (queryErrors.length) throw queryErrors[0].error;
+      let rateHist = [];
+      try {
+        const rh = await supabase.from("rate_history").select("*").order("created_at", { ascending: true }).limit(5000);
+        if (!rh.error) {
+          rateHist = (rh.data || []).map((r) => ({
+            curId: r.cur_id,
+            buyRate: r.buy_rate == null ? null : +r.buy_rate,
+            sellRate: r.sell_rate == null ? null : +r.sell_rate,
+            date: r.created_at || r.date || null,
+          }));
+        } else {
+          console.warn("optional rate_history unavailable", rh.error);
+        }
+      } catch (rhErr) {
+        console.warn("optional rate_history unavailable", rhErr);
+      }
+
       const d = {
         currencies: (c.data || []).map((r) => ({ id: r.id, code: r.code, name: r.name, symbol: r.symbol, dec: r.dec, external: !!r.external, buyRate: r.buy_rate == null ? null : +r.buy_rate, sellRate: r.sell_rate == null ? null : +r.sell_rate, rateUpdated: r.rate_updated })),
+        rateHist,
         users: (u.data || []).map((r) => ({ id: r.id, authId: r.auth_id, name: r.name, role: r.role, rate: +r.rate || 0, scope: Array.isArray(r.scope_curs) ? r.scope_curs : [], phone: r.phone, address: r.address, note: r.note, deleted: r.deleted })),
         ledger: (l.data || []).map((r) => ({ id: r.id, type: r.type, owner: r.owner, investorId: r.investor_id, curId: r.cur_id, amount: +r.amount, partnerId: r.partner_id, txId: r.tx_id, note: r.note, date: r.date })),
         txs: (t.data || []).map((r) => ({ id: r.id, code: r.code, type: r.type, direct: !!r.direct,
@@ -1693,6 +1717,7 @@ export default function App() {
   }, [data]);
 
   const cur = (id) => data?.currencies.find((c) => c.id === id) || {};
+  const moneyRound = (value, curId) => roundMoney(data, value, curId);
   const safeMoney = (n) => {
     const value = Number(n);
     return Number.isFinite(value) ? value : 0;
@@ -1777,13 +1802,53 @@ export default function App() {
   const invUnpaid = (iid, curId) => invShare(iid, curId, profitAll[curId] || 0) - ((calc.invPaid[iid] || {})[curId] || 0);
 
   /* گۆڕینی هەر دراوێک بۆ دۆلار بەپێی نرخی ئەمڕۆ (بۆ کۆکردنەوەی گشتی) */
-  const toUsd = (amount, curId) => {
-    if (!amount) return 0;
-    if (curId === "usd") return amount;
-    const c = cur(curId);
-    const mid = c.buyRate && c.sellRate ? (c.buyRate + c.sellRate) / 2 : (c.buyRate || c.sellRate);
-    return mid ? amount / mid : 0;
+  const historicalUsdMid = (curId, atDate = null) => {
+    if (curId === "usd") return 1;
+    const current = cur(curId);
+    const currentMid = current.buyRate && current.sellRate
+      ? (Number(current.buyRate) + Number(current.sellRate)) / 2
+      : (Number(current.buyRate) || Number(current.sellRate) || 0);
+
+    const hist = Array.isArray(data?.rateHist) ? data.rateHist : [];
+    if (!atDate || !hist.length) return currentMid || 0;
+
+    const at = new Date(atDate).getTime();
+    if (!Number.isFinite(at)) return currentMid || 0;
+
+    let best = null;
+    let bestTime = -Infinity;
+    for (const r of hist) {
+      if (r.curId !== curId || !r.date) continue;
+      const rt = new Date(r.date).getTime();
+      if (!Number.isFinite(rt) || rt > at || rt < bestTime) continue;
+      const mid = r.buyRate && r.sellRate
+        ? (Number(r.buyRate) + Number(r.sellRate)) / 2
+        : (Number(r.buyRate) || Number(r.sellRate) || 0);
+      if (mid > 0) {
+        best = mid;
+        bestTime = rt;
+      }
+    }
+    return best || currentMid || 0;
   };
+
+  const toUsdAt = (amount, curId, atDate = null) => {
+    const v = Number(amount) || 0;
+    if (!v) return 0;
+    if (curId === "usd") return v;
+    const mid = historicalUsdMid(curId, atDate);
+    return mid > 0 ? v / mid : 0;
+  };
+
+  const fromUsdAt = (amount, curId, atDate = null) => {
+    const v = Number(amount) || 0;
+    if (!v) return 0;
+    if (curId === "usd") return v;
+    const mid = historicalUsdMid(curId, atDate);
+    return mid > 0 ? v * mid : 0;
+  };
+
+  const toUsd = (amount, curId) => toUsdAt(amount, curId, null);
   const sumUsd = (map) => (data?.currencies || []).reduce((s, c) => s + toUsd(map?.[c.id] || 0, c.id), 0);
   const ratesReady = !!data && data.currencies.every((c) => c.id === "usd" || c.buyRate || c.sellRate);
 
@@ -1805,37 +1870,46 @@ export default function App() {
     return { list, total };
   }, [data, calc, mySafe]);
 
-  /* مامناوەندی کێشدار بۆ stock ـی ماوە
-     - Direct trade ناچێتە ناوی، چونکە asset لە قاسەدا نامێنێتەوە.
-     - Sell ـە پێشووەکان لە quantity/cost basis کەم دەکرێنەوە.
-     - excludeTxId بۆ edit ـکردنی مامەڵەیەکی هەبووە. */
-  const inventoryPosition = (curId, againstId, excludeTxId = null) => {
-    let qty = 0, cost = 0;
+  /* USD-normalized weighted-average inventory.
+     - Stock is unified by acquired currency, not by quote pair.
+     - New ordinary buys snapshot their USD cost into buy_rate/buy_total.
+     - Legacy buys use the closest saved internal daily rate when available.
+     - Direct trades are excluded because inventory does not remain in the safe. */
+  const inventoryPosition = (curId, againstId = "usd", excludeTxId = null, valuationDate = null) => {
+    let qty = 0, costUsd = 0;
     const txs = data.txs
-      .filter((t) => !t.deleted && !t.direct && t.id !== excludeTxId && t.curId === curId && t.againstId === againstId)
+      .filter((t) => !t.deleted && !t.direct && t.id !== excludeTxId && t.curId === curId)
       .sort((a, b) => new Date(a.date) - new Date(b.date) || (a.code || 0) - (b.code || 0));
 
     for (const t of txs) {
-      const amount = Number(t.amount), rate = Number(t.rate);
-      if (!(amount > 0) || !(rate > 0)) continue;
+      const amount = Number(t.amount);
+      if (!(amount > 0)) continue;
 
       if (t.type === "buy") {
+        let txCostUsd = Number(t.buyTotal);
+        if (!(txCostUsd > 0)) {
+          txCostUsd = toUsdAt(Number(t.total) || 0, t.againstId, t.date);
+        }
+        if (!(txCostUsd > 0)) continue;
         qty += amount;
-        cost += amount * rate;
+        costUsd += txCostUsd;
       } else if (t.type === "sell" && qty > 0) {
-        const avg = cost / qty;
+        const avgUsd = costUsd / qty;
         const used = Math.min(amount, qty);
         qty -= used;
-        cost -= used * avg;
-        if (qty <= 1e-9) { qty = 0; cost = 0; }
+        costUsd -= used * avgUsd;
+        if (qty <= 1e-9) { qty = 0; costUsd = 0; }
       }
     }
 
-    return { qty, cost, avgRate: qty > 0 ? cost / qty : null };
+    const avgCostUsd = qty > 0 ? costUsd / qty : null;
+    const when = valuationDate || new Date().toISOString();
+    const avgRate = avgCostUsd == null ? null : fromUsdAt(avgCostUsd, againstId, when);
+    return { qty, costUsd, avgCostUsd, avgRate };
   };
 
-  const avgRate = (curId, againstId, excludeTxId = null) =>
-    inventoryPosition(curId, againstId, excludeTxId).avgRate;
+  const avgRate = (curId, againstId, excludeTxId = null, valuationDate = null) =>
+    inventoryPosition(curId, againstId, excludeTxId, valuationDate).avgRate;
 
   /* نرخی ئۆتۆماتیکی لە نرخی ڕۆژانەوە.
      currencies.buyRate / sellRate واتە:
@@ -1863,7 +1937,7 @@ export default function App() {
   /* ───────── کردارەکان ───────── */
   const addDeposit = (f) => run(async () => {
     if (!(Math.abs(+f.amount) > 0)) { flash("بڕ پێویستە"); return; }
-    const amount = Math.round(f.dir === "in" ? Math.abs(+f.amount) : -Math.abs(+f.amount));
+    const amount = moneyRound(f.dir === "in" ? Math.abs(+f.amount) : -Math.abs(+f.amount), f.curId);
     const e = { id: uid(), type: f.dir === "in" ? "deposit" : "withdraw", owner: f.owner === "self" ? "self" : "investor", investorId: f.owner === "self" ? null : f.owner, curId: f.curId, amount, partnerId: null, txId: null, note: f.note, date: now() };
     const r = await supabase.from("ledger").insert(LR(e)); if (r.error) throw r.error;
     await A(f.dir === "in" ? "پارە داخڵکردن" : "پارە دەرهێنان", `${fmt(Math.abs(amount))} ${cur(f.curId).code} — ${f.owner === "self" ? "هی خۆم" : usr(f.owner).name}`);
@@ -1890,7 +1964,7 @@ export default function App() {
       // دراوی کڕدراو دێتە ژوورەوە (لای خۆم یان لای هاوبەش)
       es.push({ id: uid(), type: "buy", curId: t.curId, amount: +t.amount, partnerId: t.partnerId || null, txId: t.id, date: t.date });
       // عمولەی هاوبەش دەستبەجێ کەم دەکرێتەوە
-      if (feeRate > 0) es.push({ id: uid(), type: "partner_fee", curId: t.curId, amount: -Math.round(t.amount * feeRate / 100), partnerId: t.partnerId, txId: t.id, note: `عمولەی ${feeRate}٪`, date: t.date });
+      if (feeRate > 0) es.push({ id: uid(), type: "partner_fee", curId: t.curId, amount: -moneyRound(t.amount * feeRate / 100, t.curId), partnerId: t.partnerId, txId: t.id, note: `عمولەی ${feeRate}٪`, date: t.date });
       // بەرامبەرەکەی لە قاسەی گشتی دەردەچێت (گەر خۆم پارەم دابێت)
       if (t.status === "completed") es.push({ id: uid(), type: "buy", curId: t.againstId, amount: -t.total, partnerId: null, txId: t.id, date: t.date });
     } else {
@@ -1975,19 +2049,35 @@ export default function App() {
 
     return await run(async () => {
       let profit = null, profitCurId = null;
+      const txDate = existing ? existing.date : now();
       if (f.type === "sell") {
-        const pos = inventoryPosition(f.curId, f.againstId, existing?.id || null);
+        const pos = inventoryPosition(f.curId, f.againstId, existing?.id || null, txDate);
         if (pos.avgRate !== null && amount <= pos.qty + 1e-9) {
           profit = roundCur(total - pos.avgRate * amount, f.againstId);
           profitCurId = f.againstId;
         }
       }
+
+      let usdCostTotal = existing?.buyTotal ?? null;
+      let usdCostUnit = existing?.buyRate ?? null;
+      if (f.type === "buy") {
+        const snap = toUsdAt(total, f.againstId, txDate);
+        if (snap > 0) {
+          usdCostTotal = Math.round(snap * 1_000_000) / 1_000_000;
+          usdCostUnit = Math.round((snap / amount) * 1_000_000_000) / 1_000_000_000;
+        }
+      } else {
+        usdCostTotal = null;
+        usdCostUnit = null;
+      }
+
       const code = existing ? existing.code : Math.max(1000, ...data.txs.map((x) => x.code || 0)) + 1;
       const t = { id: existing ? existing.id : uid(), code, type: f.type, cpId: f.cpId || null,
         cpName: f.cpId ? null : f.cpName, curId: f.curId, amount, rate, againstId: f.againstId, total,
         partnerId: f.partnerId || null, direct: false, status: f.status || "completed",
-        paidAt: existing ? existing.paidAt : null, profit, profitCurId, note: f.note || "",
-        date: existing ? existing.date : now(), edited: !!existing };
+        paidAt: existing ? existing.paidAt : null, profit, profitCurId,
+        buyRate: usdCostUnit, buyTotal: usdCostTotal, note: f.note || "",
+        date: txDate, edited: !!existing };
       if (existing) {
         let r = await supabase.from("ledger").delete().eq("tx_id", t.id); if (r.error) throw r.error;
         r = await supabase.from("txs").update(TR(t)).eq("id", t.id); if (r.error) throw r.error;
@@ -2088,7 +2178,7 @@ export default function App() {
   const officePay = (t) => settle(t, true);
 
   const addExpense = (f) => {
-    const amt = Math.round(Math.abs(+f.amount));
+    const amt = moneyRound(Math.abs(+f.amount), f.curId)
     if (!(amt > 0)) return flash("بڕی خەرجی پێویستە");
     if (f.category === "خێری وەبەرهێنەر" && !f.investorId) return flash("وەبەرهێنەر هەڵبژێرە");
     run(async () => {
@@ -2106,7 +2196,7 @@ export default function App() {
   };
 
   const transfer = (f) => {
-    const amt = Math.round(Math.abs(+f.amount));
+    const amt = moneyRound(Math.abs(+f.amount), f.curId)
     if (!amt || !f.partnerId) return flash("بڕ و هاوبەش دیاری بکە");
     run(async () => {
       const base = { curId: f.curId, txId: null, date: now() };
@@ -2117,7 +2207,7 @@ export default function App() {
            { ...base, id: uid(), type: "transfer", amount: -amt, partnerId: f.partnerId }];
       // عمولە تەنها لە کاتی تێکردندا
       const fr = usr(f.partnerId).rate || 0;
-      if (f.dir === "to" && fr > 0) es.push({ ...base, id: uid(), type: "partner_fee", amount: -Math.round(amt * fr / 100), partnerId: f.partnerId, note: `عمولەی ${fr}٪` });
+      if (f.dir === "to" && fr > 0) es.push({ ...base, id: uid(), type: "partner_fee", amount: -moneyRound(amt * fr / 100, f.curId), partnerId: f.partnerId, note: `عمولەی ${fr}٪` });
       const r = await supabase.from("ledger").insert(es.map(LR)); if (r.error) throw r.error;
       await A("گواستنەوە", `${fmt(amt)} ${cur(f.curId).code} ${f.dir === "to" ? "بۆ لای" : "لە لای"} ${usr(f.partnerId).name}`);
       flash("گواستنەوە تۆمار کرا ✓");
@@ -2185,7 +2275,7 @@ export default function App() {
   /* ── پارە دانان/دەرهێنان لە حسابی هەر کەسێک ── */
   //  دوو لای هەیە: قاسەی گشتی + قاسەی خودی ئەو کەسە
   const accountMove = (f) => run(async () => {
-    const amt = Math.round(Math.abs(+f.amount));
+    const amt = moneyRound(Math.abs(+f.amount), f.curId)
     if (!(amt > 0)) { flash("بڕ پێویستە"); return; }
     if (!f.userId) { flash("کەسەکە دیاری بکە"); return; }
     const u = usr(f.userId);
@@ -2221,7 +2311,7 @@ export default function App() {
   /* ── گواستنەوەی پارە: حساب بۆ حساب ── */
   //  لای یەکێک کەم، لای ئەوی تر زیاد — قاسەی گشتی نەگۆڕ دەمێنێتەوە
   const accountTransfer = (f) => run(async () => {
-    const amt = Math.round(Math.abs(+f.amount));
+    const amt = moneyRound(Math.abs(+f.amount), f.curId)
     if (!(amt > 0)) { flash("بڕ پێویستە"); return; }
     if (!f.fromId || !f.toId) { flash("هەردوو لایەن دیاری بکە"); return; }
     if (f.fromId === f.toId) { flash("ناکرێت بۆ هەمان کەس بگوازرێتەوە"); return; }
@@ -2268,7 +2358,7 @@ export default function App() {
     // ڕاستکردنەوەی قاسە بەپێی ژماردنی ڕاستەقینە
     if (adjust) {
       const es = lines.filter((l) => l.diff).map((l) => ({
-        id: uid(), type: "adjustment", curId: l.cur, amount: Math.round(l.diff),
+        id: uid(), type: "adjustment", curId: l.cur, amount: moneyRound(l.diff, l.cur),
         note: `ڕاستکردنەوەی بەستنی ڕۆژ${note ? " — " + note : ""}`, date: now(),
       }));
       if (es.length) { const e2 = await supabase.from("ledger").insert(es.map(LR)); if (e2.error) throw e2.error; }
@@ -3832,7 +3922,7 @@ function TxForm({ data, cur, calc, usr, avgRate, inventoryPosition, autoRate, on
     cpName: e ? e.cpName || "" : "",
     partnerId: e ? e.partnerId || "" : (batch?.partner_id || ""),
     direct: e ? !!e.direct : false,
-    buyQuote: e && e.buyRate ? storedRateToDisplay(e.buyRate, initialCurId, initialAgainstId, initialRateBaseId) : "",
+    buyQuote: e && e.direct && e.buyRate ? storedRateToDisplay(e.buyRate, initialCurId, initialAgainstId, initialRateBaseId) : "",
     sellQuote: e && e.direct && e.rate ? storedRateToDisplay(e.rate, initialCurId, initialAgainstId, initialRateBaseId) : "",
     fromId: "", fromName: "", toId: "", toName: "",
     buyStatus: "completed", sellStatus: "completed",
@@ -3889,10 +3979,10 @@ function TxForm({ data, cur, calc, usr, avgRate, inventoryPosition, autoRate, on
   const dProfit = bq > 0 && sq > 0 ? roundByCurrency(dSellTotal - dBuyTotal, f.againstId) : null;
 
   const pos = f.type === "sell" && inventoryPosition
-    ? inventoryPosition(f.curId, f.againstId, e?.id || null)
+    ? inventoryPosition(f.curId, f.againstId, e?.id || null, e?.date || null)
     : null;
   const av = f.type === "sell"
-    ? (pos?.avgRate ?? avgRate(f.curId, f.againstId, e?.id || null))
+    ? (pos?.avgRate ?? avgRate(f.curId, f.againstId, e?.id || null, e?.date || null))
     : null;
   const enoughCostBasis = f.type !== "sell" || !pos || amtR <= pos.qty + 1e-9;
   const estProfit = f.type === "sell" && av !== null && enoughCostBasis
@@ -5787,12 +5877,22 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
       }
 
       const a = mainCur ? agg[mainCur] : { g: 0, f: 0, n: 0 };
-      const b = await supabase.from("receipt_batches").insert({
+      const batchPayload = {
         id: batchId, customer_id: customerId || null, customer_name: customerName || null,
         partner_id: partnerId || null, direction: dir, status: "new", currency: mainCur,
         total_gross: a.g, total_fee: a.f, total_net: a.n, n: good.length, dup_n: dupN,
         rejected_n: bad.length, uploaded_by: uploaderId || null,
-      });
+      };
+
+      let b = await supabase.from("receipt_batches").insert(batchPayload);
+      if (b.error && /rejected_n|schema cache|column/i.test(String(b.error?.message || ""))) {
+        const { rejected_n, ...withoutRejected } = batchPayload;
+        b = await supabase.from("receipt_batches").insert(withoutRejected);
+      }
+      if (b.error && /dup_n|schema cache|column/i.test(String(b.error?.message || ""))) {
+        const { rejected_n, dup_n, ...legacyPayload } = batchPayload;
+        b = await supabase.from("receipt_batches").insert(legacyPayload);
+      }
       if (b.error) throwSendError("batch", b.error);
       batchInserted = true;
 
@@ -7312,7 +7412,7 @@ function AccountSafe({ userId, data, calc, cur, usr, accountMove, accountTransfe
               {tr("باڵانسی ئێستا")} <b style={num}>{fmt(bal[mv.curId] || 0, 0)}</b>
               <span className="mx-2 text-[var(--txt-3)]">←</span>
               {tr("دوای ئەمە")} <b style={num} className={mv.dir === "in" ? "text-[var(--pos)]" : "text-[var(--neg)]"}>
-                {fmt((bal[mv.curId] || 0) + (mv.dir === "in" ? 1 : -1) * Math.round(+mv.amount), 0)}
+                {fmt((bal[mv.curId] || 0) + (mv.dir === "in" ? 1 : -1) * roundMoney(data, +mv.amount, mv.curId), 0)}
               </b> {cur(mv.curId).code}
             </div>
           )}
@@ -7501,7 +7601,7 @@ function Partners({ data, calc, cur, usr, transfer, detailId, setDetailId }) {
         </div>
         {tf.dir === "to" && fr > 0 && +tf.amount > 0 && (
           <div className="mt-3 text-sm text-[var(--txt-2)] bg-[var(--line)] border border-[var(--line)] rounded-[var(--r-sm)] p-3">
-            عمولەی {fr}٪ = <b style={num}>{fmt(Math.round(Math.round(+tf.amount) * fr / 100), 0)}</b> {tr("— باڵانسی دوایی:")} <b style={num}>{fmt(Math.round(+tf.amount) - Math.round(Math.round(+tf.amount) * fr / 100), 0)}</b>
+            عمولەی {fr}٪ = <b style={num}>{fmtMoney(data, roundMoney(data, +tf.amount * fr / 100, tf.curId), tf.curId)}</b> {tr("— باڵانسی دوایی:")} <b style={num}>{fmtMoney(data, roundMoney(data, +tf.amount - roundMoney(data, +tf.amount * fr / 100, tf.curId), tf.curId), tf.curId)}</b>
           </div>
         )}
       </Card>
@@ -8741,10 +8841,11 @@ function DayClose({ data, calc, cur, usr, closeDay, sumUsd }) {
 
   // چاوەڕوانکراو = ئەوەی لای خۆم دەبێت بێت (نەک ئەوەی لای هاوبەشان)
   const lines = data.currencies.map((c) => {
-    const expected = Math.round(calc.atMe[c.id] || 0);
+    const expected = roundMoney(data, calc.atMe[c.id] || 0, c.id);
     const raw = counts[c.id];
-    const counted = raw === "" || raw === undefined ? null : Math.round(+raw);
-    return { cur: c.id, code: c.code, name: c.name, c, expected, counted, diff: counted === null ? 0 : counted - expected };
+    const counted = raw === "" || raw === undefined ? null : roundMoney(data, +raw, c.id);
+    const diff = counted === null ? 0 : roundMoney(data, counted - expected, c.id);
+    return { cur: c.id, code: c.code, name: c.name, c, expected, counted, diff };
   });
   const entered = lines.filter((l) => l.counted !== null);
   const diffs = entered.filter((l) => l.diff !== 0);

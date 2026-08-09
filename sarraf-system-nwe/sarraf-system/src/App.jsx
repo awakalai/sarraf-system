@@ -5160,15 +5160,19 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
     commitRows((xs) => xs.map((r) => r.id === id ? { ...r, ...(typeof patch === "function" ? patch(r) : patch) } : r));
   };
 
-  const criticalLowFields = (fc = {}) => {
+  const criticalLowFields = (fc = {}, row = {}) => {
     const out = [];
     const checks = [
       ["amount", 0.72, "بڕ"],
       ["currency", 0.68, "دراو"],
       ["refNo", 0.55, "ژمارەی مامەڵە"],
+      ["platform", 0.65, "پلاتفۆرم"],
       ["receiver", 0.50, "وەرگر"],
     ];
     checks.forEach(([k, min, label]) => {
+      // Some WeChat QR-payment receipts legitimately show only Recipient Note,
+      // not a recipient person/name. Do not force a false receiver in that case.
+      if (k === "receiver" && row.platform === "WeChat" && row.recipientNote) return;
       if (fc[k] != null && clamp01(fc[k]) < min) out.push(label);
     });
     return out;
@@ -5191,7 +5195,7 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
     const netV = d?.netAmount != null && Number.isFinite(Number(d.netAmount))
       ? Number(d.netAmount)
       : Math.max(0, amountV - feeV);
-    const plat = d?.platform || detectPlatform(d?.bank);
+    const plat = detectPlatform(`${d?.platform || ""} ${d?.bank || ""} ${d?.platformEvidence || ""}`) || d?.platform || null;
     const rn = normRef(d?.refNo);
     const fc = d?.fieldConfidence && typeof d.fieldConfidence === "object" ? d.fieldConfidence : {};
     const conf = clamp01(d?.confidence, 0.5);
@@ -5214,7 +5218,12 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
           rejectCode: local ? "same_batch" : "same_ref", rejectReason: reason, note: reason,
           dupOf: old?.id || local?.id || null, dupOfDate: old?.d || null, dupOfWho: old?.who || null,
           amount: amountV, fee: feeV, feeOriginal: feeOrig, feeDiscount: feeDisc, net: netV,
+          orderAmount: d?.orderAmount ?? null,
           currency: d?.currency, sender: d?.sender, receiver: d?.receiver, refNo: d?.refNo,
+          merchantOrderNo: d?.merchantOrderNo || null,
+          paymentMethod: d?.paymentMethod || null, cardLast4: d?.cardLast4 || null,
+          transactionStatus: d?.transactionStatus || null, recipientNote: d?.recipientNote || null,
+          merchantName: d?.merchantName || null, platformEvidence: d?.platformEvidence || null,
           txTime: d?.txTime, txDate: d?.txDate, bank: d?.bank, platform: plat,
           confidence: conf, fieldConfidence: fc, raw: d,
         };
@@ -5231,6 +5240,10 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
     if (!rn) {
       reviewReasons.push("ژمارەی مامەڵە نەدۆزرایەوە");
       reviewCode = reviewCode || "no_ref";
+    }
+    if (!plat) {
+      reviewReasons.push("پلاتفۆرم بە دڵنیایی نەناسراوەتەوە");
+      reviewCode = reviewCode || "unknown_platform";
     }
 
     const sameAmountTime = rowsRef.current.find((r) =>
@@ -5252,7 +5265,7 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
       }
     }
 
-    const low = criticalLowFields(fc);
+    const low = criticalLowFields(fc, { platform: plat, recipientNote: d?.recipientNote });
     if (conf < 0.72 || low.length) {
       reviewReasons.push(low.length ? `دڵنیایی نزم لە: ${low.join("، ")}` : "دڵنیایی گشتیی خوێندنەوە نزمە");
       reviewCode = reviewCode || "low_confidence";
@@ -5275,8 +5288,12 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
       rejectReason: status === "suspect" ? note : null,
       note, ageDays,
       amount: amountV, fee: feeV, feeOriginal: feeOrig, feeDiscount: feeDisc, net: netV,
+      orderAmount: d?.orderAmount ?? null,
       currency: d?.currency, sender: d?.sender, receiver: d?.receiver, refNo: d?.refNo,
       merchantOrderNo: d?.merchantOrderNo || null,
+      paymentMethod: d?.paymentMethod || null, cardLast4: d?.cardLast4 || null,
+      transactionStatus: d?.transactionStatus || null, recipientNote: d?.recipientNote || null,
+      merchantName: d?.merchantName || null, platformEvidence: d?.platformEvidence || null,
       txTime: d?.txTime, txDate: d?.txDate, bank: d?.bank, platform: plat,
       confidence: conf, fieldConfidence: fc, raw: d,
     };
@@ -5403,7 +5420,7 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
 
   const editField = (id, key, value) => {
     patchRow(id, (r) => {
-      const numeric = ["amount", "fee", "net", "feeOriginal", "feeDiscount"].includes(key);
+      const numeric = ["amount", "fee", "net", "orderAmount", "feeOriginal", "feeDiscount"].includes(key);
       const next = { ...r, [key]: numeric ? (value === "" ? "" : Number(value)) : value, manualEdited: true };
       if ((key === "amount" || key === "fee") && Number.isFinite(Number(next.amount)) && Number.isFinite(Number(next.fee))) {
         next.net = Math.max(0, Number(next.amount) - Number(next.fee));
@@ -5478,7 +5495,7 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
     if (reviewPlatform !== "all" && rp !== reviewPlatform) return false;
     if (!normalizedReceiptSearch) return true;
     return [
-      r.amount, r.currency, r.refNo, r.merchantOrderNo, r.receiver, r.sender, r.bank, rp, r.fileName, r.note
+      r.amount, r.currency, r.refNo, r.merchantOrderNo, r.paymentMethod, r.cardLast4, r.transactionStatus, r.recipientNote, r.merchantName, r.receiver, r.sender, r.bank, rp, r.fileName, r.note
     ].some((v) => normalizeSearchText(v).includes(normalizedReceiptSearch));
   });
   const visibleIds = visibleRows.map((r) => r.id);
@@ -5587,52 +5604,6 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
     throw e;
   };
 
-
-  // Compatibility layer for older Supabase schemas during prototype testing.
-  // Only OPTIONAL receipt metadata may be removed after an explicit PGRST204.
-  // Required financial/identity fields are never silently dropped.
-  const insertCompat = async (table, payload, optionalColumns = [], stage = "unknown") => {
-    let current = Array.isArray(payload)
-      ? payload.map((row) => ({ ...row }))
-      : { ...payload };
-
-    const allowed = new Set(optionalColumns);
-
-    for (let attempt = 0; attempt < 16; attempt++) {
-      const res = await supabase.from(table).insert(current);
-      if (!res.error) return res;
-
-      const msg = String(res.error?.message || "");
-      const code = String(res.error?.code || "");
-      const match =
-        msg.match(/Could not find the ['"]([^'"]+)['"] column/i) ||
-        msg.match(/column ['"]?([^'"\s]+)['"]? .*schema cache/i);
-
-      const missing = match?.[1];
-
-      if (code === "PGRST204" && missing && allowed.has(missing)) {
-        console.warn(`[schema-compat] ${table}: optional "${missing}" missing; retrying without it`);
-
-        if (Array.isArray(current)) {
-          current = current.map((row) => {
-            const next = { ...row };
-            delete next[missing];
-            return next;
-          });
-        } else {
-          delete current[missing];
-        }
-
-        allowed.delete(missing);
-        continue;
-      }
-
-      throwSendError(stage, res.error);
-    }
-
-    throwSendError(stage, new Error(`${table}: schema compatibility retries exceeded`));
-  };
-
   const send = async () => {
     if (working || processing.length) return flash("هێشتا هەندێک فیش دەخوێندرێنەوە");
     if (review.length) return flash(`${review.length} فیش پێویستیان بە پشکنینی دەستی هەیە`);
@@ -5685,10 +5656,17 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
           uploaded_by: uploaderId || null,
           raw: {
             ...(r.raw || {}),
-            ocr_v: 3,
+            ocr_v: 4,
             confidence: r.confidence ?? r.raw?.confidence ?? null,
             fieldConfidence: r.fieldConfidence || r.raw?.fieldConfidence || null,
             merchantOrderNo: r.merchantOrderNo || r.raw?.merchantOrderNo || null,
+            orderAmount: r.orderAmount ?? r.raw?.orderAmount ?? null,
+            paymentMethod: r.paymentMethod || r.raw?.paymentMethod || null,
+            cardLast4: r.cardLast4 || r.raw?.cardLast4 || null,
+            transactionStatus: r.transactionStatus || r.raw?.transactionStatus || null,
+            recipientNote: r.recipientNote || r.raw?.recipientNote || null,
+            merchantName: r.merchantName || r.raw?.merchantName || null,
+            platformEvidence: r.platformEvidence || r.raw?.platformEvidence || null,
             reviewedManually: !!r.reviewedManually,
             manualEdited: !!r.manualEdited,
           },
@@ -5696,32 +5674,17 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
       }
 
       const a = mainCur ? agg[mainCur] : { g: 0, f: 0, n: 0 };
-      const batchPayload = {
+      const b = await supabase.from("receipt_batches").insert({
         id: batchId, customer_id: customerId || null, customer_name: customerName || null,
         partner_id: partnerId || null, direction: dir, status: "new", currency: mainCur,
         total_gross: a.g, total_fee: a.f, total_net: a.n, n: good.length, dup_n: dupN,
         rejected_n: bad.length, uploaded_by: uploaderId || null,
-      };
-
-      await insertCompat(
-        "receipt_batches",
-        batchPayload,
-        ["rejected_n", "dup_n", "uploaded_by", "partner_id", "customer_name"],
-        "batch"
-      );
+      });
+      if (b.error) throwSendError("batch", b.error);
       batchInserted = true;
 
-      await insertCompat(
-        "receipts",
-        recs,
-        [
-          "fee_original", "fee_discount", "platform", "net_amount",
-          "counted", "reject_code", "reject_reason",
-          "dup_of", "dup_of_date", "dup_of_who",
-          "raw", "uploaded_by", "image_path", "bank", "note"
-        ],
-        "receipts"
-      );
+      const rr = await supabase.from("receipts").insert(recs);
+      if (rr.error) throwSendError("receipts", rr.error);
 
       try {
         const nr = await supabase.from("notes").insert({
@@ -5976,6 +5939,9 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
                           {r.refNo && <span style={num}> · {r.refNo}</span>}
                         </div>
                         {r.merchantOrderNo && <div className="text-[10px] text-[var(--txt-3)] mt-0.5" style={num}>Merchant order: {r.merchantOrderNo}</div>}
+                        {(r.paymentMethod || r.cardLast4) && <div className="text-[10px] text-[var(--txt-3)] mt-0.5" style={num}>{r.paymentMethod || "Card"}{r.cardLast4 && !String(r.paymentMethod || "").includes(r.cardLast4) ? ` · ****${r.cardLast4}` : ""}</div>}
+                        {r.recipientNote && !r.receiver && <div className="text-[10px] text-[var(--txt-3)] mt-0.5">Recipient note: {r.recipientNote}</div>}
+                        {r.transactionStatus && <div className="text-[10px] text-[var(--txt-3)] mt-0.5">{r.transactionStatus}</div>}
                         {r.platform && <div className="text-[10px] text-[var(--txt-3)] mt-0.5">{platMeta(r.platform).ku}</div>}
                         {r.note && <div className={`text-[10.5px] mt-1.5 leading-relaxed ${r.status === "suspect" ? "text-[var(--warn)]" : r.status === "dup" ? "text-[var(--neg)]" : "text-[var(--txt-3)]"}`}>{r.note}</div>}
                       </div>
@@ -6008,8 +5974,14 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
                           <div><div className="flex justify-between"><Lbl>دراو</Lbl>{fieldConf(r, "currency")}</div><Inp value={r.currency ?? ""} onChange={(e) => editField(r.id, "currency", e.target.value.toUpperCase())} placeholder="IQD / USD / CNY..." /></div>
                           <div><div className="flex justify-between"><Lbl>فی / عمولە</Lbl>{fieldConf(r, "fee")}</div><Inp type="number" value={r.fee ?? ""} onChange={(e) => editField(r.id, "fee", e.target.value)} /></div>
                           <div><Lbl>بڕی نەت</Lbl><Inp type="number" value={r.net ?? ""} onChange={(e) => editField(r.id, "net", e.target.value)} /></div>
+                          <div><div className="flex justify-between"><Lbl>Order amount / بڕی بنەڕەتی</Lbl>{fieldConf(r, "orderAmount")}</div><Inp type="number" value={r.orderAmount ?? ""} onChange={(e) => editField(r.id, "orderAmount", e.target.value)} /></div>
                           <div><div className="flex justify-between"><Lbl>ژمارەی مامەڵە / Order No.</Lbl>{fieldConf(r, "refNo")}</div><Inp value={r.refNo ?? ""} onChange={(e) => editField(r.id, "refNo", e.target.value)} /></div>
                           <div><div className="flex justify-between"><Lbl>Merchant order No.</Lbl>{fieldConf(r, "merchantOrderNo")}</div><Inp value={r.merchantOrderNo ?? ""} onChange={(e) => editField(r.id, "merchantOrderNo", e.target.value)} /></div>
+                          <div><div className="flex justify-between"><Lbl>Payment method</Lbl>{fieldConf(r, "paymentMethod")}</div><Inp value={r.paymentMethod ?? ""} onChange={(e) => editField(r.id, "paymentMethod", e.target.value)} placeholder="Visa / Mastercard..." /></div>
+                          <div><Lbl>Card last 4</Lbl><Inp value={r.cardLast4 ?? ""} onChange={(e) => editField(r.id, "cardLast4", e.target.value.replace(/\D/g, "").slice(-4))} placeholder="0233" /></div>
+                          <div><div className="flex justify-between"><Lbl>Transaction status</Lbl>{fieldConf(r, "transactionStatus")}</div><Inp value={r.transactionStatus ?? ""} onChange={(e) => editField(r.id, "transactionStatus", e.target.value)} /></div>
+                          <div><Lbl>Recipient note</Lbl><Inp value={r.recipientNote ?? ""} onChange={(e) => editField(r.id, "recipientNote", e.target.value)} /></div>
+                          <div><Lbl>Merchant / Display name</Lbl><Inp value={r.merchantName ?? ""} onChange={(e) => editField(r.id, "merchantName", e.target.value)} /></div>
                           <div><div className="flex justify-between"><Lbl>وەرگر</Lbl>{fieldConf(r, "receiver")}</div><Inp value={r.receiver ?? ""} onChange={(e) => editField(r.id, "receiver", e.target.value)} /></div>
                           <div><div className="flex justify-between"><Lbl>ناردەر</Lbl>{fieldConf(r, "sender")}</div><Inp value={r.sender ?? ""} onChange={(e) => editField(r.id, "sender", e.target.value)} /></div>
                           <div><div className="flex justify-between"><Lbl>ئەپ / بانک</Lbl>{fieldConf(r, "platform")}</div><Inp value={r.bank ?? r.platform ?? ""} onChange={(e) => { editField(r.id, "bank", e.target.value); editField(r.id, "platform", detectPlatform(e.target.value) || r.platform); }} /></div>

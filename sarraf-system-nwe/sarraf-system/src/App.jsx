@@ -1001,6 +1001,169 @@ input,select,textarea{color-scheme:light} [data-theme="dark"] input,[data-theme=
 @media(min-width:768px){
   .sarraf-desktop-content{padding-left:260px}
 }
+/* ══════════════════ PROFESSIONAL UI FOUNDATION — PHASE 1 ══════════════════ */
+:root,[data-theme="light"]{
+  --bg:#F5F7F6;
+  --bg-2:#EDF1EF;
+  --surf:#FFFFFF;
+  --surf-2:#F8FAF9;
+  --surf-3:#F0F4F2;
+  --line:rgba(15,23,42,.075);
+  --line-2:rgba(15,23,42,.14);
+  --txt:#111714;
+  --txt-2:#5D6762;
+  --txt-3:#8B948F;
+  --pos:#19C878;
+  --pos-bg:rgba(25,200,120,.10);
+  --ac:#19C878;
+  --ac-2:#0FAE67;
+  --ac-gl:25,200,120;
+  --ac-ink:#07130D;
+  --r-sm:12px;--r:16px;--r-lg:22px;--r-xl:28px;
+  --sh-1:0 1px 2px rgba(15,23,42,.025),0 5px 18px rgba(15,23,42,.035);
+  --sh-2:0 10px 30px rgba(15,23,42,.075);
+  --sh-3:0 22px 60px rgba(15,23,42,.14);
+}
+[data-theme="dark"]{
+  --bg:#0E1210;--bg-2:#121814;--surf:#171D19;--surf-2:#1C241F;--surf-3:#222C26;
+  --txt:#F4F7F5;--txt-2:#AAB5AF;--txt-3:#7D8A83;
+  --line:rgba(255,255,255,.075);--line-2:rgba(255,255,255,.14);
+  --ac:#25D181;--ac-2:#17B971;--ac-gl:37,209,129;
+}
+body{
+  background:
+    radial-gradient(900px 420px at 82% -120px,rgba(var(--ac-gl),.065),transparent 64%),
+    var(--bg);
+}
+.sarraf-brand-mark{
+  background:linear-gradient(145deg,#2BDE8D,#18C877);
+  color:#07130D;
+  box-shadow:0 8px 20px rgba(var(--ac-gl),.18),inset 0 1px 0 rgba(255,255,255,.42);
+}
+.sarraf-sidebar{
+  background:linear-gradient(180deg,#0C120F 0%,#0A0F0D 100%);
+  border-inline-end:1px solid rgba(255,255,255,.055);
+  box-shadow:14px 0 42px rgba(3,10,7,.12);
+}
+.sidebar-section-title{
+  color:#66736C;
+  font-size:9px;
+  font-weight:700;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+}
+.sarraf-sidebar .nav-item{
+  min-height:40px;
+  border:1px solid transparent;
+}
+.sarraf-sidebar .nav-item:hover{
+  background:rgba(255,255,255,.055);
+}
+.sarraf-sidebar .nav-active{
+  background:linear-gradient(135deg,#2BDE8D,#1ACB7A);
+  box-shadow:0 8px 22px rgba(var(--ac-gl),.16);
+}
+.sarraf-topbar{
+  background:color-mix(in srgb,var(--bg) 82%,transparent);
+  border-color:var(--line)!important;
+}
+.fin-card,.card{
+  border-color:var(--line);
+  box-shadow:var(--sh-1),var(--ring);
+}
+.fin-card{
+  border-radius:20px;
+}
+.fin-card:hover{
+  border-color:color-mix(in srgb,var(--line-2) 78%,transparent);
+}
+.metric-card{
+  min-height:126px;
+  position:relative;
+  overflow:hidden;
+}
+.metric-card::after{
+  content:"";
+  position:absolute;
+  width:74px;height:74px;
+  border-radius:999px;
+  inset-inline-end:-28px;top:-30px;
+  background:rgba(var(--ac-gl),.055);
+  pointer-events:none;
+}
+.dashboard-page-head{
+  padding:2px 2px 0;
+}
+.dashboard-eyebrow{
+  color:var(--txt-3);
+  font-size:10px;
+  font-weight:700;
+  letter-spacing:.055em;
+}
+.dashboard-title{
+  margin-top:5px;
+  color:var(--txt);
+  font-size:clamp(27px,3vw,34px);
+  line-height:1.15;
+  font-weight:800;
+  letter-spacing:-.025em;
+}
+.dashboard-subtitle{
+  margin-top:7px;
+  color:var(--txt-3);
+  font-size:11px;
+}
+.sarraf-primary-action{
+  color:#07130D;
+  background:linear-gradient(135deg,#2BDE8D,#1BCB7A);
+  box-shadow:0 10px 24px rgba(var(--ac-gl),.17);
+}
+.sarraf-primary-action:hover{box-shadow:0 13px 28px rgba(var(--ac-gl),.23)}
+.dashboard-quick-grid{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:10px;
+}
+.quick-action-card{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  min-width:0;
+  padding:11px 12px;
+  border-radius:15px;
+  color:var(--txt);
+  background:color-mix(in srgb,var(--surf) 96%,var(--ac) 4%);
+  border:1px solid var(--line);
+  box-shadow:0 1px 2px rgba(15,23,42,.025);
+}
+.quick-action-card:hover{
+  border-color:rgba(var(--ac-gl),.28);
+  background:color-mix(in srgb,var(--surf) 93%,var(--ac) 7%);
+}
+.quick-action-icon{
+  width:34px;height:34px;flex:0 0 34px;
+  display:flex;align-items:center;justify-content:center;
+  border-radius:11px;
+  color:var(--ac-ink);
+  background:rgba(var(--ac-gl),.15);
+}
+.dashboard-hero{
+  background:
+    radial-gradient(150px 120px at 88% 10%,rgba(255,255,255,.30),transparent 70%),
+    linear-gradient(135deg,#35E395 0%,#20CE80 55%,#16B66D 100%);
+  box-shadow:0 16px 38px rgba(var(--ac-gl),.20);
+}
+@media(max-width:767px){
+  .dashboard-quick-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .metric-card{min-height:116px}
+  .dashboard-title{font-size:28px}
+  .fin-card{border-radius:17px}
+}
+@media(max-width:390px){
+  .quick-action-card{padding:10px}
+  .quick-action-icon{width:32px;height:32px;flex-basis:32px}
+}
+
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
   `}</style>;
 }
@@ -1926,18 +2089,40 @@ export default function App() {
   const va = viewAs ? usr(viewAs) : null;
   const portalUser = !isAdmin ? profile : va;
 
-  const NAV = [
-    ["dash", tr("داشبۆرد"), LayoutDashboard],
-    ["newtx", tr("مامەڵەی نوێ"), ArrowLeftRight],
-    ["txs", tr("مامەڵەکان"), ListOrdered],
-    ["receipts", tr("پشکنینی فیش"), ScanLine],
-    ["people", tr("بەکارهێنەران"), Users],
-    ["report", tr("ڕاپۆرت"), PieChart],
-    ["audit", "تۆمار", History],
-    ["insights", tr("ڕەوت و شیکاری"), TrendingUp],
-    ["close", tr("بەستنی ڕۆژ"), ClipboardCheck],
-    ["backup", tr("پاراستنی داتا"), Database],
+  const navSectionLabel = (ku, en, ar) => lang === "en" ? en : lang === "ar" ? ar : ku;
+  const NAV_GROUPS = [
+    {
+      label: navSectionLabel("سەرەکی", "Overview", "نظرة عامة"),
+      items: [
+        ["dash", tr("داشبۆرد"), LayoutDashboard],
+      ],
+    },
+    {
+      label: navSectionLabel("بازرگانی", "Trading", "التداول"),
+      items: [
+        ["newtx", tr("مامەڵەی نوێ"), ArrowLeftRight],
+        ["txs", tr("مامەڵەکان"), ListOrdered],
+        ["receipts", tr("پشکنینی فیش"), ScanLine],
+      ],
+    },
+    {
+      label: navSectionLabel("بەڕێوەبردن", "Management", "الإدارة"),
+      items: [
+        ["people", tr("بەکارهێنەران"), Users],
+        ["report", tr("ڕاپۆرت"), PieChart],
+        ["insights", tr("ڕەوت و شیکاری"), TrendingUp],
+      ],
+    },
+    {
+      label: navSectionLabel("سیستەم", "System", "النظام"),
+      items: [
+        ["audit", tr("تۆمار"), History],
+        ["close", tr("بەستنی ڕۆژ"), ClipboardCheck],
+        ["backup", tr("پاراستنی داتا"), Database],
+      ],
+    },
   ];
+  const NAV = NAV_GROUPS.flatMap((g) => g.items);
 
 
   const shared = { data, calc, cur, usr, mySafe, profitAll, profitIn, ownProfitIn, ownProfitAll,
@@ -1970,16 +2155,16 @@ export default function App() {
         style={{ paddingTop: "env(safe-area-inset-top)", borderInline: 0, borderTop: 0, borderBottom: "1px solid var(--line)" }}>
         <div className="px-4 md:px-7 py-3 flex items-center justify-between gap-3 max-w-[1600px] mx-auto md:ml-[260px]">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="hidden md:flex items-center gap-2.5 me-3">
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{background:"#00D978",color:"#07130D"}}><Wallet className="w-5 h-5"/></div>
+            <div className="flex md:hidden items-center gap-2.5 me-2">
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center sarraf-brand-mark"><Wallet className="w-5 h-5"/></div>
               <div className="text-[15px] font-extrabold tracking-tight" style={{color:"var(--txt)"}}>SARRAF</div>
             </div>
-            <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
+            <div className="hidden md:flex w-10 h-10 rounded-full items-center justify-center shrink-0"
               style={{ background: "linear-gradient(155deg, var(--ac), var(--ac-2))",
                        boxShadow: "0 4px 14px -3px rgba(var(--ac-gl),.55)" }}>
               <span className="text-[15px] font-bold" style={{ color: "var(--ac-ink)" }}>{(profile.name || "?").slice(0, 1)}</span>
             </div>
-            <div className="min-w-0">
+            <div className="hidden md:block min-w-0">
               <div className="text-[15px] font-semibold leading-tight truncate" style={{ color: "var(--txt)" }}>
                 {profile.name}
               </div>
@@ -2091,21 +2276,33 @@ export default function App() {
         <div className="flex flex-col md:flex-row">
           {/* لیستی لاتەنیشت — تەنها لە شاشەی گەورە */}
           <nav className="sarraf-sidebar hidden md:flex md:w-[236px] md:min-h-screen p-4 flex-col gap-1 fixed left-0 top-0 bottom-0 z-50 overflow-y-auto">
-            <div className="flex items-center gap-3 px-2 pt-2 pb-7">
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{background:"#00D978",color:"#07130D"}}><Wallet className="w-5 h-5"/></div>
-              <div><div className="text-[16px] font-extrabold tracking-tight text-white">SARRAF</div><div className="text-[9px] mt-0.5" style={{color:"#7D8792"}}>Financial System</div></div>
+            <div className="flex items-center gap-3 px-2 pt-2 pb-6">
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center sarraf-brand-mark"><Wallet className="w-5 h-5"/></div>
+              <div>
+                <div className="text-[16px] font-extrabold tracking-tight text-white">SARRAF</div>
+                <div className="text-[9.5px] mt-0.5" style={{color:"#7D8792"}}>{tr("سیستەمی دراو")}</div>
+              </div>
             </div>
-            <div className="px-2 pb-2 text-[9px] font-semibold uppercase tracking-[.16em]" style={{color:"#68727D"}}>Workspace</div>
-            {NAV.map(([id, t, Ic]) => {
-              const on = page === id;
-              return (
-                <button key={id} onClick={() => { setPage(id); setDetailId(null); setEditTx(null); }}
-                  style={on ? { color: "#07130D" } : { color: "#A9B0B8" }}
-                  className={`nav-item ${on ? "nav-active" : ""} flex items-center gap-3 px-4 py-3 rounded-xl text-[13px] tap relative ${on ? "font-semibold" : "font-medium"}`}>
-                  <Ic className="w-[17px] h-[17px]" style={{ color: on ? "#07130D" : "#8F98A3" }} /> {t}
-                </button>
-              );
-            })}
+            <div className="space-y-4">
+              {NAV_GROUPS.map((group) => (
+                <div key={group.label}>
+                  <div className="sidebar-section-title px-3 pb-1.5">{group.label}</div>
+                  <div className="space-y-1">
+                    {group.items.map(([id, t, Ic]) => {
+                      const on = page === id;
+                      return (
+                        <button key={id} onClick={() => { setPage(id); setDetailId(null); setEditTx(null); }}
+                          style={on ? { color: "#07130D" } : { color: "#A9B0B8" }}
+                          className={`nav-item ${on ? "nav-active" : ""} flex w-full items-center gap-3 px-3.5 py-2.5 rounded-xl text-[12.5px] tap relative ${on ? "font-semibold" : "font-medium"}`}>
+                          <Ic className="w-[17px] h-[17px]" style={{ color: on ? "#07130D" : "#8F98A3" }} />
+                          <span className="truncate">{t}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
             {isAdmin && (
               <div className="mt-5 pt-4" style={{ borderTop: "1px solid var(--line)" }}>
                 <div className="flex items-center gap-1.5 text-[11px] font-semibold mb-2 px-1" style={{ color: "var(--txt-3)" }}>
@@ -2433,7 +2630,7 @@ function Dashboard({ data, calc, cur, mySafe, profitIn, ownProfitIn, investorsPr
   const expMax=Math.max(...expenses.map(x=>x.v),1);
 
   const Stat = ({label,value,sub,positive}) => (
-    <div className="fin-card p-4 md:p-5 min-w-0">
+    <div className="fin-card metric-card p-4 md:p-5 min-w-0">
       <div className="text-[11px] md:text-[12px] font-medium" style={{color:"var(--txt-3)"}}>{label}</div>
       <div className="mt-2 text-[23px] md:text-[27px] font-bold tracking-tight" style={{...num,color:"var(--txt)"}}>{value}</div>
       {sub && <div className="mt-1 text-[10px] md:text-[11px]" style={{color:positive?"var(--pos)":"var(--txt-3)"}}>{sub}</div>}
@@ -2444,23 +2641,41 @@ function Dashboard({ data, calc, cur, mySafe, profitIn, ownProfitIn, investorsPr
 
   return (
     <div className="space-y-5 md:space-y-6">
-      <div className="flex items-end justify-between gap-4">
+      <div className="dashboard-page-head flex items-end justify-between gap-4">
         <div>
-          <div className="text-[12px] md:text-[13px]" style={{color:"var(--txt-3)"}}>Welcome back, {data.users.find(u=>u.role==="admin"&&!u.deleted)?.name || "Sarraf"}</div>
-          <h1 className="text-[28px] md:text-[32px] font-bold tracking-tight mt-1" style={{color:"var(--txt)"}}>{tr("داشبۆرد")}</h1>
+          <div className="dashboard-eyebrow">{tr("سیستەمی دراو")} · {data.users.find(u=>u.role==="admin"&&!u.deleted)?.name || "SARRAF"}</div>
+          <h1 className="dashboard-title">{tr("داشبۆرد")}</h1>
+          <div className="dashboard-subtitle">{tr("کڕین و فرۆشتن · قاسە · حیسابات")}</div>
         </div>
-        <button onClick={()=>go("newtx")} className="hidden md:flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-[13px] tap" style={{background:"#0B0D0F",color:"#fff"}}>
+        <button onClick={()=>go("newtx")} className="hidden md:flex sarraf-primary-action items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-[13px] tap">
           <Plus className="w-4 h-4" /> {tr("مامەڵەی نوێ")}
         </button>
       </div>
 
+      <div className="dashboard-quick-grid">
+        {[
+          [tr("مامەڵەی نوێ"), tr("کڕین و فرۆشتن"), ArrowLeftRight, "newtx"],
+          [tr("قاسەی گشتی"), tr("قاسە، پارە و خەرجی"), Wallet, "safes"],
+          [tr("پشکنینی فیش"), tr("فیشەکان"), ScanLine, "receipts"],
+          [tr("نرخی ئەمڕۆ"), tr("نرخی هەموو دراوەکان"), TrendingUp, "rates"],
+        ].map(([title, sub, Ic, target]) => (
+          <button key={target} onClick={()=>go(target)} className="quick-action-card tap">
+            <span className="quick-action-icon"><Ic className="w-4 h-4"/></span>
+            <span className="min-w-0 text-start">
+              <span className="block text-[12px] font-bold truncate">{title}</span>
+              <span className="block text-[9.5px] mt-0.5 truncate" style={{color:"var(--txt-3)"}}>{sub}</span>
+            </span>
+          </button>
+        ))}
+      </div>
+
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-        <div className="fin-green rounded-[20px] p-5 md:p-6 col-span-2 min-h-[164px] relative overflow-hidden">
+        <div className="fin-green dashboard-hero rounded-[22px] p-5 md:p-6 col-span-2 min-h-[170px] relative overflow-hidden">
           <div className="flex items-start justify-between relative z-10">
             <div>
-              <div className="text-[12px] font-semibold opacity-80">Total Balance</div>
+              <div className="text-[12px] font-semibold opacity-75">{tr("قاسەی گشتی")}</div>
               <div className="mt-2 text-[34px] md:text-[40px] font-semibold tracking-[-.04em]" style={num}>{ratesReady ? fmt(totalBalance,0) : "—"} <span className="text-[13px] font-medium">USD</span></div>
-              <div className="mt-1 text-[11px] muted">{ratesReady ? `+${fmt(Math.max(weekProfit,0),0)} this week` : tr("نرخەکان دابنێ")}</div>
+              <div className="mt-1 text-[11px] muted">{ratesReady ? `${weekProfit >= 0 ? "+" : "−"}${fmt(Math.abs(weekProfit),0)} USD · ${tr("ئەم هەفتەیە")}` : tr("نرخەکان دابنێ")}</div>
             </div>
             <button onClick={()=>go("safes")} className="w-10 h-10 rounded-full flex items-center justify-center bg-white/90 text-black tap shadow-sm"><Plus className="w-5 h-5"/></button>
           </div>
@@ -2470,15 +2685,15 @@ function Dashboard({ data, calc, cur, mySafe, profitIn, ownProfitIn, investorsPr
           </svg>
           <div className="absolute bottom-4 start-5 text-[10px] white-muted">{tr("کۆی گشتی")}</div>
         </div>
-        <Stat label={tr("خێری ئەمڕۆ")} value={ratesReady?`${fmt(totalTodayProfit,0)} USD`:`${fmt(Object.values(pTod).reduce((a,b)=>a+b,0),0)}`} sub={totalTodayProfit>=0?"↗ positive today":"↓ negative today"} positive={totalTodayProfit>=0}/>
-        <Stat label={tr("مامەڵەی ئەمڕۆ")} value={todayTxs.length} sub={`+${todayTxs.length} ${tr("ئەمڕۆ")}`} />
-        <Stat label={tr("چاوەڕوان") } value={pendingCount} sub={pendingCount?tr("پێویستی بە پشکنینە"):"✓ Clear"} />
+        <Stat label={tr("خێری ئەمڕۆ")} value={ratesReady?`${fmt(totalTodayProfit,0)} USD`:`${fmt(Object.values(pTod).reduce((a,b)=>a+b,0),0)}`} sub={totalTodayProfit>=0?`↗ ${tr("خێر")}`:`↘ ${tr("خێر و زەرەر")}`} positive={totalTodayProfit>=0}/>
+        <Stat label={tr("مامەڵەی ئەمڕۆ")} value={todayTxs.length} sub={`${todayTxs.length} · ${tr("ئەمڕۆ")}`} />
+        <Stat label={tr("چاوەڕوان") } value={pendingCount} sub={pendingCount?tr("پێویستی بە پشکنینە"):`✓ ${tr("هیچ نییە")}`} />
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,.9fr)] gap-4">
         <section className="fin-card p-5 md:p-6">
           <div className="flex items-start justify-between gap-3 mb-5">
-            <div><h2 className="text-[16px] font-bold">Profit Overview</h2><div className="text-[11px] mt-1" style={{color:"var(--txt-3)"}}>Last 7 days</div></div>
+            <div><h2 className="text-[16px] font-bold">{tr("خێری ٧ ڕۆژی ڕابردوو")}</h2><div className="text-[11px] mt-1" style={{color:"var(--txt-3)"}}>{tr("٧ ڕۆژ")}</div></div>
             <button onClick={()=>go("insights")} className="text-[11px] font-semibold" style={{color:"var(--ac)"}}>{tr("وردەکاری ←")}</button>
           </div>
           <div className="relative h-[210px]">
@@ -2496,13 +2711,13 @@ function Dashboard({ data, calc, cur, mySafe, profitIn, ownProfitIn, investorsPr
         </section>
 
         <section className="fin-card p-5 md:p-6">
-          <div className="flex items-center justify-between mb-4"><h2 className="text-[16px] font-bold">Internal Rates</h2><button onClick={()=>go("rates")} className="text-[11px] font-semibold" style={{color:"var(--ac)"}}>{tr("هەمووی")}</button></div>
+          <div className="flex items-center justify-between mb-4"><div><h2 className="text-[16px] font-bold">{tr("نرخی ئەمڕۆ")}</h2><div className="text-[10px] mt-1" style={{color:"var(--txt-3)"}}>{tr("نرخەکان دابنێ")} · Internal</div></div><button onClick={()=>go("rates")} className="text-[11px] font-semibold" style={{color:"var(--ac)"}}>{tr("هەمووی")}</button></div>
           <div className="space-y-1">
             {data.currencies.filter(c=>c.id!=="usd").slice(0,5).map(c=>(
               <div key={c.id} className="flex items-center gap-3 py-3 border-b last:border-0" style={{borderColor:"var(--line)"}}>
                 <Flag c={c}/><div className="min-w-0 flex-1"><div className="text-[13px] font-semibold">{c.code}</div><div className="text-[10px] truncate" style={{color:"var(--txt-3)"}}>{c.name}</div></div>
                 <div className="text-end" style={num}><div className="text-[12px] font-semibold">{c.buyRate?fmt(c.buyRate,3):"—"}</div><div className="text-[10px]" style={{color:"var(--txt-3)"}}>{c.sellRate?fmt(c.sellRate,3):"—"}</div></div>
-                <div className="text-[10px] font-semibold min-w-[38px] text-end" style={{color:c.buyRate?"var(--pos)":"var(--txt-3)"}}>{c.buyRate?"Internal":"—"}</div>
+                <div className="text-[9.5px] font-semibold min-w-[42px] text-end" style={{color:c.buyRate?"var(--pos)":"var(--txt-3)"}}>{c.buyRate?tr("نرخی ئەمڕۆ"):"—"}</div>
               </div>
             ))}
           </div>
@@ -2512,8 +2727,8 @@ function Dashboard({ data, calc, cur, mySafe, profitIn, ownProfitIn, investorsPr
 
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,.9fr)] gap-4">
         <section className="fin-card p-5 md:p-6 overflow-hidden">
-          <div className="flex items-center justify-between mb-4"><h2 className="text-[16px] font-bold">Recent Transactions</h2><button onClick={()=>go("txs")} className="text-[11px] font-semibold" style={{color:"var(--ac)"}}>{tr("هەمووی")}</button></div>
-          <div className="hidden md:grid grid-cols-[.8fr_.65fr_1fr_.7fr_.8fr_.8fr] gap-3 px-2 pb-2 text-[10px] font-semibold" style={{color:"var(--txt-3)"}}><span>Type</span><span>Currency</span><span>Amount</span><span>Rate</span><span>Profit</span><span>Status</span></div>
+          <div className="flex items-center justify-between mb-4"><h2 className="text-[16px] font-bold">{tr("دوا مامەڵەکان")}</h2><button onClick={()=>go("txs")} className="text-[11px] font-semibold" style={{color:"var(--ac)"}}>{tr("هەمووی")}</button></div>
+          <div className="hidden md:grid grid-cols-[.8fr_.65fr_1fr_.7fr_.8fr_.8fr] gap-3 px-2 pb-2 text-[10px] font-semibold" style={{color:"var(--txt-3)"}}><span>{tr("جۆر")}</span><span>{tr("دراو")}</span><span>{tr("بڕ")}</span><span>{tr("نرخ:")}</span><span>{tr("خێر")}</span><span>{tr("دۆخ")}</span></div>
           <div className="space-y-1">
             {recent.map(t=>{const c=cur(t.curId), positive=t.type==="buy"; return <button key={t.id} onClick={()=>go("txs")} className="w-full text-start grid grid-cols-[1fr_auto] md:grid-cols-[.8fr_.65fr_1fr_.7fr_.8fr_.8fr] gap-3 items-center px-2 py-3 rounded-xl tap hover:bg-[var(--surf-2)]"><div><div className="text-[12px] font-semibold">{t.type==="buy"?tr("کڕین"):tr("فرۆشتن")}</div><div className="text-[9px] md:hidden" style={{color:"var(--txt-3)"}}>{t.cpName||usrSafeName(data,t.cpId)||"—"}</div></div><div className="flex items-center gap-1.5 text-[11px] font-semibold"><span>{curFlag(c)}</span>{c.code}</div><div style={num} className="text-[12px] font-semibold">{fmt(t.amount,0)}</div><div style={num} className="hidden md:block text-[11px]">
   {(() => {
@@ -2529,7 +2744,7 @@ function Dashboard({ data, calc, cur, mySafe, profitIn, ownProfitIn, investorsPr
         </section>
 
         <section className="fin-card p-5 md:p-6">
-          <div className="flex items-center justify-between mb-4"><h2 className="text-[16px] font-bold">Expenses</h2><span className="text-[10px]" style={{color:"var(--txt-3)"}}>This week</span></div>
+          <div className="flex items-center justify-between mb-4"><h2 className="text-[16px] font-bold">{tr("خەرجی")}</h2><span className="text-[10px]" style={{color:"var(--txt-3)"}}>{tr("ئەم هەفتەیە")}</span></div>
           <div className="flex items-end gap-2 h-[185px]">
             {expenses.map((x,i)=><div key={x.k} className="flex-1 h-full flex flex-col justify-end items-center gap-2"><div className="w-full max-w-[22px] rounded-t-full" style={{height:`${Math.max(8,(x.v/expMax)*145)}px`,background:i===expenses.length-1?"#00D978":"#BFEFD9"}} title={fmt(x.v,0)}/><span className="text-[9px]" style={{color:"var(--txt-3)"}}>{x.k.slice(5)}</span></div>)}
           </div>

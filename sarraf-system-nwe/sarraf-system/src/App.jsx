@@ -1591,7 +1591,7 @@ export default function App() {
       if (queryErrors.length) throw queryErrors[0].error;
       const d = {
         currencies: (c.data || []).map((r) => ({ id: r.id, code: r.code, name: r.name, symbol: r.symbol, dec: r.dec, external: !!r.external, buyRate: r.buy_rate == null ? null : +r.buy_rate, sellRate: r.sell_rate == null ? null : +r.sell_rate, rateUpdated: r.rate_updated })),
-        users: (u.data || []).map((r) => ({ id: r.id, authId: r.auth_id, name: r.name, role: r.role, rate: +r.rate || 0, scope: Array.isArray(r.scope_curs) ? r.scope_curs : [], phone: r.phone, address: r.address, note: r.note, deleted: r.deleted })),
+        users: (u.data || []).map((r) => ({ id: r.id, authId: r.auth_id, name: r.name, role: r.role, adminLevel: r.admin_level || null, rate: +r.rate || 0, scope: Array.isArray(r.scope_curs) ? r.scope_curs : [], phone: r.phone, address: r.address, note: r.note, deleted: r.deleted })),
         ledger: (l.data || []).map((r) => ({ id: r.id, type: r.type, owner: r.owner, investorId: r.investor_id, curId: r.cur_id, amount: +r.amount, partnerId: r.partner_id, txId: r.tx_id, note: r.note, date: r.date })),
         txs: (t.data || []).map((r) => ({ id: r.id, code: r.code, type: r.type, direct: !!r.direct,
           pairId: r.pair_id, directRole: r.direct_role, ownMoney: !!r.own_money,
@@ -1652,6 +1652,7 @@ export default function App() {
           authId: p.auth_id || session.user.id,
           name: p.name || "",
           role: p.role,
+          adminLevel: p.admin_level || null,
           rate: Number(p.rate) || 0,
           scope: Array.isArray(p.scope_curs) ? p.scope_curs : [],
           phone: p.phone || "",
@@ -2369,6 +2370,10 @@ export default function App() {
   });
 
     const addCurrency = (nc) => run(async () => {
+    if (!(profile?.role === "admin" && profile?.adminLevel === "owner")) {
+      flash("تەنها خاوەنی سیستەم دەتوانێت دراوی نوێ زیاد بکات");
+      return false;
+    }
     const nextDec = Number.isInteger(Number(nc.dec)) ? Math.max(0, Math.min(6, Number(nc.dec))) : 2;
     await rpcStrict("sarraf_add_currency", {
       p_row: {
@@ -2683,6 +2688,7 @@ export default function App() {
   if (!data || !calc) return <><Styles /><Splash t={tr("بارکردنی داتا...")} signOut={signOut} /></>;
 
   const isAdmin = profile.role === "admin";
+  const isOwner = isAdmin && profile.adminLevel === "owner";
   const va = viewAs ? usr(viewAs) : null;
   const portalUser = !isAdmin ? profile : va;
 
@@ -2724,7 +2730,7 @@ export default function App() {
 
   const shared = { data, calc, cur, usr, mySafe, profitAll, profitIn, ownProfitIn, ownProfitAll,
     inScope, scopedCap, investorsProfitIn, invShare, invUnpaid, autoRate, avgRate, inventoryPosition, usdValueAt, usdToCurrencyAt,
-    toUsd, sumUsd, ratesReady, owners, notify, waNotify };
+    toUsd, sumUsd, ratesReady, owners, notify, waNotify, isOwner };
 
   return (
     <div dir={LANGS[lang]?.dir || "rtl"} key={lang} className="min-h-screen" style={{ background: "var(--bg)", color: "var(--txt)" }}>
@@ -2766,7 +2772,7 @@ export default function App() {
                 {profile.name}
               </div>
               <div className="text-[11.5px] truncate" style={{ color: "var(--txt-3)" }}>
-                {va ? `${tr("بینین وەک")} · ${va.name}` : tr(ROLE_KU[profile.role])}
+                {va ? `${tr("بینین وەک")} · ${va.name}` : (isOwner ? "خاوەنی سیستەم" : tr(ROLE_KU[profile.role]))}
               </div>
             </div>
           </div>
@@ -3200,11 +3206,32 @@ function Login() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
-  // ئیمەیل بێت وەک خۆی، ژمارە بێت دەکرێت بە ئیمەیلی ناوخۆیی
-  const toEmail = (v) => {
-    const t = String(v).trim();
-    if (t.includes("@")) return t.toLowerCase();
-    return `${t.replace(/\D/g, "")}@sarraf.local`;
+  // Login identity: keep legacy local-number accounts working while accepting
+  // equivalent Iraqi formats such as 0770..., +964770..., and 00964770....
+  const phoneIdentityCandidates = (v) => {
+    const t = String(v || "").trim();
+    if (t.includes("@")) return [t.toLowerCase()];
+
+    // Owner/Admin may use a short username such as "sarkhel" or "admin".
+    // Regular users keep phone-based login.
+    if (/^[a-zA-Z][a-zA-Z0-9._-]{2,31}$/.test(t)) {
+      return [`${t.toLowerCase()}@sarraf.local`];
+    }
+
+    const digits = t.replace(/\D/g, "");
+    if (!digits) return [];
+
+    const canonical =
+      digits.startsWith("00964") ? digits.slice(2)
+      : digits.startsWith("964") ? digits
+      : digits.startsWith("0") ? `964${digits.slice(1)}`
+      : digits.startsWith("7") ? `964${digits}`
+      : digits;
+
+    const local = canonical.startsWith("964") ? `0${canonical.slice(3)}` : canonical;
+
+    return [...new Set([digits, canonical, local].filter(Boolean))]
+      .map((x) => `${x}@sarraf.local`);
   };
 
   const [bio, setBio] = useState(false);
@@ -3216,10 +3243,22 @@ function Login() {
 
   const go = async (ov) => {
     const uid2 = ov?.id ?? id, pw2 = ov?.pw ?? pw;
-    if (!uid2 || !pw2) return setErr(tr("ژمارە/ئیمەیل و وشەی نهێنی پێویستە"));
+    if (!uid2 || !pw2) return setErr(tr("ناوی بەکارهێنەر/ژمارە/ئیمەیل و وشەی نهێنی پێویستە"));
     setBusy(true); setErr("");
-    const { error } = await supabase.auth.signInWithPassword({ email: toEmail(uid2), password: pw2 });
-    if (error) setErr(tr("زانیارییەکان هەڵەن — دووبارە هەوڵ بدە"));
+    const candidates = phoneIdentityCandidates(uid2);
+    let lastError = null;
+    let signedIn = false;
+
+    for (const email of candidates) {
+      const { error } = await supabase.auth.signInWithPassword({ email, password: pw2 });
+      if (!error) { signedIn = true; break; }
+      lastError = error;
+    }
+
+    if (!signedIn) {
+      console.warn("Login failed for all normalized identity candidates", lastError?.message || "");
+      setErr(tr("زانیارییەکان هەڵەن — دووبارە هەوڵ بدە"));
+    }
     setBusy(false);
   };
 
@@ -3257,9 +3296,9 @@ function Login() {
 
         <div className="space-y-3">
           <div>
-            <Lbl>{tr("ژمارەی مۆبایل یان ئیمەیل")}</Lbl>
+            <Lbl>{tr("ناوی بەکارهێنەر / ژمارە / ئیمەیل")}</Lbl>
             <input dir="ltr" type="text" autoComplete="username" value={id} onChange={(e) => setId(e.target.value)}
-              placeholder="07701234567" onKeyDown={(e) => e.key === "Enter" && go()}
+              placeholder="sarkhel / admin / 07701234567" onKeyDown={(e) => e.key === "Enter" && go()}
               className="w-full px-4 py-3.5 text-[15px] outline-none"
               style={{ ...fieldSty, fontFamily: "'IBM Plex Mono', monospace" }}
               onFocus={onFoc} onBlur={onBlr} />
@@ -4096,7 +4135,7 @@ function ProfitPage({ data, cur, profitIn, investorsProfitIn, invShare }) {
 }
 
 /* ══════════════════ قاسە و خەرجی ══════════════════ */
-function Safes({ data, calc, cur, usr, mySafe, invUnpaid, owners, ratesReady, addDeposit, addExpense, addCurrency }) {
+function Safes({ data, calc, cur, usr, mySafe, invUnpaid, owners, ratesReady, addDeposit, addExpense, addCurrency, isOwner }) {
   const [openCur, setOpenCur] = useState(null);
   const [f, setF] = useState({ dir: "in", owner: "self", curId: data.currencies[0]?.id, amount: "", note: "" });
   const [xf, setXf] = useState({ category: "کرێی شوێن", investorId: "", curId: data.currencies[0]?.id, amount: "", note: "" });
@@ -4181,6 +4220,7 @@ function Safes({ data, calc, cur, usr, mySafe, invUnpaid, owners, ratesReady, ad
         )}
       </Card>
 
+{isOwner && (
       <Card className="p-5">
         <SecLbl>{tr("زیادکردنی دراوی نوێ")}</SecLbl>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
@@ -4201,6 +4241,7 @@ function Safes({ data, calc, cur, usr, mySafe, invUnpaid, owners, ratesReady, ad
           <div className="flex items-end"><Btn kind="gold" className="w-full" onClick={() => { if (nc.code && nc.name) { addCurrency(nc); setNc({ code: "", name: "", symbol: "", dec: 2 }); } }}>{tr("زیادکردن")}</Btn></div>
         </div>
       </Card>
+      )}
     </div>
   );
 }
@@ -8257,10 +8298,13 @@ function Office({ data, cur, usr, officePay, calc, accountMove, accountTransfer,
 
 
 /* ══════════════════ بەڕێوەبردنی ئەکاونت ══════════════════ */
-function UsersAdmin({ data, cur, createUser, deleteUser, setUserRate, flash }) {
+function UsersAdmin({ data, cur, createUser, deleteUser, setUserRate, flash, isOwner }) {
   const [f, setF] = useState({ name: "", role: "customer", rate: "", scope: [], phone: "", address: "", note: "", password: "" });
-  const roles = ["customer", "partner", "investor", "office"];
-  const list = data.users.filter((u) => u.role !== "admin" && !u.deleted);
+  const roles = isOwner ? ["customer", "partner", "investor", "office", "admin"] : ["customer", "partner", "investor", "office"];
+  const list = data.users.filter((u) =>
+    !u.deleted &&
+    (u.role !== "admin" || (isOwner && u.adminLevel !== "owner"))
+  );
   return (
     <div className="space-y-4">
       <Card className="p-5">

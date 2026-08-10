@@ -8,6 +8,7 @@ import { separatedCurrencySummary } from "./components/portal/portalModel";
 import MarketPulse from "./components/market/MarketPulse";
 import { BRAND } from "./brand/brand";
 import { BrandLogo } from "./brand/BrandLogo";
+import { OperationalPalette } from "./components/operations/OperationalPalette";
 import "./components/portal/portal.css";
 import {
   LayoutDashboard, Vault, ArrowLeftRight, ListOrdered, Users, Handshake,
@@ -3185,6 +3186,7 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
+            <OperationalPalette client={supabase} onNavigate={(path) => setPage(path.slice(2))} />
             {isAdmin && va && (
               <button onClick={() => setViewAs(null)}
                 className="flex items-center gap-1.5 text-[12px] font-semibold px-3 py-2 rounded-full tap"

@@ -1,7 +1,9 @@
 // api/read-receipt.js
 // Receipt OCR v5 — structured multimodal extraction for Sarraf.
-// Uses Groq Qwen Vision as primary when configured, with Gemini and Claude fallbacks.
+// Uses Groq Qwen Vision as primary, with Gemini, Google Vision and Claude fallbacks.
 // No Supabase writes happen in this endpoint.
+
+import { callGoogleVision } from "./_google-vision-receipt.js";
 
 const MAX_BASE64_CHARS = 3_500_000;
 const RETRYABLE = new Set([502, 503, 504]);
@@ -649,8 +651,9 @@ export default async function handler(req, res) {
 
   const qKey = process.env.GROQ_API_KEY;
   const gKey = process.env.GEMINI_API_KEY;
+  const visionKey = process.env.GOOGLE_CLOUD_VISION_API_KEY;
   const aKey = process.env.ANTHROPIC_API_KEY;
-  if (!qKey && !gKey && !aKey) {
+  if (!qKey && !gKey && !visionKey && !aKey) {
     res.status(500).json({ error: "خزمەتگوزاری خوێندنەوە لە سێرڤەر ڕێک نەخراوە" });
     return;
   }
@@ -681,14 +684,16 @@ export default async function handler(req, res) {
       if (key && !providers.some((p) => p.name === name)) providers.push({ name, key, fn });
     };
 
-    // Default order: Groq -> Gemini -> Claude.
+    // Default order: Groq -> Gemini -> Google Vision -> Claude.
     // OCR_PROVIDER can force the first provider without disabling fallbacks.
     if (requestedProvider === "gemini") addProvider("gemini", gKey, callGemini);
+    else if (requestedProvider === "google-vision" || requestedProvider === "vision") addProvider("google-vision", visionKey, callGoogleVision);
     else if (requestedProvider === "claude") addProvider("claude", aKey, callClaude);
     else addProvider("groq", qKey, callGroq);
 
     addProvider("groq", qKey, callGroq);
     addProvider("gemini", gKey, callGemini);
+    addProvider("google-vision", visionKey, callGoogleVision);
     addProvider("claude", aKey, callClaude);
 
     if (!providers.length) throw new Error("No OCR provider is configured");
@@ -715,7 +720,7 @@ export default async function handler(req, res) {
         });
 
         const status = Number(e?.status);
-        const fallbackable = status === 429 || status === 404 || status === 500 || RETRYABLE.has(status) ||
+        const fallbackable = status === 429 || status === 404 || status === 422 || status === 500 || RETRYABLE.has(status) ||
           /rate limit|quota|timed out|temporar|service unavailable|model.*not found/i.test(String(e?.message || ""));
 
         if (!fallbackable) throw e;

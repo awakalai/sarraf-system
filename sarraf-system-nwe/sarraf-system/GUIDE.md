@@ -138,3 +138,17 @@ npm run build && npx cap sync
 
 **ئەگەر ئینتەرنێت نەبوو؟** ئەپەکە پێویستی بە ئینتەرنێتە چوونکە داتاکە
 لە سێرڤەرە — ئەمە بۆ ئەوەیە هەموو ئامێرەکان هەمان داتا ببینن.
+# Google Cloud Vision receipt fallback
+
+The server-side receipt endpoint supports Google Cloud Vision `DOCUMENT_TEXT_DETECTION`
+as a conservative fallback. Enable the Cloud Vision API in Google Cloud, create an API
+key restricted to that API, and set this server-only Vercel environment variable:
+
+```text
+GOOGLE_CLOUD_VISION_API_KEY=your_restricted_key
+```
+
+Optionally set `OCR_PROVIDER=google-vision` to try it first. Without that override, the
+order is Groq, Gemini, Google Vision, then Claude. Never expose the key through a
+`VITE_` variable or commit it to Git. Vision-only results are deliberately capped below
+high confidence and must pass the existing receipt review policy before finalization.

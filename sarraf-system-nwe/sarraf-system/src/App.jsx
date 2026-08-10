@@ -5,6 +5,8 @@ import { createReceiptIngestionCommand, ingestReceiptBatch } from "./services/re
 import { PortalDataStatus, PortalFrame, PortalPagedList, usePortalRoute } from "./components/portal/PortalFoundation";
 import { separatedCurrencySummary } from "./components/portal/portalModel";
 import MarketPulse from "./components/market/MarketPulse";
+import { BRAND } from "./brand/brand";
+import { BrandLogo } from "./brand/BrandLogo";
 import "./components/portal/portal.css";
 import {
   LayoutDashboard, Vault, ArrowLeftRight, ListOrdered, Users, Handshake,
@@ -481,7 +483,7 @@ const PortalHeader = ({ user, role, icon: Ic = Users, subtitle }) => (
   <div className="portal-welcome">
     <div className="portal-avatar"><Ic className="w-5 h-5" /></div>
     <div className="min-w-0 flex-1">
-      <div className="portal-eyebrow"><span className="portal-live-dot" /> SARRAF</div>
+      <div className="portal-eyebrow"><span className="portal-live-dot" /> {BRAND.name}</div>
       <div className="portal-welcome-name">{user?.name || tr("ئەکاونتی من")}</div>
       <div className="portal-welcome-sub">
         <span className="portal-role-badge">{role}</span>
@@ -3151,8 +3153,8 @@ export default function App() {
         <div className="px-4 md:px-7 py-3 flex items-center justify-between gap-3 max-w-[1600px] mx-auto md:ml-[260px]">
           <div className="flex items-center gap-3 min-w-0">
             <div className="flex md:hidden items-center gap-2.5 me-2">
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center sarraf-brand-mark"><Wallet className="w-5 h-5"/></div>
-              <div className="text-[15px] font-extrabold tracking-tight" style={{color:"var(--txt)"}}>SARRAF</div>
+              <BrandLogo variant="symbol" decorative className="w-9 h-9" />
+              <div className="text-[15px] font-extrabold tracking-tight" style={{color:"var(--txt)"}}>{BRAND.shortName}</div>
             </div>
             <div className="hidden md:flex w-10 h-10 rounded-full items-center justify-center shrink-0"
               style={{ background: "linear-gradient(155deg, var(--ac), var(--ac-2))",
@@ -3274,10 +3276,10 @@ export default function App() {
           {/* لیستی لاتەنیشت — تەنها لە شاشەی گەورە */}
           <nav className="sarraf-sidebar hidden md:flex md:w-[236px] md:min-h-screen p-4 flex-col gap-1 fixed left-0 top-0 bottom-0 z-50 overflow-y-auto">
             <div className="flex items-center gap-3 px-2 pt-2 pb-6">
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center sarraf-brand-mark"><Wallet className="w-5 h-5"/></div>
+              <BrandLogo variant="symbol" decorative className="w-10 h-10" />
               <div>
-                <div className="text-[16px] font-extrabold tracking-tight text-white">SARRAF</div>
-                <div className="text-[9.5px] mt-0.5" style={{color:"#7D8792"}}>{tr("سیستەمی دراو")}</div>
+                <div className="text-[16px] font-extrabold tracking-tight text-white">{BRAND.name}</div>
+                <div className="text-[9.5px] mt-0.5" style={{color:"#9CB4AF"}}>{BRAND.descriptor}</div>
               </div>
             </div>
             <div className="space-y-4">
@@ -3488,7 +3490,7 @@ function MfaGate({ profile, onReady, onSignOut }) {
 
       const { data: enrolled, error: enrollError } = await supabase.auth.mfa.enroll({
         factorType: "totp",
-        friendlyName: `Sarraf ${profile?.role || "staff"}`,
+        friendlyName: `${BRAND.name} ${profile?.role || "staff"}`,
       });
       if (enrollError) throw enrollError;
       if (!enrolled?.id || !enrolled?.totp?.qr_code) throw new Error("نەتوانرا 2FA ئامادە بکرێت");
@@ -3681,16 +3683,10 @@ function Login() {
 
       <div className="w-full max-w-[380px] relative rise">
         <div className="text-center mb-10">
-          <div className="w-16 h-16 rounded-[22px] mx-auto mb-5 flex items-center justify-center"
-            style={{ background: "linear-gradient(155deg, #E0A94A, #A9772C)",
-                     boxShadow: "0 12px 36px -10px rgba(224,169,74,.6), inset 0 1px 0 rgba(255,255,255,.3)" }}>
-            <Vault className="w-7 h-7 text-white" />
-          </div>
-          <h1 className="text-[24px] font-semibold tracking-tight" style={{ color: "var(--txt)" }}>
-            {tr("سیستەمی دراو")}
-          </h1>
-          <p className="text-[13px] mt-1.5" style={{ color: "var(--txt-3)" }}>
-            {tr("کڕین و فرۆشتن · قاسە · حیسابات")}
+          <BrandLogo variant="horizontal" theme="light" className="w-[220px] h-auto mx-auto mb-5 dark-brand-logo" />
+          <h1 className="sr-only">{BRAND.logoLabel.ckb}</h1>
+          <p className="text-[13px] mt-1.5" lang="ckb" style={{ color: "var(--txt-3)" }}>
+            {BRAND.slogan.ckb}
           </p>
         </div>
 
@@ -3817,7 +3813,7 @@ function Dashboard({ data, calc, cur, mySafe, profitIn, ownProfitIn, investorsPr
     <div className="space-y-5 md:space-y-6">
       <div className="dashboard-page-head flex items-end justify-between gap-4">
         <div>
-          <div className="dashboard-eyebrow">{tr("سیستەمی دراو")} · {data.users.find(u=>u.role==="admin"&&!u.deleted)?.name || "SARRAF"}</div>
+          <div className="dashboard-eyebrow">{BRAND.name} · {data.users.find(u=>u.role==="admin"&&!u.deleted)?.name || BRAND.name}</div>
           <h1 className="dashboard-title">{tr("داشبۆرد")}</h1>
           <div className="dashboard-subtitle">{tr("کڕین و فرۆشتن · قاسە · حیسابات")}</div>
         </div>

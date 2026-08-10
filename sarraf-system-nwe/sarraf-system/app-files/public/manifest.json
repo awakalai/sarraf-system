@@ -1,15 +1,18 @@
 {
-  "name": "سیستەمی کڕین و فرۆشتنی دراو",
-  "short_name": "سیستەمی دراو",
-  "description": "سیستەمی بەڕێوەبردنی کڕین و فرۆشتنی دراو",
+  "id": "/",
+  "name": "ZEMAN — Exchange Intelligence",
+  "short_name": "ZEMAN",
+  "description": "ZEMAN Exchange Intelligence for precise exchange operations.",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#0F172A",
-  "theme_color": "#0F172A",
+  "background_color": "#081311",
+  "theme_color": "#0F766E",
   "dir": "rtl",
   "lang": "ckb",
   "icons": [
-    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ]
 }

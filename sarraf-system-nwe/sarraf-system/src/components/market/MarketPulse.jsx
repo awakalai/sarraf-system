@@ -1,3 +1,4 @@
+import { BRAND } from "../../brand/brand";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ArrowDown, ArrowUp, Minus, RotateCcw } from "lucide-react";
 import "./market-pulse.css";
@@ -34,7 +35,7 @@ export default function MarketPulse({ currencies = [], lang = "ku", online = tru
 
   const rows = useMemo(() => {
     const iqd = currencies.find(c => String(c.code).toUpperCase() === "IQD");
-    const local = { id:"USD/IQD", label:"USD/IQD", classification:"local", source:"Sarraf operational rates", observedAt:iqd?.rateUpdated || null,
+    const local = { id:"USD/IQD", label:"USD/IQD", classification:"local", source:`${BRAND.name} operational rates`, observedAt:iqd?.rateUpdated || null,
       freshness: iqd?.rateUpdated && Date.now() - Date.parse(iqd.rateUpdated) <= 36*60*60*1000 ? "live" : iqd?.rateUpdated ? "stale" : "unavailable",
       availability: Number(iqd?.buyRate)>0 || Number(iqd?.sellRate)>0 ? "available" : "unavailable", unit:"IQD per USD", buyRate:Number(iqd?.buyRate)>0?Number(iqd.buyRate):null, sellRate:Number(iqd?.sellRate)>0?Number(iqd.sellRate):null };
     return [local, ...(snapshot?.instruments || [])];

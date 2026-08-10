@@ -1559,7 +1559,6 @@ export default function App() {
     return () => clearInterval(id);
   }, [profile, accessState]);
   useEffect(() => { if (online && stale && session && accessState === "ready") { setStale(null); loadAll(); } }, [online, stale, session, accessState]);
-  useEffect(() => { if (profile?.role === "admin" && accessState === "ready") { const id = setTimeout(() => autoBackup(), 4000); return () => clearTimeout(id); } }, [profile, accessState]);
 
   const flash = (t) => { setMsg(t); setTimeout(() => setMsg(null), 3000); };
 
@@ -1574,25 +1573,77 @@ export default function App() {
     }
   };
 
+  // Fetch complete table contents without silently stopping at PostgREST's
+  // per-request row ceiling. Financial calculations must never run on a
+  // truncated tx/ledger/account history. We verify an exact RLS-visible count
+  // and retry once if concurrent writes changed the result while paging.
+  const fetchAllRows = async (
+    table,
+    { orders = [], pageSize = 500, maxAttempts = 2 } = {}
+  ) => {
+    let lastMismatch = null;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const countRes = await supabase.from(table).select("*", { count: "exact", head: true });
+      if (countRes.error) return { data: null, error: countRes.error };
+      const expected = Number(countRes.count ?? 0);
+      const byId = new Map();
+      let from = 0;
+
+      while (true) {
+        let q = supabase
+          .from(table)
+          .select("*")
+          .range(from, from + pageSize - 1);
+
+        for (const order of orders) {
+          q = q.order(order.column, { ascending: order.ascending !== false });
+        }
+
+        const page = await q;
+        if (page.error) return { data: null, error: page.error };
+        const rows = page.data || [];
+        for (const row of rows) {
+          const key = row?.id ?? `${from}:${byId.size}`;
+          byId.set(String(key), row);
+        }
+
+        if (rows.length < pageSize) break;
+        from += pageSize;
+      }
+
+      const data = [...byId.values()];
+      if (data.length === expected) return { data, error: null };
+
+      lastMismatch = new Error(
+        `${table} changed while loading (${data.length}/${expected}); retrying for a consistent financial view`
+      );
+    }
+
+    return {
+      data: null,
+      error: lastMismatch || new Error(`${table} could not be loaded completely`),
+    };
+  };
+
   const loadAll = async (activeProfile = profile) => {
     try {
       reloadBatches();
       const adminMode = activeProfile?.role === "admin";
       const noQuery = Promise.resolve({ data: [], error: null });
       const [c, u, l, t, a, ac, rh, apr, ape, tv, ctrl] = await Promise.all([
-        supabase.from("currencies").select("*").order("code"),
-        supabase.from("app_users").select("*").order("created_at"),
-        supabase.from("ledger").select("*").order("date"),
-        supabase.from("txs").select("*").order("date"),
+        fetchAllRows("currencies", { orders: [{ column: "code", ascending: true }] }),
+        fetchAllRows("app_users", { orders: [{ column: "created_at", ascending: true }, { column: "id", ascending: true }] }),
+        fetchAllRows("ledger", { orders: [{ column: "date", ascending: true }, { column: "id", ascending: true }] }),
+        fetchAllRows("txs", { orders: [{ column: "date", ascending: true }, { column: "id", ascending: true }] }),
         supabase.from("audit").select("*").order("date", { ascending: false }).limit(500),
-        supabase.from("account_ledger").select("*").order("created_at", { ascending: false }).limit(5000),
-        supabase.from("rate_history").select("*").order("created_at", { ascending: true }).limit(5000),
+        fetchAllRows("account_ledger", { orders: [{ column: "created_at", ascending: true }, { column: "id", ascending: true }] }),
+        fetchAllRows("rate_history", { orders: [{ column: "created_at", ascending: true }, { column: "id", ascending: true }] }),
         adminMode ? supabase.from("approval_requests").select("*").order("created_at", { ascending: false }).limit(500) : noQuery,
         adminMode ? supabase.from("approval_events").select("*").order("created_at", { ascending: false }).limit(1500) : noQuery,
         adminMode ? supabase.from("tx_versions").select("*").order("created_at", { ascending: false }).limit(3000) : noQuery,
         adminMode ? supabase.rpc("sarraf_control_snapshot") : Promise.resolve({ data: null, error: null }),
       ]);
-      const queryErrors = [c, u, l, t, a, ac, apr, ape, tv, ctrl].filter((r) => r?.error);
+      const queryErrors = [c, u, l, t, a, ac, rh, apr, ape, tv, ctrl].filter((r) => r?.error);
       if (queryErrors.length) throw queryErrors[0].error;
       const d = {
         currencies: (c.data || []).map((r) => ({ id: r.id, code: r.code, name: r.name, symbol: r.symbol, dec: r.dec, external: !!r.external, buyRate: r.buy_rate == null ? null : +r.buy_rate, sellRate: r.sell_rate == null ? null : +r.sell_rate, rateUpdated: r.rate_updated })),
@@ -1619,7 +1670,7 @@ export default function App() {
         audit: (a.data || []).map((r) => ({ id: r.id, date: r.date, action: r.action, detail: r.detail })),
         acct: (ac.data || []).map((r) => ({ id: r.id, userId: r.user_id, kind: r.kind, curId: r.cur_id,
           amount: +r.amount, type: r.type, refId: r.ref_id, note: r.note, date: r.created_at })),
-        rateHistory: rh?.error ? [] : (rh.data || []).map((r) => ({
+        rateHistory: (rh.data || []).map((r) => ({
           id: r.id, curId: r.cur_id,
           buyRate: r.buy_rate == null ? null : +r.buy_rate,
           sellRate: r.sell_rate == null ? null : +r.sell_rate,
@@ -2693,67 +2744,60 @@ export default function App() {
     return result;
   };
 
-  /* ── باکئەپ ── */
-  const snapshot = async (kind = "auto") => {
-    const [c, u, l, t, a, rc] = await Promise.all([
-      supabase.from("currencies").select("*"),
-      supabase.from("app_users").select("*"),
-      supabase.from("ledger").select("*"),
-      supabase.from("txs").select("*"),
-      supabase.from("audit").select("*"),
-      supabase.from("receipts").select("*"),
-    ]);
-    const payload = {
-      version: 2, takenAt: now(), kind,
-      currencies: c.data || [], app_users: u.data || [], ledger: l.data || [],
-      txs: t.data || [], audit: a.data || [], receipts: rc.data || [],
-    };
-    const counts = {
-      currencies: payload.currencies.length, users: payload.app_users.length,
-      ledger: payload.ledger.length, txs: payload.txs.length,
-      audit: payload.audit.length, receipts: payload.receipts.length,
-    };
-    return { payload, counts };
+  const runSystemHealth = async () => {
+    const { data: result, error } = await supabase.rpc("sarraf_system_health");
+    if (error) throw error;
+    return result;
   };
 
-  const saveBackup = (kind = "manual") => run(async () => {
-    const { payload, counts } = await snapshot(kind);
-    const r = await supabase.from("backups").insert({ id: uid(), kind, counts, data: payload });
-    if (r.error) throw r.error;
-    // تەنها ٤٠ی دوایی بهێڵەرەوە
-    const old = await supabase.from("backups").select("id").order("created_at", { ascending: false }).range(40, 999);
-    if (old.error) throw old.error;
-    if (old.data?.length) {
-      const pruned = await supabase.from("backups").delete().in("id", old.data.map((x) => x.id));
-      if (pruned.error) throw pruned.error;
+  /* ── پاراستنی داتا / off-site export ──
+     A JSON export is a supplementary owner-controlled export, NOT a substitute
+     for Supabase platform backups/PITR. The old same-database "auto backup"
+     duplicated sensitive data inside the same failure domain and is disabled.
+  */
+  const downloadBackup = () => run(async () => {
+    if (!(profile?.role === "admin" && profile?.adminLevel === "owner")) {
+      flash("تەنها خاوەنی سیستەم دەتوانێت export ـی تەواوی داتا دابەزێنێت");
+      return false;
     }
-    if (kind === "manual") { await A("باکئەپ", `${counts.txs} مامەڵە · ${counts.ledger} تۆماری دەفتەر`); flash("باکئەپ درووست کرا ✓"); }
-  });
 
-  const downloadBackup = async () => {
-    const { payload } = await snapshot("download");
+    const tables = [
+      "currencies", "app_users", "txs", "ledger", "account_ledger",
+      "account_transfers", "day_closes", "rate_history", "receipts",
+      "receipt_batches", "approval_requests", "approval_events",
+      "tx_versions", "audit",
+    ];
+
+    const payload = {
+      format: "sarraf-offsite-export",
+      version: 4,
+      takenAt: now(),
+      warning:
+        "Supplementary JSON export only. Auth identities, MFA secrets, Storage object bytes, database functions/policies, and WAL/PITR state are not included.",
+      tables: {},
+    };
+
+    for (const table of tables) {
+      const result = await fetchAllRows(table, { orders: [{ column: "id", ascending: true }], pageSize: 500, maxAttempts: 2 });
+      if (result.error) throw result.error;
+      payload.tables[table] = result.data || [];
+    }
+
+    const counts = Object.fromEntries(
+      Object.entries(payload.tables).map(([table, rows]) => [table, rows.length])
+    );
+    payload.counts = counts;
+
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `backup_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.json`;
+    const href = URL.createObjectURL(blob);
+    a.href = href;
+    a.download = `sarraf_offsite_export_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.json`;
     a.click();
-    flash("فایلی باکئەپ دابەزێندرا ✓");
-  };
-
-  // باکئەپی ئۆتۆماتیکی: ئەگەر دوا باکئەپ کۆنتر بێت لە ٦ کاتژمێر
-  const autoBackup = async () => {
-    try {
-      const lastRes = await supabase.from("backups").select("created_at").order("created_at", { ascending: false }).limit(1);
-      if (lastRes.error) throw lastRes.error;
-      const last = lastRes.data || [];
-      const t = last?.[0]?.created_at ? new Date(last[0].created_at).getTime() : 0;
-      if (Date.now() - t > 6 * 3600 * 1000) {
-        const { payload, counts } = await snapshot("auto");
-        const saved = await supabase.from("backups").insert({ id: uid(), kind: "auto", counts, data: payload });
-        if (saved.error) throw saved.error;
-      }
-    } catch (e) { console.warn("autoBackup", e?.message || e); }
-  };
+    setTimeout(() => URL.revokeObjectURL(href), 1000);
+    flash("export ـی داتا ئامادە کرا ✓");
+    return true;
+  });
 
   /* ── ئاگادارکردنەوەکان ── */
   const [notes, setNotes] = useState([]);
@@ -3065,7 +3109,7 @@ export default function App() {
             {page === "audit" && <Audit data={data} />}
             {page === "insights" && <Insights {...shared} flash={flash} />}
             {page === "close" && <DayClose data={data} calc={calc} cur={cur} usr={usr} closeDay={closeDay} sumUsd={sumUsd} />}
-            {page === "backup" && <Backup data={data} calc={calc} cur={cur} saveBackup={saveBackup} downloadBackup={downloadBackup} flash={flash} sumUsd={sumUsd} mySafe={mySafe} owners={owners} ratesReady={ratesReady} />}
+            {page === "backup" && <Backup data={data} calc={calc} cur={cur} downloadBackup={downloadBackup} flash={flash} sumUsd={sumUsd} mySafe={mySafe} owners={owners} ratesReady={ratesReady} isOwner={isOwner} runSystemHealth={runSystemHealth} />}
           </main>
 
           {/* لیستی خوارەوە — تەنها لە مۆبایل */}
@@ -8760,18 +8804,10 @@ function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare, s
 
 
 /* ══════════════════ پاراستنی داتا و باکئەپ ══════════════════ */
-function Backup({ data, calc, cur, saveBackup, downloadBackup, flash, sumUsd, mySafe, owners, ratesReady }) {
-  const [list, setList] = useState(null);
+function Backup({ data, calc, cur, downloadBackup, flash, sumUsd, mySafe, owners, ratesReady, isOwner, runSystemHealth }) {
   const [busy, setBusy] = useState(false);
-
-  const load = async () => {
-    try {
-      const { data: b, error } = await supabase.from("backups").select("id, created_at, kind, counts").order("created_at", { ascending: false }).limit(40);
-      if (error) throw error;
-      setList(b || []);
-    } catch { setList([]); }
-  };
-  useEffect(() => { load(); }, []);
+  const [recon, setRecon] = useState(null);
+  const [reconErr, setReconErr] = useState("");
 
   const counts = {
     مامەڵە: data.txs.filter((t) => !t.deleted).length,
@@ -8780,23 +8816,21 @@ function Backup({ data, calc, cur, saveBackup, downloadBackup, flash, sumUsd, my
     دراو: data.currencies.length,
   };
 
-  /* پشکنینی تەندروستی حیسابەکان */
-  const checks = (() => {
+  const localChecks = (() => {
     const out = [];
-    // ١) هەر مامەڵەیەکی تەواوکراو دەبێت تۆماری دەفتەری هەبێت
     const withLedger = new Set(data.ledger.map((e) => e.txId).filter(Boolean));
     const orphan = data.txs.filter((t) => !t.deleted && !withLedger.has(t.id));
     out.push({ ok: orphan.length === 0, t: "هەموو مامەڵەکان تۆماری دەفتەریان هەیە", d: orphan.length ? `${orphan.length} مامەڵە بێ تۆمار` : "تەواو" });
-    // ٢) تۆماری دەفتەری هەڵگەڕاو
+
     const txIds = new Set(data.txs.map((t) => t.id));
     const ghost = data.ledger.filter((e) => e.txId && !txIds.has(e.txId));
     out.push({ ok: ghost.length === 0, t: "هیچ تۆمارێکی سەرگەردان نییە", d: ghost.length ? `${ghost.length} تۆمار` : "تەواو" });
-    // ٣) باڵانسی سالب لە قاسەی سەرەکی
+
     const neg = data.currencies.filter((c) => (calc.atMe[c.id] || 0) < 0);
     out.push({ ok: neg.length === 0, t: "هیچ باڵانسێکی سالب نییە لە قاسەی سەرەکی", d: neg.length ? neg.map((c) => c.code).join("، ") : "تەواو" });
-    // ٤) نرخەکان
+
     out.push({ ok: ratesReady, t: "نرخی هەموو دراوەکان دانراوە", d: ratesReady ? "تەواو" : "هەندێک دراو نرخی نییە" });
-    // ٥) کۆی خاوەندارێتی = کۆی قاسە
+
     if (ratesReady) {
       const safe = sumUsd(calc.phys), own = owners.total;
       const diff = Math.abs(safe - own);
@@ -8806,20 +8840,37 @@ function Backup({ data, calc, cur, saveBackup, downloadBackup, flash, sumUsd, my
     return out;
   })();
 
-  const okAll = checks.every((c) => c.ok);
+  const runServerRecon = async () => {
+    setBusy(true);
+    setReconErr("");
+    try {
+      const result = await runSystemHealth();
+      setRecon(result?.reconciliation || result || null);
+    } catch (e) {
+      setRecon(null);
+      setReconErr(e?.message || "Reconciliation failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const localOk = localChecks.every((c) => c.ok);
+  const serverOk = recon ? !!recon.ok : null;
+  const rowPressure = data.txs.length + data.ledger.length + (data.acct?.length || 0);
 
   return (
     <div className="space-y-4">
-      <H sub="داتاکەت لە سێرڤەری Supabase پارێزراوە — لێرەش وێنەی زاپاسی لێ دەگیرێت">{tr("پاراستنی داتا")}</H>
+      <H sub="پشکنینی دروستی داتا، reconciliation و ڕێنمایی گەڕاندنەوەی production">{tr("پاراستنی داتا")}</H>
 
-      <Card className={`p-4 ${okAll ? "border-[color-mix(in_srgb,var(--pos)_34%,transparent)] bg-[color-mix(in_srgb,var(--pos)_8%,transparent)]" : "border-[color-mix(in_srgb,var(--warn)_34%,transparent)] bg-[color-mix(in_srgb,var(--warn)_9%,transparent)]"}`}>
+      <Card className={`p-4 ${localOk && serverOk !== false ? "border-[color-mix(in_srgb,var(--pos)_34%,transparent)] bg-[color-mix(in_srgb,var(--pos)_8%,transparent)]" : "border-[color-mix(in_srgb,var(--warn)_34%,transparent)] bg-[color-mix(in_srgb,var(--warn)_9%,transparent)]"}`}>
         <div className="flex items-center gap-2 mb-3">
-          {okAll ? <CheckCircle2 className="w-5 h-5 text-[var(--pos)]" /> : <AlertTriangle className="w-5 h-5 text-[var(--warn)]" />}
-          <span className={`font-bold ${okAll ? "text-[var(--pos)]" : "text-[var(--warn)]"}`}>
-            {okAll ? "هەموو حیسابەکان ڕێکن" : "چەند خاڵێک پێویستی بە سەیرکردن هەیە"}
+          {localOk && serverOk !== false ? <CheckCircle2 className="w-5 h-5 text-[var(--pos)]" /> : <AlertTriangle className="w-5 h-5 text-[var(--warn)]" />}
+          <span className={`font-bold ${localOk && serverOk !== false ? "text-[var(--pos)]" : "text-[var(--warn)]"}`}>
+            {localOk && serverOk !== false ? "پشکنینی ناوخۆیی ڕێکە" : "چەند خاڵێک پێویستی بە سەیرکردن هەیە"}
           </span>
         </div>
-        {checks.map((c, i) => (
+
+        {localChecks.map((c, i) => (
           <div key={i} className="flex items-center justify-between py-1.5 text-sm border-b border-white/60 last:border-0">
             <span className="flex items-center gap-1.5 text-[var(--txt)]">
               {c.ok ? <CheckCircle2 className="w-3.5 h-3.5 text-[var(--pos)]" /> : <AlertTriangle className="w-3.5 h-3.5 text-[var(--warn)]" />}
@@ -8828,56 +8879,99 @@ function Backup({ data, calc, cur, saveBackup, downloadBackup, flash, sumUsd, my
             <span className={`text-xs ${c.ok ? "text-[var(--txt-3)]" : "text-[var(--warn)] font-semibold"}`}>{c.d}</span>
           </div>
         ))}
+
+        <div className="mt-3 flex items-center gap-2 flex-wrap">
+          <Btn kind="ghost" onClick={runServerRecon} disabled={busy}>
+            {busy ? "..." : "پشکنینی Reconciliation لە سێرڤەر"}
+          </Btn>
+          {recon && (
+            <Pill tone={recon.ok ? "green" : "red"}>
+              {recon.ok ? `PASS · ${recon.warnings || 0} warning` : `${recon.failures || 0} FAIL`}
+            </Pill>
+          )}
+          {reconErr && <span className="text-xs text-[var(--neg)]">{reconErr}</span>}
+        </div>
+
+        {Array.isArray(recon?.checks) && recon.checks.length > 0 && (
+          <div className="mt-3 rounded-[var(--r-sm)] border border-[var(--line)] bg-[var(--surf)] p-3">
+            {recon.checks.map((c, i) => (
+              <div key={`${c.name}-${i}`} className="flex justify-between gap-3 py-1 text-xs">
+                <span className="text-[var(--txt-2)]">{c.name}</span>
+                <span className={c.status === "PASS" ? "text-[var(--pos)]" : c.status === "WARN" ? "text-[var(--warn)]" : "text-[var(--neg)]"}>
+                  {c.status} · {c.count ?? 0}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </Card>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {Object.entries(counts).map(([k, v]) => (
-          <Card key={k} className="p-4"><div className="text-xs text-[var(--txt-2)]">{k}</div><div className="text-2xl font-bold" style={num}>{fmt(v, 0)}</div></Card>
+          <Card key={k} className="p-4">
+            <div className="text-xs text-[var(--txt-2)]">{k}</div>
+            <div className="text-2xl font-bold" style={num}>{fmt(v, 0)}</div>
+          </Card>
         ))}
       </div>
 
-      <Card className="p-5">
-        <SecLbl>{tr("باکئەپ")}</SecLbl>
-        <div className="text-sm text-[var(--txt-2)] mb-3 leading-relaxed">
-          {tr("هەر ٦ کاتژمێرێک جارێک خۆی وێنەیەکی تەواوی هەموو داتاکە هەڵدەگرێت. دەتوانیت خۆشت ئێستا یەکێک درووست بکەیت، یان فایلێک دابەزێنیت و لە کۆمپیوتەرەکەت هەڵیبگریت.")}
-        </div>
-        <div className="flex gap-2 flex-wrap">
-          <Btn onClick={async () => { setBusy(true); await saveBackup("manual"); await load(); setBusy(false); }} disabled={busy}>
-            {busy ? "..." : "درووستکردنی باکئەپ ئێستا"}
-          </Btn>
-          <Btn kind="ghost" className="flex items-center gap-1.5" onClick={downloadBackup}><Download className="w-4 h-4" /> {tr("دابەزاندنی فایل")}</Btn>
-        </div>
-      </Card>
+      {rowPressure >= 20000 && (
+        <Card className="p-4 border-[color-mix(in_srgb,var(--warn)_34%,transparent)] bg-[color-mix(in_srgb,var(--warn)_9%,transparent)]">
+          <div className="flex gap-2 items-start">
+            <AlertTriangle className="w-5 h-5 text-[var(--warn)] shrink-0 mt-0.5" />
+            <div className="text-sm text-[var(--txt-2)] leading-relaxed">
+              مێژووی دارایی گەورە بووە ({fmt(rowPressure, 0)} ڕیز لە مامەڵە/دەفتەر/ئەکاونت).
+              سیستەم بۆ دروستی حیساب هەموو مێژووەکە بە pagination بار دەکات و هیچ ڕیزێک بە نهێنی truncate ناکات.
+              ئەگەر کاتی بارکردن بەرز بوو، پێویستە reporting/history ـی سێرڤەر-ساید چالاک بکرێت.
+            </div>
+          </div>
+        </Card>
+      )}
 
       <Card className="p-5">
-        <SecLbl>{tr("باکئەپە هەڵگیراوەکان")}</SecLbl>
-        {list === null ? <Empty t={tr("بارکردن...")} /> :
-          list.length === 0 ? (
-            <div className="text-sm text-[var(--warn)] bg-[color-mix(in_srgb,var(--warn)_11%,transparent)] border border-[color-mix(in_srgb,var(--warn)_26%,transparent)] rounded-[var(--r-sm)] p-3">
-              {tr("هێشتا هیچ باکئەپێک نییە — ئایا خشتەی")} <b>backups</b> {tr("لە Supabase درووست کراوە؟")}
-            </div>
-          ) : list.map((b) => (
-            <div key={b.id} className="flex items-center justify-between py-2.5 border-b border-[var(--line)] last:border-0">
-              <div>
-                <div className="text-sm text-[var(--txt)]" style={num}>{new Date(b.created_at).toLocaleString("en-GB")}</div>
-                <div className="text-[11px] text-[var(--txt-3)]">
-                  {b.kind === "auto" ? "ئۆتۆماتیکی" : "دەستی"} · <span style={num}>{b.counts?.txs ?? "?"}</span> {tr("مامەڵە ·")} <span style={num}>{b.counts?.ledger ?? "?"}</span> {tr("تۆمار")}
-                </div>
-              </div>
-              <Pill tone={b.kind === "auto" ? "slate" : "green"}>{b.kind === "auto" ? "خۆکار" : "دەستی"}</Pill>
-            </div>
-          ))}
+        <SecLbl>{tr("گەڕاندنەوە و باکئەپ")}</SecLbl>
+        <div className="text-sm text-[var(--txt-2)] mb-3 leading-relaxed space-y-2">
+          <p>
+            باکئەپ/Point-in-Time Recovery ـی ڕاستەقینە لە ئاستی پڕۆژە و database ـی Supabase ڕێکدەخرێت.
+            وێنەیەک کە لە هەمان database ـدا هەڵگیرێت disaster recovery نییە، بۆیە باکئەپە خۆکارە ناوخۆییە کۆنەکە ناچالاک کراوە.
+          </p>
+          <p>
+            export ـی JSON ـی خوارەوە تەنها کۆپییەکی زیادەی off-site ـە؛ Auth/MFA secret، فایلەکانی Storage،
+            database functions/policies و WAL/PITR ـی تێدا نییە.
+          </p>
+        </div>
+
+        {isOwner ? (
+          <Btn
+            kind="ghost"
+            className="flex items-center gap-1.5"
+            onClick={async () => {
+              setBusy(true);
+              try { await downloadBackup(); }
+              finally { setBusy(false); }
+            }}
+            disabled={busy}
+          >
+            <Download className="w-4 h-4" />
+            {busy ? "..." : "دابەزاندنی off-site JSON export"}
+          </Btn>
+        ) : (
+          <div className="text-xs text-[var(--txt-3)]">
+            export ـی تەواوی داتا تەنها بۆ خاوەنی سیستەمە.
+          </div>
+        )}
       </Card>
 
       <Card className="p-4 bg-[var(--line)]">
         <div className="text-xs text-[var(--txt-2)] leading-relaxed">
-          <b className="text-[var(--txt)]">{tr("ئامۆژگاری:")}</b> بۆ کۆمپانیایەک کە ملیۆنان دۆلار ئاڵووگۆڕ دەکات، پێشنیار دەکەم پلانی <b>Supabase Pro</b> {tr("وەربگریت ($25/مانگ) — باکئەپی خۆکاری ڕۆژانەی هەیە لەگەڵ توانای گەڕاندنەوەی هەر خولەکێک، و پڕۆژەکەشت هەرگیز ناوەستێت. هەروەها مانگی جارێک فایلێکی باکئەپ دابەزێنە و لە شوێنێکی جیا هەڵیبگرە.")}
+          <b className="text-[var(--txt)]">{tr("Production recovery:")}</b>{" "}
+          لە Supabase Dashboard ـدا Database Backups/PITR بپشکنە و بە پێی پلانی بەکارهاتوو recovery policy دیاری بکە.
+          بۆ کاروباری دارایی، restore drill ـی بەردەوام و کۆپییەکی off-site جیا لە production پێویستە.
         </div>
       </Card>
     </div>
   );
 }
-
 /* نرخی جیهانی — تەنها بۆ زانیاری، پەیوەندی بە نرخی خۆت نییە */
 function WorldRates({ data, cur }) {
   const [rates, setRates] = useState(null);

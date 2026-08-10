@@ -6850,7 +6850,7 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
 
   return (
     <div className="space-y-4">
-      <ReceiptLifecycle stage={lifecycleStage} lang={_lang} />
+      <DeferredPanel compact><ReceiptLifecycle stage={lifecycleStage} lang={_lang} /></DeferredPanel>
 
       {allowDirection && (
         <Card className="p-4">
@@ -7025,13 +7025,15 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
           )}
 
           {inspectedReceipt && (
-            <ReceiptSmartInspector receipt={inspectedReceipt} data={data} lang={_lang}
-              Card={Card} Btn={Btn} Pill={Pill} clamp01={clamp01} fmtMoney={fmtMoney} num={num} platMeta={platMeta}
-              onEdit={() => setEditingId(inspectedReceipt.id)}
-              onConfirm={() => confirmRow(inspectedReceipt.id)}
-              onReject={() => rejectRow(inspectedReceipt.id)}
-              onRetry={() => retryRow(inspectedReceipt.id)}
-              onClose={() => setInspectorId(null)} />
+            <DeferredPanel>
+              <ReceiptSmartInspector receipt={inspectedReceipt} data={data} lang={_lang}
+                Card={Card} Btn={Btn} Pill={Pill} clamp01={clamp01} fmtMoney={fmtMoney} num={num} platMeta={platMeta}
+                onEdit={() => setEditingId(inspectedReceipt.id)}
+                onConfirm={() => confirmRow(inspectedReceipt.id)}
+                onReject={() => rejectRow(inspectedReceipt.id)}
+                onRetry={() => retryRow(inspectedReceipt.id)}
+                onClose={() => setInspectorId(null)} />
+            </DeferredPanel>
           )}
 
           {visibleRows.length === 0 && (
@@ -7958,7 +7960,7 @@ function BatchDetail({ id, back, usr, data, profile, onMakeTx, flash, reloadBatc
   return (
     <div className="space-y-4">
       <Back onClick={back} t={tr("گەڕانەوە")} />
-      <ReceiptLifecycle stage={lifecycleStage} lang={_lang} />
+      <DeferredPanel compact><ReceiptLifecycle stage={lifecycleStage} lang={_lang} /></DeferredPanel>
       <div className="flex items-start justify-between flex-wrap gap-2">
         <div>
           <h2 className="text-xl font-bold text-[var(--txt)]">{b.customer_name || (b.partner_id ? usr(b.partner_id).name : "—")}</h2>
@@ -10469,7 +10471,7 @@ function ApprovalCenter({
         </Card>
       )}
 
-      <ReceiptPolicyPanel client={supabase} isOwner={isOwner} flash={flash} lang={_lang} />
+      <DeferredPanel><ReceiptPolicyPanel client={supabase} isOwner={isOwner} flash={flash} lang={_lang} /></DeferredPanel>
 
       <Card className="p-5">
         <SecLbl>Transaction Version History</SecLbl>

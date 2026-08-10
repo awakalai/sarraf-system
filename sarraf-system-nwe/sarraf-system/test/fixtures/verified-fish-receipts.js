@@ -1,0 +1,15 @@
+// Manually transcribed from the ten supplied images and cross-checked at original resolution.
+// The final image is a second view of receipt r5 and must never be counted twice.
+export const verifiedFishReceipts = [
+  { id: "r1", source: "photo_2026-08-10_21-59-53.jpg", amount: 1258.66, fee: 36.66, netAmount: 1222.00, currency: "CNY", txDate: "2026-08-04", txTime: "20:33:55", paymentMethod: "Mastercard(4166)", orderNo: "2026080423001421001435272155", merchantOrderNo: "47858468010352520521007" },
+  { id: "r2", source: "photo_2026-08-10_21-59-54.jpg", amount: 1248.36, fee: 36.36, netAmount: 1212.00, currency: "CNY", txDate: "2026-08-04", txTime: "20:32:02", paymentMethod: "Mastercard(3745)", orderNo: "2026080423001457421400369855", merchantOrderNo: "47858466971452244957424" },
+  { id: "r3", source: "photo_2026-08-10_21-59-55.jpg", amount: 1262.78, fee: 36.78, netAmount: 1226.00, currency: "CNY", txDate: "2026-08-04", txTime: "19:46:33", paymentMethod: "Mastercard(3745)", orderNo: "2026080423001457421459944678", merchantOrderNo: "47858439781452244957424" },
+  { id: "r4", source: "photo_2026-08-10_21-59-56.jpg", amount: 1256.60, fee: 36.60, netAmount: 1220.00, currency: "CNY", txDate: "2026-08-04", txTime: "20:59:52", paymentMethod: "Mastercard(3093)", orderNo: "2026080423001407581416718609", merchantOrderNo: "47858483824452341107582" },
+  { id: "r5", source: "photo_2026-08-10_21-59-57.jpg", amount: 2369.00, fee: 69.00, netAmount: 2300.00, currency: "CNY", txDate: "2026-08-04", txTime: "20:31:16", paymentMethod: "Visa(0353)", orderNo: "2026080423001498771434860991", merchantOrderNo: "47858466559352518998772" },
+  { id: "r6", source: "photo_2026-08-10_21-59-58 (2).jpg", amount: 1261.75, fee: 36.75, netAmount: 1225.00, currency: "CNY", txDate: "2026-08-05", txTime: "02:06:30", paymentMethod: "Mastercard(3024)", orderNo: "2026080523001478141433651192", merchantOrderNo: "47858667175352291978145" },
+  { id: "r7", source: "photo_2026-08-10_21-59-58.jpg", amount: 1261.75, fee: 36.75, netAmount: 1225.00, currency: "CNY", txDate: "2026-08-05", txTime: "02:00:26", paymentMethod: "Mastercard(4311)", orderNo: "2026080523001439431417419677", merchantOrderNo: "47858664147352822439437" },
+  { id: "r8", source: "photo_2026-08-10_21-59-59.jpg", amount: 1261.75, fee: 36.75, netAmount: 1225.00, currency: "CNY", txDate: "2026-08-04", txTime: "23:31:34", paymentMethod: "Visa(1584)", orderNo: "2026080423001460041410325814", merchantOrderNo: "47858574844052224760044" },
+  { id: "r9", source: "photo_2026-08-10_22-00-00.jpg", amount: 2442.00, fee: 42.00, orderAmount: 2400.00, netAmount: 2400.00, currency: "CNY", txDate: "2026-08-09", txTime: "00:51:51", paymentMethod: "Visa(0233)", orderNo: "10001073012026080901396395214510" },
+  { id: "r10", source: "photo_2026-08-10_22-00-01.jpg", amount: 2369.00, fee: 69.00, netAmount: 2300.00, currency: "CNY", txDate: "2026-08-04", txTime: "20:31:16", paymentMethod: "Visa(0353)", orderNo: "2026080423001498771434860991", merchantOrderNo: "47858466559352518998772" },
+];
+

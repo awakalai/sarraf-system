@@ -6071,6 +6071,133 @@ function ReceiptList({ rows, showFrom }) {
   );
 }
 
+const RECEIPT_LIFECYCLE = [
+  ["capture", "وەرگرتن"],
+  ["read", "AI Read"],
+  ["review", "پشکنین"],
+  ["verify", "پشتڕاست"],
+  ["match", "بەستن"],
+  ["archive", "ئەرشیف"],
+];
+
+function ReceiptLifecycle({ stage = "capture", compact = false }) {
+  const active = Math.max(0, RECEIPT_LIFECYCLE.findIndex(([key]) => key === stage));
+  return (
+    <div className="rounded-[var(--r)] p-3 md:p-4 overflow-x-auto"
+      style={{ background: "var(--surf)", border: "1px solid var(--line)", boxShadow: "var(--sh-1)" }}>
+      <div className="flex items-center min-w-[620px]">
+        {RECEIPT_LIFECYCLE.map(([key, label], index) => {
+          const done = index < active;
+          const current = index === active;
+          return (
+            <React.Fragment key={key}>
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold"
+                  style={done || current
+                    ? { background: done ? "var(--pos)" : "var(--ac)", color: "#fff" }
+                    : { background: "var(--surf-3)", color: "var(--txt-3)", border: "1px solid var(--line)" }}>
+                  {done ? <CheckCircle2 className="w-3.5 h-3.5" /> : index + 1}
+                </span>
+                <span className={`${compact ? "text-[10px]" : "text-[11px]"} font-semibold whitespace-nowrap`}
+                  style={{ color: current ? "var(--txt)" : done ? "var(--pos)" : "var(--txt-3)" }}>
+                  {label}
+                </span>
+              </div>
+              {index < RECEIPT_LIFECYCLE.length - 1 && (
+                <span className="h-px min-w-6 flex-1 mx-2" style={{ background: index < active ? "var(--pos)" : "var(--line-2)" }} />
+              )}
+            </React.Fragment>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ReceiptSmartInspector({ receipt: r, data, onEdit, onConfirm, onReject, onRetry, onClose }) {
+  if (!r) return null;
+  const confidence = (key) => {
+    const raw = r.fieldConfidence?.[key];
+    if (raw == null || !Number.isFinite(Number(raw))) return { label: "—", color: "var(--txt-3)", bg: "var(--surf-3)" };
+    const pct = Math.round(clamp01(raw) * 100);
+    if (pct >= 80) return { label: `${pct}%`, color: "var(--pos)", bg: "color-mix(in srgb, var(--pos) 9%, var(--surf))" };
+    if (pct >= 60) return { label: `${pct}%`, color: "var(--warn)", bg: "color-mix(in srgb, var(--warn) 10%, var(--surf))" };
+    return { label: `${pct}%`, color: "var(--neg)", bg: "color-mix(in srgb, var(--neg) 9%, var(--surf))" };
+  };
+  const fields = [
+    ["amount", "Amount / Gross", Number(r.amount) > 0 ? `${fmtMoney(data, r.amount, r.currency)} ${r.currency || ""}` : "—"],
+    ["currency", "Currency", r.currency || "—"],
+    ["fee", "Fee", Number.isFinite(Number(r.fee)) ? fmtMoney(data, r.fee, r.currency) : "—"],
+    ["netAmount", "Net", Number.isFinite(Number(r.net)) ? fmtMoney(data, r.net, r.currency) : "—"],
+    ["receiver", "Payee", r.receiver || r.merchantName || "—"],
+    ["refNo", "Order No.", r.refNo || "—"],
+    ["merchantOrderNo", "Merchant Order No.", r.merchantOrderNo || "—"],
+    ["paymentMethod", "Card / Method", r.paymentMethod || (r.cardLast4 ? `****${r.cardLast4}` : "—")],
+    ["platform", "Platform", r.platform ? platMeta(r.platform).ku : (r.bank || "—")],
+    ["txDate", "Date / Time", [r.txDate, r.txTime].filter(Boolean).join(" · ") || "—"],
+  ];
+  const overall = r.confidence == null ? null : Math.round(clamp01(r.confidence) * 100);
+  const stateTone = r.status === "ok" ? "green" : r.status === "suspect" || r.status === "retry" ? "amber" : r.status === "processing" ? "slate" : "red";
+  const stateLabel = {
+    processing: "دەخوێندرێتەوە", ok: "پشتڕاستکراو", suspect: "پشکنین پێویستە",
+    retry: "چاوەڕوانی دووبارە", dup: "دووبارە", error: "ڕەتکراو/هەڵە",
+  }[r.status] || r.status;
+
+  return (
+    <Card className="p-0 overflow-hidden">
+      <div className="p-4 border-b border-[var(--line)] flex items-center justify-between gap-3">
+        <div>
+          <div className="text-[13px] font-bold text-[var(--txt)]">Smart Inspector</div>
+          <div className="text-[10.5px] text-[var(--txt-3)] mt-0.5">وێنە و خانە هەستیارەکان لە یەک شوێن بپشکنە.</div>
+        </div>
+        <button onClick={onClose} className="p-2 rounded-lg text-[var(--txt-3)] hover:bg-[var(--surf-3)]" aria-label="Close inspector"><X className="w-4 h-4" /></button>
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(300px,0.95fr)_minmax(0,1.05fr)]">
+        <div className="min-h-[300px] lg:min-h-[470px] p-3 flex items-center justify-center"
+          style={{ background: "linear-gradient(145deg, var(--surf-3), var(--bg))" }}>
+          {r.url ? (
+            <a href={r.url} target="_blank" rel="noreferrer" className="block w-full h-full">
+              <img src={r.url} alt="Receipt preview" className="w-full h-[300px] lg:h-[450px] object-contain rounded-xl" />
+            </a>
+          ) : (
+            <div className="text-center text-[var(--txt-3)]">
+              {r.status === "processing" ? <RotateCcw className="w-7 h-7 animate-spin mx-auto" /> : <Receipt className="w-8 h-8 mx-auto" />}
+              <div className="text-xs mt-2">وێنە ئامادە نییە</div>
+            </div>
+          )}
+        </div>
+        <div className="p-4 md:p-5">
+          <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
+            <div className="flex items-center gap-2"><Pill tone={stateTone}>{stateLabel}</Pill>{overall != null && <span className="text-[11px] font-bold" style={{ color: overall >= 80 ? "var(--pos)" : overall >= 60 ? "var(--warn)" : "var(--neg)", ...num }}>AI {overall}%</span>}</div>
+            {r.platform && <span className="text-[11px] text-[var(--txt-3)]">{platMeta(r.platform).ku}</span>}
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            {fields.map(([key, label, value]) => {
+              const tone = confidence(key);
+              return (
+                <div key={key} className="rounded-xl p-3" style={{ background: tone.bg, border: "1px solid var(--line)" }}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] text-[var(--txt-3)]">{label}</span>
+                    <span className="text-[9px] font-bold" style={{ color: tone.color, ...num }}>{tone.label}</span>
+                  </div>
+                  <div className="text-[12px] font-semibold mt-1 break-words" style={{ color: "var(--txt)", ...num }}>{value}</div>
+                </div>
+              );
+            })}
+          </div>
+          {r.note && <div className="mt-3 p-3 rounded-xl text-[11px] leading-relaxed" style={{ background: "var(--surf-3)", color: r.status === "suspect" ? "var(--warn)" : r.status === "error" || r.status === "dup" ? "var(--neg)" : "var(--txt-2)" }}>{r.note}</div>}
+          <div className="flex flex-wrap gap-2 mt-4">
+            {r.status !== "processing" && r.status !== "dup" && <Btn kind="ghost" onClick={onEdit}><Pencil className="w-4 h-4" /> دەستکاری</Btn>}
+            {r.status === "suspect" && <Btn onClick={onConfirm}><CheckCircle2 className="w-4 h-4" /> پشتڕاستکردنەوە</Btn>}
+            {r.ocrImage && ["retry","suspect","error"].includes(r.status) && <Btn kind="ghost" onClick={onRetry}><RotateCcw className="w-4 h-4" /> دووبارە خوێندنەوە</Btn>}
+            {r.status !== "processing" && r.status !== "dup" && <Btn kind="ghost" style={{ color: "var(--neg)" }} onClick={onReject}><XCircle className="w-4 h-4" /> ڕەتکردنەوە</Btn>}
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 /* ─────────── ئەپلۆدکەری فیش ─────────── */
 function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, direction = "in", onDone, flash, data, allowDirection }) {
   const [rows, setRows] = useState([]);
@@ -6086,6 +6213,13 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
   const [reviewSearch, setReviewSearch] = useState("");
   const [reviewPlatform, setReviewPlatform] = useState("all");
   const [selectedRows, setSelectedRows] = useState([]);
+  const [inspectorId, setInspectorId] = useState(null);
+  const [dragActive, setDragActive] = useState(false);
+  const [intakeSource, setIntakeSource] = useState("app");
+  const cameraInputRef = useRef(null);
+  const galleryInputRef = useRef(null);
+  const shareInputRef = useRef(null);
+  const receiptCommandRef = useRef(null);
   const maxAge = 7;
 
   const commitRows = (updater) => {
@@ -6269,13 +6403,15 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
     };
   };
 
-  const onFiles = async (files) => {
+  const onFiles = async (files, source = "gallery") => {
     const list = Array.from(files || []).filter((f) => f.type?.startsWith("image/"));
     if (!list.length) return flash("تەنها وێنە هەڵبژێرە");
     if (working) return;
 
+    setIntakeSource(source);
     setWorking(true);
     const tasks = list.map((file) => ({ id: uid(), file }));
+    setInspectorId((current) => current || tasks[0]?.id || null);
     commitRows((xs) => [
       ...xs,
       ...tasks.map(({ id, file }) => ({
@@ -6594,8 +6730,8 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
   const receiptSendErrorInfo = (stage, err) => {
     const labels = {
       storage: "هەڵگرتنی وێنەکان",
-      batch: "دروستکردنی کۆمەڵە",
-      receipts: "تۆمارکردنی فیشەکان",
+      finalize: "پشتڕاستکردنەوە و تۆمارکردنی atomic",
+      verify: "پشکنینی دۆخی تۆمارکردن",
       cleanup: "پاککردنەوەی ناردنی ناتەواو",
       unknown: "ناردن",
     };
@@ -6621,47 +6757,6 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
     throw e;
   };
 
-  // Prototype-schema compatibility: only explicitly optional receipt metadata
-  // may be removed after Supabase reports a missing-column schema-cache error.
-  const insertCompat = async (table, payload, optionalColumns = [], stage = "unknown") => {
-    let current = Array.isArray(payload)
-      ? payload.map((row) => ({ ...row }))
-      : { ...payload };
-
-    const allowed = new Set(optionalColumns);
-
-    for (let attempt = 0; attempt < 16; attempt++) {
-      const res = await supabase.from(table).insert(current);
-      if (!res.error) return res;
-
-      const msg = String(res.error?.message || "");
-      const code = String(res.error?.code || "");
-      const match =
-        msg.match(/Could not find the ['"]([^'"]+)['"] column/i) ||
-        msg.match(/column ['"]?([^'"\s]+)['"]? .*schema cache/i);
-      const missing = match?.[1];
-
-      if (code === "PGRST204" && missing && allowed.has(missing)) {
-        console.warn(`[schema-compat] ${table}: optional "${missing}" missing; retrying without it`);
-        if (Array.isArray(current)) {
-          current = current.map((row) => {
-            const next = { ...row };
-            delete next[missing];
-            return next;
-          });
-        } else {
-          delete current[missing];
-        }
-        allowed.delete(missing);
-        continue;
-      }
-
-      throwSendError(stage, res.error);
-    }
-
-    throwSendError(stage, new Error(`${table}: schema compatibility retries exceeded`));
-  };
-
   const send = async () => {
     if (working || processing.length) return flash("هێشتا هەندێک فیش دەخوێندرێنەوە");
     if (review.length) return flash(`${review.length} فیش پێویستیان بە پشکنینی دەستی هەیە`);
@@ -6680,25 +6775,55 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
     setSending(true);
     setSendError(null);
 
-    const batchId = uid();
+    if (!receiptCommandRef.current) {
+      const batchId = uid();
+      receiptCommandRef.current = {
+        batchId,
+        commandKey: `receipt-ingest:${batchId}`,
+      };
+    }
+    const { batchId, commandKey } = receiptCommandRef.current;
     const folder = customerId || partnerId || "misc";
-    const uploadedPaths = [];
-    let batchInserted = false;
+    const stagedPaths = [];
+    let rpcAttempted = false;
+    let committed = false;
+    let outcomeUnknown = false;
+    let sendFailure = null;
+
+    const clearStagedState = () => {
+      const paths = new Set(stagedPaths);
+      commitRows((xs) => xs.map((r) => paths.has(r.stagedPath) ? { ...r, stagedPath: null } : r));
+      receiptCommandRef.current = null;
+    };
+
+    const cleanupStagedStorage = async () => {
+      const paths = Array.from(new Set(stagedPaths.filter(Boolean)));
+      if (!paths.length) {
+        clearStagedState();
+        return null;
+      }
+      const removed = await supabase.storage.from("receipts").remove(paths);
+      if (removed.error) return removed.error;
+      clearStagedState();
+      return null;
+    };
 
     try {
       const recs = [];
 
-      // Upload images first. A storage error is now explicit instead of being silently ignored.
+      // Images are staged first. The stable batch/command IDs make a retry safe.
       for (const r of sendRows) {
-        let path = null;
-        if (r.blob) {
+        let path = r.stagedPath || null;
+        if (path) stagedPaths.push(path);
+        if (!path && r.blob) {
           path = `${folder}/${batchId}/${r.id}.jpg`;
           const up = await supabase.storage.from("receipts").upload(path, r.blob, {
             contentType: "image/jpeg",
             upsert: false,
           });
           if (up.error) throwSendError("storage", up.error);
-          uploadedPaths.push(path);
+          stagedPaths.push(path);
+          patchRow(r.id, { stagedPath: path });
         }
 
         recs.push({
@@ -6739,75 +6864,68 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
         id: batchId, customer_id: customerId || null, customer_name: customerName || null,
         partner_id: partnerId || null, direction: dir, status: "new", currency: mainCur,
         total_gross: a.g, total_fee: a.f, total_net: a.n, n: good.length, dup_n: dupN,
-        rejected_n: bad.length, uploaded_by: uploaderId || null,
+        rejected_n: bad.length, uploaded_by: uploaderId || null, source: intakeSource,
       };
 
-      await insertCompat(
-        "receipt_batches",
-        batchPayload,
-        ["rejected_n", "dup_n", "uploaded_by", "partner_id", "customer_name"],
-        "batch"
-      );
-      batchInserted = true;
+      rpcAttempted = true;
+      const finalized = await supabase.rpc("sarraf_ingest_receipt_batch", {
+        p_batch: batchPayload,
+        p_receipts: recs,
+        p_command_key: commandKey,
+      });
+      if (finalized.error) throwSendError("finalize", finalized.error);
+      committed = true;
+    } catch (e) {
+      console.error("receipt send failed", e);
+      sendFailure = e;
 
-      await insertCompat(
-        "receipts",
-        recs,
-        [
-          "fee_original", "fee_discount", "platform", "net_amount",
-          "counted", "reject_code", "reject_reason",
-          "dup_of", "dup_of_date", "dup_of_who",
-          "raw", "uploaded_by", "image_path", "bank", "note"
-        ],
-        "receipts"
-      );
-
-      try {
-        const nr = await supabase.from("notes").insert({
-          id: uid(), user_id: null, kind: "receipt",
-          title: tr("کۆمەڵەی فیشی نوێ"),
-          body: `${customerName || tr("نەزانراو")} · ${good.length} ${tr("فیش")}${mainCur ? ` · ${fmtMoney(data, agg[mainCur].n, mainCur)} ${mainCur}` : ""}`,
-          link: "receipts", ref_id: batchId,
-        });
-        if (nr.error) console.warn("receipt notification", nr.error);
-      } catch (notifyErr) {
-        console.warn("receipt notification", notifyErr);
+      let cleanupAllowed = !rpcAttempted;
+      if (rpcAttempted) {
+        // A lost response can hide a successful commit. Never delete staged images
+        // until the server authoritatively confirms that the batch does not exist.
+        const probe = await supabase
+          .from("receipt_batches")
+          .select("id")
+          .eq("id", batchId)
+          .maybeSingle();
+        if (!probe.error && probe.data?.id) committed = true;
+        else if (!probe.error) cleanupAllowed = true;
+        else outcomeUnknown = true;
       }
 
+      if (!committed && cleanupAllowed) {
+        const cleanupError = await cleanupStagedStorage();
+        if (cleanupError) {
+          console.warn("receipt staged storage cleanup", cleanupError);
+          outcomeUnknown = true;
+          sendFailure = Object.assign(new Error(`${e?.message || e} — cleanup: ${cleanupError.message || cleanupError}`), {
+            stage: "cleanup", code: cleanupError.code || cleanupError.status || null,
+          });
+        }
+      }
+    }
+
+    if (committed) {
       flash(`${good.length} ${tr("فیش نێردرا")} ✓${persistableBad.length ? ` — ${persistableBad.length} ${tr("ڕەتکراو تۆمار کران")}` : ""}${skippedBad ? ` — ${skippedBad} ڕەتکراوی بێ زانیاری تۆمار نەکرا` : ""}`);
       commitRows([]);
+      receiptCommandRef.current = null;
       setEditingId(null);
+      setInspectorId(null);
       setSelectedRows([]);
       setReviewTab("all");
       setReviewSearch("");
       setReviewPlatform("all");
+      setIntakeSource("app");
       setSendError(null);
       onDone && onDone();
-    } catch (e) {
-      console.error("receipt send failed", e);
-
-      // Best-effort rollback: do not leave a half-created batch or orphaned images.
-      try {
-        if (batchInserted) {
-          const rd = await supabase.from("receipts").delete().eq("batch_id", batchId);
-          if (rd.error) console.warn("receipt rollback rows", rd.error);
-          const bd = await supabase.from("receipt_batches").delete().eq("id", batchId);
-          if (bd.error) console.warn("receipt rollback batch", bd.error);
-        }
-        if (uploadedPaths.length) {
-          const sd = await supabase.storage.from("receipts").remove(uploadedPaths);
-          if (sd.error) console.warn("receipt rollback storage", sd.error);
-        }
-      } catch (cleanupErr) {
-        console.warn("receipt rollback", cleanupErr);
-      }
-
-      const info = receiptSendErrorInfo(e?.stage || "unknown", e);
-      setSendError(info);
-      flash(`ناردن سەرکەوتوو نەبوو — ${info.stageLabel}`);
-    } finally {
-      setSending(false);
+    } else if (sendFailure) {
+      const info = receiptSendErrorInfo(sendFailure?.stage || (outcomeUnknown ? "verify" : "unknown"), sendFailure);
+      setSendError({ ...info, outcomeUnknown });
+      flash(outcomeUnknown
+        ? "دۆخی ناردن نادیارە — دووبارە هەمان ناردن بکە؛ دووبارە تۆمار نابێت"
+        : `ناردن سەرکەوتوو نەبوو — ${info.stageLabel}`);
     }
+    setSending(false);
   };
 
   const ST = {
@@ -6833,8 +6951,21 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
     return <span className="text-[9px] font-bold" style={{ color }}>{pct}%</span>;
   };
 
+  const lifecycleStage = working || processing.length
+    ? "read"
+    : !rows.length
+      ? "capture"
+      : review.length || retrying.length || bad.length
+        ? "review"
+        : good.length
+          ? "verify"
+          : "capture";
+  const inspectedReceipt = inspectorId ? rows.find((r) => r.id === inspectorId) || null : null;
+
   return (
     <div className="space-y-4">
+      <ReceiptLifecycle stage={lifecycleStage} />
+
       {allowDirection && (
         <Card className="p-4">
           <Lbl>{tr("جۆری فیشەکان")}</Lbl>
@@ -6847,16 +6978,54 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
         </Card>
       )}
 
-      <Card className="p-5">
-        <label className={`block border-2 border-dashed rounded-[var(--r)] p-7 md:p-9 text-center cursor-pointer transition ${working ? "border-[var(--line)] bg-[var(--line)]" : "border-[var(--line)] hover:border-[var(--pos)] hover:bg-[color-mix(in_srgb,var(--pos)_10%,transparent)]/30"}`}>
-          <input type="file" accept="image/*" multiple className="hidden" disabled={working}
-            onChange={(e) => { onFiles(e.target.files); e.target.value = ""; }} />
+      <Card className="p-5 space-y-4">
+        <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" disabled={working}
+          onChange={(e) => { onFiles(e.target.files, "camera"); e.target.value = ""; }} />
+        <input ref={galleryInputRef} type="file" accept="image/*" multiple className="hidden" disabled={working}
+          onChange={(e) => { onFiles(e.target.files, "gallery"); e.target.value = ""; }} />
+        <input ref={shareInputRef} type="file" accept="image/*" multiple className="hidden" disabled={working}
+          onChange={(e) => { onFiles(e.target.files, "share"); e.target.value = ""; }} />
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+          <button type="button" disabled={working} onClick={() => cameraInputRef.current?.click()}
+            className="p-4 rounded-2xl text-start disabled:opacity-50 transition hover:-translate-y-0.5"
+            style={{ background: "color-mix(in srgb, var(--ac) 8%, var(--surf))", border: "1px solid color-mix(in srgb, var(--ac) 20%, var(--line))" }}>
+            <Camera className="w-5 h-5 mb-2" style={{ color: "var(--ac)" }} />
+            <div className="text-[12px] font-bold text-[var(--txt)]">کامێرا</div>
+            <div className="text-[10px] text-[var(--txt-3)] mt-1">وێنەی فیشەکە ئێستا بگرە</div>
+          </button>
+          <button type="button" disabled={working} onClick={() => galleryInputRef.current?.click()}
+            className="p-4 rounded-2xl text-start disabled:opacity-50 transition hover:-translate-y-0.5"
+            style={{ background: "var(--surf-2)", border: "1px solid var(--line)" }}>
+            <Upload className="w-5 h-5 mb-2" style={{ color: "var(--pos)" }} />
+            <div className="text-[12px] font-bold text-[var(--txt)]">Gallery / Files</div>
+            <div className="text-[10px] text-[var(--txt-3)] mt-1">یەک یان چەند فیش هەڵبژێرە</div>
+          </button>
+          <button type="button" disabled={working} onClick={() => shareInputRef.current?.click()}
+            className="p-4 rounded-2xl text-start disabled:opacity-50 transition hover:-translate-y-0.5"
+            style={{ background: "color-mix(in srgb, var(--pos) 7%, var(--surf))", border: "1px solid color-mix(in srgb, var(--pos) 18%, var(--line))" }}>
+            <MessageCircle className="w-5 h-5 mb-2" style={{ color: "var(--pos)" }} />
+            <div className="text-[12px] font-bold text-[var(--txt)]">WhatsApp / Share</div>
+            <div className="text-[10px] text-[var(--txt-3)] mt-1">فیشی save/share کراو هەڵبژێرە</div>
+          </button>
+        </div>
+
+        <div role="button" tabIndex={0}
+          onClick={() => !working && galleryInputRef.current?.click()}
+          onKeyDown={(e) => { if (!working && (e.key === "Enter" || e.key === " ")) galleryInputRef.current?.click(); }}
+          onDragOver={(e) => { e.preventDefault(); if (!working) setDragActive(true); }}
+          onDragLeave={() => setDragActive(false)}
+          onDrop={(e) => { e.preventDefault(); setDragActive(false); if (!working) onFiles(e.dataTransfer.files, "drag_drop"); }}
+          className="border-2 border-dashed rounded-[var(--r)] p-6 md:p-8 text-center cursor-pointer transition outline-none"
+          style={dragActive
+            ? { borderColor: "var(--pos)", background: "color-mix(in srgb, var(--pos) 10%, var(--surf))" }
+            : { borderColor: "var(--line-2)", background: working ? "var(--surf-3)" : "var(--surf)" }}>
           <div className="w-12 h-12 rounded-2xl mx-auto mb-3 flex items-center justify-center" style={{ background: "var(--surf-3)", color: "var(--ac)" }}>
             {working ? <RotateCcw className="w-5 h-5 animate-spin" /> : <Upload className="w-5 h-5" />}
           </div>
-          <div className="text-sm font-semibold text-[var(--txt)]">{working ? `خوێندنەوەی فیشەکان... ${prog || ""}` : "فیشەکان هەڵبژێرە یان لێرە دایبنێ"}</div>
-          <div className="text-xs text-[var(--txt-3)] mt-1.5">زانیارییەکانی فیش بە خۆکار دەخوێندرێنەوە؛ هەر فیشێکی گومانلێکراو پێش ناردن پێویستی بە پشتڕاستکردنەوە هەیە.</div>
-        </label>
+          <div className="text-sm font-semibold text-[var(--txt)]">{working ? `خوێندنەوەی فیشەکان... ${prog || ""}` : "فیشەکان لێرە دابنێ یان کلیک بکە"}</div>
+          <div className="text-xs text-[var(--txt-3)] mt-1.5">AI زانیارییەکان دەخوێنێتەوە؛ خانە گومانلێکراوەکان پێش ناردن بە دەست پشتڕاست دەکرێنەوە.</div>
+        </div>
       </Card>
 
       {rows.length > 0 && (
@@ -6969,6 +7138,15 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
             </Card>
           )}
 
+          {inspectedReceipt && (
+            <ReceiptSmartInspector receipt={inspectedReceipt} data={data}
+              onEdit={() => setEditingId(inspectedReceipt.id)}
+              onConfirm={() => confirmRow(inspectedReceipt.id)}
+              onReject={() => rejectRow(inspectedReceipt.id)}
+              onRetry={() => retryRow(inspectedReceipt.id)}
+              onClose={() => setInspectorId(null)} />
+          )}
+
           {visibleRows.length === 0 && (
             <Card className="p-5"><Empty t="هیچ فیشێک بەم فلتەرە نەدۆزرایەوە" /></Card>
           )}
@@ -6994,7 +7172,10 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
                       </label>
                       <div className="text-[10px] w-5 pt-1 text-center shrink-0" style={{ ...num, color: "var(--txt-3)" }}>{i + 1}</div>
                       {r.url
-                        ? <img src={r.url} alt="" className="w-14 h-14 md:w-16 md:h-16 object-cover rounded-xl border border-[var(--line)] shrink-0" />
+                        ? <button type="button" onClick={() => setInspectorId(r.id)} className="shrink-0 rounded-xl" aria-label="Open receipt inspector">
+                            <img src={r.url} alt="" className="w-14 h-14 md:w-16 md:h-16 object-cover rounded-xl shrink-0"
+                              style={{ border: inspectorId === r.id ? "2px solid var(--ac)" : "1px solid var(--line)" }} />
+                          </button>
                         : <div className="w-14 h-14 md:w-16 md:h-16 rounded-xl shrink-0 flex items-center justify-center" style={{ background: "var(--surf-3)" }}>
                             {r.status === "processing" ? <RotateCcw className="w-4 h-4 animate-spin text-[var(--txt-3)]" /> : <Receipt className="w-4 h-4 text-[var(--txt-3)]" />}
                           </div>}
@@ -7031,14 +7212,14 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
                         {r.status !== "processing" && !hardDup && (
-                          <button title="پشکنین و دەستکاری" onClick={() => setEditingId(editing ? null : r.id)}
+                          <button title="پشکنین و دەستکاری" onClick={() => { setInspectorId(r.id); setEditingId(editing ? null : r.id); }}
                             className="p-2 rounded-lg hover:bg-[var(--surf-3)] text-[var(--txt-2)]"><Pencil className="w-3.5 h-3.5" /></button>
                         )}
                         {r.status !== "processing" && !hardDup && r.ocrImage && (
                           <button title="دووبارە خوێندنەوە" onClick={() => retryRow(r.id)}
                             className="p-2 rounded-lg hover:bg-[var(--surf-3)] text-[var(--txt-2)]"><RotateCcw className="w-3.5 h-3.5" /></button>
                         )}
-                        <button title="سڕینەوە" onClick={() => { commitRows((xs) => xs.filter((x) => x.id !== r.id)); if (editingId === r.id) setEditingId(null); }}
+                        <button title="سڕینەوە" onClick={() => { commitRows((xs) => xs.filter((x) => x.id !== r.id)); if (editingId === r.id) setEditingId(null); if (inspectorId === r.id) setInspectorId(null); }}
                           className="p-2 rounded-lg hover:bg-[color-mix(in_srgb,var(--neg)_9%,transparent)] text-[var(--txt-3)] hover:text-[var(--neg)]"><Trash2 className="w-3.5 h-3.5" /></button>
                       </div>
                     </div>
@@ -7114,7 +7295,11 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
                   <div className="text-[10.5px] mt-1 break-words" dir="ltr" style={{ color: "var(--txt-3)" }}>
                     {sendError.code ? `[${sendError.code}] ` : ""}{sendError.message}
                   </div>
-                  <div className="text-[10.5px] mt-2" style={{ color: "var(--txt-3)" }}>فیشەکان لێرە ماونەتەوە؛ دوای چارەسەرکردنی هەڵەکە دەتوانیت هەمان ناردن دووبارە بکەیتەوە.</div>
+                  <div className="text-[10.5px] mt-2" style={{ color: sendError.outcomeUnknown ? "var(--warn)" : "var(--txt-3)" }}>
+                    {sendError.outcomeUnknown
+                      ? "دۆخی DB بە دڵنیایی نەزانرا؛ وێنەکان پاک نەکرانەوە. هەمان ناردن دووبارە بکە—command key پارێزراوە و دووبارە تۆمار نابێت."
+                      : "فیشەکان لێرە ماونەتەوە؛ دوای چارەسەرکردنی هەڵەکە دەتوانیت هەمان ناردن دووبارە بکەیتەوە."}
+                  </div>
                 </div>
                 <button onClick={() => setSendError(null)} className="p-1.5 rounded-lg" style={{ color: "var(--txt-3)" }}><X className="w-4 h-4" /></button>
               </div>
@@ -7674,18 +7859,30 @@ function LocationReceipts({ partnerId, data, title, flash }) {
 function BatchDetail({ id, back, usr, data, onMakeTx, flash, reloadBatches }) {
   const [b, setB] = useState(null);
   const [recs, setRecs] = useState(null);
+  const [events, setEvents] = useState([]);
+  const [candidates, setCandidates] = useState([]);
+  const [matchReason, setMatchReason] = useState("");
+  const [matchBusy, setMatchBusy] = useState(null);
+  const [archiveReason, setArchiveReason] = useState("");
+  const [archiveBusy, setArchiveBusy] = useState(false);
   const [split, setSplit] = useState(false);
   const [share, setShare] = useState(false);
   const [pick, setPick] = useState({});        // {receiptId: partnerId|""}
   const [saving, setSaving] = useState(false);
+  const matchCommandRef = useRef(null);
+  const archiveCommandRef = useRef(null);
   const partners = data.users.filter((u) => u.role === "partner" && !u.deleted);
 
   const load = async () => {
-    const [bb, rr] = await Promise.all([
+    const [bb, rr, ee, cc] = await Promise.all([
       supabase.from("receipt_batches").select("*").eq("id", id).single(),
       supabase.from("receipts").select("*").eq("batch_id", id).order("created_at"),
+      supabase.from("receipt_events").select("*").eq("batch_id", id).order("created_at", { ascending: true }),
+      supabase.rpc("sarraf_receipt_match_candidates", { p_batch_id: id, p_limit: 5 }),
     ]);
     setB(bb.data || null); setRecs(rr.data || []);
+    setEvents(ee.error ? [] : (ee.data || []));
+    setCandidates(cc.error ? [] : (cc.data || []));
     setPick(Object.fromEntries((rr.data || []).map((r) => [r.id, r.partner_id || ""])));
   };
   useEffect(() => { load(); }, [id]);
@@ -7721,9 +7918,72 @@ function BatchDetail({ id, back, usr, data, onMakeTx, flash, reloadBatches }) {
 
   const setAll = (pid) => setPick(Object.fromEntries(good.map((r) => [r.id, pid])));
 
+  const confirmMatch = async (candidate) => {
+    if (candidate.score < 80 && matchReason.trim().length < 8) {
+      return flash("بۆ نمرەی کەمتر لە ٨٠٪، هۆکارێکی ڕوون بنووسە");
+    }
+    if (!matchCommandRef.current || matchCommandRef.current.txId !== candidate.tx_id) {
+      matchCommandRef.current = { txId: candidate.tx_id, key: `receipt-match:${id}:${candidate.tx_id}:${uid()}` };
+    }
+    setMatchBusy(candidate.tx_id);
+    const result = await supabase.rpc("sarraf_confirm_receipt_match", {
+      p_batch_id: id,
+      p_tx_id: candidate.tx_id,
+      p_reason: matchReason.trim() || null,
+      p_command_key: matchCommandRef.current.key,
+    });
+    if (result.error) {
+      console.error("receipt match", result.error);
+      flash(`بەستنەوە سەرکەوتوو نەبوو — ${result.error.message || "هەڵە"}`);
+    } else {
+      flash("فیشەکان بە مامەڵەکەوە بەسترانەوە ✓");
+      matchCommandRef.current = null;
+      setMatchReason("");
+      await load();
+      reloadBatches && reloadBatches();
+    }
+    setMatchBusy(null);
+  };
+
+  const archiveBatch = async () => {
+    if (archiveReason.trim().length < 8) return flash("هۆکاری ئەرشیفکردن لانیکەم ٨ پیت بێت");
+    if (!archiveCommandRef.current) archiveCommandRef.current = `receipt-archive:${id}:${uid()}`;
+    setArchiveBusy(true);
+    const result = await supabase.rpc("sarraf_archive_receipt_batch", {
+      p_batch_id: id,
+      p_reason: archiveReason.trim(),
+      p_command_key: archiveCommandRef.current,
+    });
+    if (result.error) {
+      console.error("receipt archive", result.error);
+      flash(`ئەرشیفکردن سەرکەوتوو نەبوو — ${result.error.message || "هەڵە"}`);
+    } else {
+      flash("کۆمەڵەکە ئەرشیف کرا ✓");
+      archiveCommandRef.current = null;
+      setArchiveReason("");
+      await load();
+      reloadBatches && reloadBatches();
+    }
+    setArchiveBusy(false);
+  };
+
+  const lifecycleStage = b.receipt_stage === "received" ? "capture"
+    : b.receipt_stage === "reading" ? "read"
+      : b.receipt_stage === "needs_review" ? "review"
+        : b.receipt_stage === "verified" ? "verify"
+          : b.receipt_stage === "matched" ? "match"
+            : b.receipt_stage === "archived" ? "archive"
+              : b.tx_id ? "match" : "verify";
+  const eventLabels = {
+    received: "کۆمەڵە وەرگیرا", ai_read: "AI خوێندییەوە", needs_review: "پشکنینی مرۆڤ پێویستە",
+    verified: "پشتڕاست کرایەوە", matched: "بە مامەڵەوە بەسترا", unlinked: "بەستنەوە هەڵوەشایەوە",
+    archived: "ئەرشیف کرا", rejected_summary: "ڕەتکراوەکان تۆمار کران", split_updated: "دابەشکردن نوێکرایەوە",
+  };
+
   return (
     <div className="space-y-4">
       <Back onClick={back} t={tr("گەڕانەوە")} />
+      <ReceiptLifecycle stage={lifecycleStage} />
       <div className="flex items-start justify-between flex-wrap gap-2">
         <div>
           <h2 className="text-xl font-bold text-[var(--txt)]">{b.customer_name || (b.partner_id ? usr(b.partner_id).name : "—")}</h2>
@@ -7744,6 +8004,76 @@ function BatchDetail({ id, back, usr, data, onMakeTx, flash, reloadBatches }) {
         <ShareTable rows={recs} data={data} who={b.customer_name || (b.partner_id ? usr(b.partner_id).name : "")}
           title={tr("وردەکاری فیشەکان")} flash={flash} onClose={() => setShare(false)} />
       )}
+
+      {b.status === "new" && !b.tx_id && candidates.length > 0 && (
+        <Card className="p-5">
+          <div className="flex items-start justify-between gap-3 flex-wrap mb-4">
+            <div>
+              <SecLbl>Smart Reconciliation</SecLbl>
+              <div className="text-[11px] text-[var(--txt-3)] mt-1">پێشنیارەکان تەنها یارمەتیدەرن؛ بەستنەوە تەنها دوای پشتڕاستکردنەوەی تۆ ئەنجام دەدرێت.</div>
+            </div>
+            <Pill tone="amber">Human approval</Pill>
+          </div>
+          <div className="space-y-3">
+            {candidates.map((candidate) => {
+              const reasons = candidate.reasons || {};
+              const lowScore = Number(candidate.score) < 80;
+              return (
+                <div key={candidate.tx_id} className="rounded-2xl p-4" style={{ background: "var(--surf-2)", border: "1px solid var(--line)" }}>
+                  <div className="flex items-start justify-between gap-3 flex-wrap">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[13px] font-bold text-[var(--txt)]" style={num}>#{candidate.tx_code || "—"}</span>
+                        <Pill tone={candidate.score >= 80 ? "green" : "amber"}>{candidate.score}%</Pill>
+                        <span className="text-[10px] text-[var(--txt-3)]">{candidate.tx_type} · {candidate.tx_status}</span>
+                      </div>
+                      <div className="text-[12px] font-semibold text-[var(--txt)] mt-2" style={num}>
+                        {fmtMoney(data, candidate.tx_amount, candidate.tx_currency)} {candidate.tx_currency} · {candidate.tx_counterparty || "—"}
+                      </div>
+                      <div className="text-[10px] text-[var(--txt-3)] mt-1" style={num}>{candidate.tx_date ? new Date(candidate.tx_date).toLocaleString("en-GB") : "—"}</div>
+                    </div>
+                    <Btn onClick={() => confirmMatch(candidate)} disabled={!!matchBusy || (lowScore && matchReason.trim().length < 8)}>
+                      {matchBusy === candidate.tx_id ? "بەستنەوە..." : "پشتڕاستکردنەوە و بەستن"}
+                    </Btn>
+                  </div>
+                  <div className="flex gap-1.5 flex-wrap mt-3">
+                    <Pill tone={Number(reasons.amount_delta || 0) <= Math.max(0.01, Math.abs(Number(b.total_net || 0)) * 0.001) ? "green" : "amber"}>جیاوازی بڕ: <span style={num}>{fmt(Number(reasons.amount_delta || 0), 2)}</span></Pill>
+                    <Pill tone={reasons.currency_match ? "green" : "red"}>دراو {reasons.currency_match ? "✓" : "✕"}</Pill>
+                    <Pill tone={reasons.direction_match ? "green" : "red"}>ئاڕاستە {reasons.direction_match ? "✓" : "✕"}</Pill>
+                    <Pill tone={reasons.counterparty_match ? "green" : "slate"}>لایەن {reasons.counterparty_match ? "✓" : "—"}</Pill>
+                    <Pill tone="slate"><span style={num}>{fmt(Number(reasons.time_hours || 0), 1)}</span> کاتژمێر</Pill>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-4">
+            <Lbl>هۆکاری بەستنەوە {candidates.some((candidate) => candidate.score < 80) ? "(بۆ نمرەی ژێر ٨٠٪ پێویستە)" : "(ئارەزوومەندانە)"}</Lbl>
+            <Inp value={matchReason} onChange={(e) => setMatchReason(e.target.value)} placeholder="بۆ نموونە: بڕ، دراو، کڕیار و کات یەکدەگرنەوە" />
+          </div>
+        </Card>
+      )}
+
+      <Card className="p-5">
+        <SecLbl>Audit Timeline</SecLbl>
+        <div className="mt-4 space-y-0">
+          {(events.length ? events : [{ id: "created", event_type: "received", created_at: b.created_at, detail: "Legacy batch" }]).map((event, index, list) => (
+            <div key={event.id} className="flex gap-3 min-h-[58px]">
+              <div className="flex flex-col items-center">
+                <span className="w-7 h-7 rounded-full flex items-center justify-center shrink-0" style={{ background: index === list.length - 1 ? "var(--ac)" : "var(--pos)", color: "#fff" }}>
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                </span>
+                {index < list.length - 1 && <span className="w-px flex-1" style={{ background: "var(--line-2)" }} />}
+              </div>
+              <div className="pb-4 min-w-0">
+                <div className="text-[12px] font-semibold text-[var(--txt)]">{eventLabels[event.event_type] || formatAuditAction(event.event_type)}</div>
+                <div className="text-[10px] text-[var(--txt-3)] mt-0.5" style={num}>{event.created_at ? new Date(event.created_at).toLocaleString("en-GB") : "—"}</div>
+                {(event.detail || event.actor_user_id) && <div className="text-[10.5px] text-[var(--txt-2)] mt-1">{event.detail || ""}{event.actor_user_id ? ` · ${usr(event.actor_user_id).name || event.actor_user_id}` : ""}</div>}
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
 
       <RejectedReceipts rows={recs} />
 
@@ -7850,10 +8180,30 @@ function BatchDetail({ id, back, usr, data, onMakeTx, flash, reloadBatches }) {
         </Card>
       )}
       {b.tx_id && (
-        <Card className="p-4">
-          <div className="text-sm text-[var(--txt-2)]">
-            {tr("بەستراوە بە مامەڵەی")} <b style={num}>#{(data.txs.find((t) => t.id === b.tx_id) || {}).code || "—"}</b>
+        <Card className="p-5">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div>
+              <div className="text-sm text-[var(--txt-2)]">
+                {tr("بەستراوە بە مامەڵەی")} <b style={num}>#{(data.txs.find((t) => t.id === b.tx_id) || {}).code || "—"}</b>
+              </div>
+              <div className="flex gap-1.5 mt-2 flex-wrap">
+                {b.matched_score != null && <Pill tone={b.matched_score >= 80 ? "green" : "amber"}>Match {b.matched_score}%</Pill>}
+                <Pill tone={b.receipt_stage === "archived" ? "slate" : "green"}>{b.receipt_stage === "archived" ? "ئەرشیفکراو" : "بەستراو"}</Pill>
+              </div>
+              {b.match_reason && <div className="text-[10.5px] text-[var(--txt-3)] mt-2">{b.match_reason}</div>}
+            </div>
           </div>
+          {b.receipt_stage !== "archived" && (
+            <div className="mt-4 pt-4 border-t border-[var(--line)]">
+              <Lbl>هۆکاری ئەرشیفکردن</Lbl>
+              <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto] gap-2.5">
+                <Inp value={archiveReason} onChange={(e) => setArchiveReason(e.target.value)} placeholder="بۆ نموونە: پشکنین تەواو بوو و مامەڵەکە پشتڕاستە" />
+                <Btn kind="ghost" onClick={archiveBatch} disabled={archiveBusy || archiveReason.trim().length < 8}>
+                  {archiveBusy ? "ئەرشیفکردن..." : "ئەرشیفکردن"}
+                </Btn>
+              </div>
+            </div>
+          )}
         </Card>
       )}
 

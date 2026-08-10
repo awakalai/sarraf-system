@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "./lib/supabase";
 import { ReceiptLifecycle, ReceiptSmartInspector } from "./components/receipts/ReceiptCommandCenter";
+import { createReceiptIngestionCommand, ingestReceiptBatch } from "./services/receiptIngestion";
 import {
   LayoutDashboard, Vault, ArrowLeftRight, ListOrdered, Users, Handshake,
   TrendingUp, Building2, UserCog, PieChart, History, Plus, Trash2, Pencil,
@@ -6601,205 +6602,59 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
     setSelectedRows([]);
   };
 
-  const receiptSendErrorInfo = (stage, err) => {
-    const labels = {
-      storage: "هەڵگرتنی وێنەکان",
-      finalize: "پشتڕاستکردنەوە و تۆمارکردنی atomic",
-      verify: "پشکنینی دۆخی تۆمارکردن",
-      cleanup: "پاککردنەوەی ناردنی ناتەواو",
-      unknown: "ناردن",
-    };
-    const code = String(err?.code || err?.status || "").trim();
-    const message = String(err?.message || err || "هەڵەی نەناسراو").trim();
-    const details = String(err?.details || "").trim();
-    const hint = String(err?.hint || "").trim();
-    const bits = [message, details, hint].filter(Boolean);
-    return {
-      stage,
-      stageLabel: labels[stage] || labels.unknown,
-      code: code || null,
-      message: bits.join(" — "),
-    };
-  };
-
-  const throwSendError = (stage, err) => {
-    const e = new Error(String(err?.message || err || "send failed"));
-    e.stage = stage;
-    e.code = err?.code || err?.status || null;
-    e.details = err?.details || null;
-    e.hint = err?.hint || null;
-    throw e;
-  };
-
   const send = async () => {
     if (working || processing.length) return flash("هێشتا هەندێک فیش دەخوێندرێنەوە");
     if (review.length) return flash(`${review.length} فیش پێویستیان بە پشکنینی دەستی هەیە`);
     if (retrying.length) return flash(`${retrying.length} فیش بەهۆی کێشەی کاتی خوێندنەوە چاوەڕوانن — ڕەت نەکراونەتەوە`);
-
-    // Hard duplicates and rejected rows with no amount/currency can violate legacy/unique constraints.
-    // Keep their count in the batch, but do not let them break an otherwise valid batch.
-    const persistableBad = bad.filter((r) =>
-      r.status !== "dup" && Number(r.amount) > 0 && String(r.currency || "").trim()
-    );
+    const persistableBad = bad.filter((r) => r.status !== "dup" && Number(r.amount) > 0 && String(r.currency || "").trim());
     const skippedBad = bad.length - persistableBad.length;
     const sendRows = [...good, ...persistableBad];
-
     if (!sendRows.length) return flash("هیچ فیشێکی گونجاو بۆ ناردن نییە");
 
     setSending(true);
     setSendError(null);
-
-    if (!receiptCommandRef.current) {
-      const batchId = uid();
-      receiptCommandRef.current = {
-        batchId,
-        commandKey: `receipt-ingest:${batchId}`,
-      };
-    }
-    const { batchId, commandKey } = receiptCommandRef.current;
-    const folder = customerId || partnerId || "misc";
-    const stagedPaths = [];
-    let rpcAttempted = false;
-    let committed = false;
-    let outcomeUnknown = false;
-    let sendFailure = null;
-
-    const clearStagedState = () => {
-      const paths = new Set(stagedPaths);
-      commitRows((xs) => xs.map((r) => paths.has(r.stagedPath) ? { ...r, stagedPath: null } : r));
-      receiptCommandRef.current = null;
-    };
-
-    const cleanupStagedStorage = async () => {
-      const paths = Array.from(new Set(stagedPaths.filter(Boolean)));
-      if (!paths.length) {
-        clearStagedState();
-        return null;
-      }
-      const removed = await supabase.storage.from("receipts").remove(paths);
-      if (removed.error) return removed.error;
-      clearStagedState();
-      return null;
-    };
-
+    receiptCommandRef.current ||= createReceiptIngestionCommand();
+    const command = receiptCommandRef.current;
+    const a = mainCur ? agg[mainCur] : { g: 0, f: 0, n: 0 };
     try {
-      const recs = [];
-
-      // Images are staged first. The stable batch/command IDs make a retry safe.
-      for (const r of sendRows) {
-        let path = r.stagedPath || null;
-        if (path) stagedPaths.push(path);
-        if (!path && r.blob) {
-          path = `${folder}/${batchId}/${r.id}.jpg`;
-          const up = await supabase.storage.from("receipts").upload(path, r.blob, {
-            contentType: "image/jpeg",
-            upsert: false,
-          });
-          if (up.error) throwSendError("storage", up.error);
-          stagedPaths.push(path);
-          patchRow(r.id, { stagedPath: path });
-        }
-
-        recs.push({
-          id: r.id, batch_id: batchId, customer_id: customerId || null, customer_name: customerName || null,
-          direction: dir, amount: r.amount || null, fee: r.fee || 0,
-          fee_original: r.feeOriginal ?? null, fee_discount: r.feeDiscount || 0,
-          platform: r.platform || null, net_amount: r.net ?? null,
-          currency: r.currency || null, sender: r.sender || null, receiver: r.receiver || null,
-          ref_no: r.refNo || null, tx_time: r.txTime || null, tx_date: r.txDate || null, bank: r.bank || null,
-          note: r.note || null, image_hash: r.hash, image_path: path, status: r.status,
-          counted: r.counted !== false, reject_code: r.rejectCode || null, reject_reason: r.rejectReason || null,
-          dup_of: r.dupOf || null, dup_of_date: r.dupOfDate || null, dup_of_who: r.dupOfWho || null,
-          uploaded_by: uploaderId || null,
-          raw: {
-            ...(r.raw || {}),
-            ocr_v: 5,
-            confidence: r.confidence ?? r.raw?.confidence ?? null,
+      await ingestReceiptBatch({
+        supabase, command, rows: sendRows,
+        onPath: (id, stagedPath) => patchRow(id, { stagedPath }),
+        makeBatch: () => ({
+          id: command.batchId, customer_id: customerId || null, customer_name: customerName || null,
+          partner_id: partnerId || null, direction: dir, currency: mainCur,
+          total_gross: a.g, total_fee: a.f, total_net: a.n, dup_n: dupN,
+          rejected_n: bad.length, source: intakeSource,
+        }),
+        makeReceipt: (r, path) => ({
+          id: r.id, batch_id: command.batchId, customer_id: customerId || null, customer_name: customerName || null,
+          direction: dir, amount: r.amount, fee: r.fee || 0, fee_original: r.feeOriginal ?? null,
+          fee_discount: r.feeDiscount || 0, platform: r.platform || null, net_amount: r.net ?? null,
+          currency: r.currency, sender: r.sender || null, receiver: r.receiver || null, ref_no: r.refNo || null,
+          tx_time: r.txTime || null, tx_date: r.txDate || null, bank: r.bank || null, note: r.note || null,
+          image_hash: r.hash, image_path: path, status: r.status, counted: r.counted !== false,
+          reject_code: r.rejectCode || null, reject_reason: r.rejectReason || null, dup_of: r.dupOf || null,
+          dup_of_date: r.dupOfDate || null, dup_of_who: r.dupOfWho || null,
+          raw: { ...(r.raw || {}), ocr_v: 5, confidence: r.confidence ?? r.raw?.confidence ?? null,
             fieldConfidence: r.fieldConfidence || r.raw?.fieldConfidence || null,
             merchantOrderNo: r.merchantOrderNo || r.raw?.merchantOrderNo || null,
-            orderAmount: r.orderAmount ?? r.raw?.orderAmount ?? null,
-            paymentMethod: r.paymentMethod || r.raw?.paymentMethod || null,
-            cardLast4: r.cardLast4 || r.raw?.cardLast4 || null,
-            transactionStatus: r.transactionStatus || r.raw?.transactionStatus || null,
-            recipientNote: r.recipientNote || r.raw?.recipientNote || null,
-            merchantName: r.merchantName || r.raw?.merchantName || null,
+            orderAmount: r.orderAmount ?? r.raw?.orderAmount ?? null, paymentMethod: r.paymentMethod || r.raw?.paymentMethod || null,
+            cardLast4: r.cardLast4 || r.raw?.cardLast4 || null, transactionStatus: r.transactionStatus || r.raw?.transactionStatus || null,
+            recipientNote: r.recipientNote || r.raw?.recipientNote || null, merchantName: r.merchantName || r.raw?.merchantName || null,
             platformEvidence: r.platformEvidence || r.raw?.platformEvidence || null,
-            sourceSignedAmount: r.raw?.sourceSignedAmount ?? null,
-            sourceAmountDirection: r.raw?.sourceAmountDirection || null,
-            validation: r.validation || r.raw?.validation || null,
-            reviewedManually: !!r.reviewedManually,
-            manualEdited: !!r.manualEdited,
-          },
-        });
-      }
-
-      const a = mainCur ? agg[mainCur] : { g: 0, f: 0, n: 0 };
-      const batchPayload = {
-        id: batchId, customer_id: customerId || null, customer_name: customerName || null,
-        partner_id: partnerId || null, direction: dir, status: "new", currency: mainCur,
-        total_gross: a.g, total_fee: a.f, total_net: a.n, n: good.length, dup_n: dupN,
-        rejected_n: bad.length, uploaded_by: uploaderId || null, source: intakeSource,
-      };
-
-      rpcAttempted = true;
-      const finalized = await supabase.rpc("sarraf_ingest_receipt_batch", {
-        p_batch: batchPayload,
-        p_receipts: recs,
-        p_command_key: commandKey,
+            sourceSignedAmount: r.raw?.sourceSignedAmount ?? null, sourceAmountDirection: r.raw?.sourceAmountDirection || null,
+            validation: r.validation || r.raw?.validation || null, reviewedManually: !!r.reviewedManually, manualEdited: !!r.manualEdited },
+        }),
       });
-      if (finalized.error) throwSendError("finalize", finalized.error);
-      committed = true;
-    } catch (e) {
-      console.error("receipt send failed", e);
-      sendFailure = e;
-
-      let cleanupAllowed = !rpcAttempted;
-      if (rpcAttempted) {
-        // A lost response can hide a successful commit. Never delete staged images
-        // until the server authoritatively confirms that the batch does not exist.
-        const probe = await supabase
-          .from("receipt_batches")
-          .select("id")
-          .eq("id", batchId)
-          .maybeSingle();
-        if (!probe.error && probe.data?.id) committed = true;
-        else if (!probe.error) cleanupAllowed = true;
-        else outcomeUnknown = true;
-      }
-
-      if (!committed && cleanupAllowed) {
-        const cleanupError = await cleanupStagedStorage();
-        if (cleanupError) {
-          console.warn("receipt staged storage cleanup", cleanupError);
-          outcomeUnknown = true;
-          sendFailure = Object.assign(new Error(`${e?.message || e} — cleanup: ${cleanupError.message || cleanupError}`), {
-            stage: "cleanup", code: cleanupError.code || cleanupError.status || null,
-          });
-        }
-      }
-    }
-
-    if (committed) {
       flash(`${good.length} ${tr("فیش نێردرا")} ✓${persistableBad.length ? ` — ${persistableBad.length} ${tr("ڕەتکراو تۆمار کران")}` : ""}${skippedBad ? ` — ${skippedBad} ڕەتکراوی بێ زانیاری تۆمار نەکرا` : ""}`);
-      commitRows([]);
-      receiptCommandRef.current = null;
-      setEditingId(null);
-      setInspectorId(null);
-      setSelectedRows([]);
-      setReviewTab("all");
-      setReviewSearch("");
-      setReviewPlatform("all");
-      setIntakeSource("app");
-      setSendError(null);
-      onDone && onDone();
-    } else if (sendFailure) {
-      const info = receiptSendErrorInfo(sendFailure?.stage || (outcomeUnknown ? "verify" : "unknown"), sendFailure);
-      setSendError({ ...info, outcomeUnknown });
-      flash(outcomeUnknown
-        ? "دۆخی ناردن نادیارە — دووبارە هەمان ناردن بکە؛ دووبارە تۆمار نابێت"
-        : `ناردن سەرکەوتوو نەبوو — ${info.stageLabel}`);
-    }
-    setSending(false);
+      commitRows([]); receiptCommandRef.current = null; setEditingId(null); setInspectorId(null);
+      setSelectedRows([]); setReviewTab("all"); setReviewSearch(""); setReviewPlatform("all");
+      setIntakeSource("app"); onDone?.();
+    } catch (error) {
+      console.error("receipt ingestion failed", { stage: error.stage, outcomeUnknown: error.outcomeUnknown });
+      setSendError({ stageLabel: error.stage, message: error.message, outcomeUnknown: !!error.outcomeUnknown });
+      flash(error.message);
+    } finally { setSending(false); }
   };
 
   const ST = {

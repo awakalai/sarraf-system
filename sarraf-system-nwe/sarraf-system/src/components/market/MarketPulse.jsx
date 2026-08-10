@@ -1,6 +1,7 @@
 import { BRAND } from "../../brand/brand";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, ArrowDown, ArrowUp, Minus, RotateCcw } from "lucide-react";
+import { RotateCcw } from "lucide-react";
+import { buildMarketTickerRows, tickerHealth } from "./marketTickerModel";
 import "./market-pulse.css";
 
 const COPY = {
@@ -33,25 +34,30 @@ export default function MarketPulse({ currencies = [], lang = "ku", online = tru
     return () => { clearInterval(timer); controller.current?.abort(); requestId.current += 1; };
   }, []);
 
-  const rows = useMemo(() => {
-    const iqd = currencies.find(c => String(c.code).toUpperCase() === "IQD");
-    const local = { id:"USD/IQD", label:"USD/IQD", classification:"local", source:`${BRAND.name} operational rates`, observedAt:iqd?.rateUpdated || null,
-      freshness: iqd?.rateUpdated && Date.now() - Date.parse(iqd.rateUpdated) <= 36*60*60*1000 ? "live" : iqd?.rateUpdated ? "stale" : "unavailable",
-      availability: Number(iqd?.buyRate)>0 || Number(iqd?.sellRate)>0 ? "available" : "unavailable", unit:"IQD per USD", buyRate:Number(iqd?.buyRate)>0?Number(iqd.buyRate):null, sellRate:Number(iqd?.sellRate)>0?Number(iqd.sellRate):null };
-    return [local, ...(snapshot?.instruments || [])];
-  }, [currencies, snapshot]);
+  const rows = useMemo(() => buildMarketTickerRows(currencies, snapshot, online), [currencies, snapshot, online]);
+  const health = tickerHealth(rows, online);
   const format = (value, id) => value == null ? "—" : new Intl.NumberFormat(lang === "en" ? "en" : "ckb", { maximumFractionDigits:digits[id] ?? 4, minimumFractionDigits:digits[id] ?? 0 }).format(value);
-  return <section className="market-pulse" aria-labelledby="market-pulse-title">
-    <div className="market-pulse-head"><h2 id="market-pulse-title">{t.title}</h2><span aria-live="polite">{!online ? t.offline : refreshing ? `${t.refresh}…` : snapshot?.status === "partial" ? t.partial : ""}</span>
-      <button type="button" onClick={load} disabled={refreshing || !online} aria-label={t.refresh}><RotateCcw aria-hidden="true" /></button></div>
-    <div className="market-pulse-row" role="list">
-      {rows.map(item => { const state = !online ? "offline" : item.freshness || "unavailable"; const movement = item.percentageChange; const Icon = movement > 0 ? ArrowUp : movement < 0 ? ArrowDown : movement === 0 ? Minus : AlertTriangle;
-        return <article key={item.id} role="listitem" className={`market-pulse-item is-${state}`} tabIndex="0" aria-label={`${item.label}. ${item.classification === "local" ? t.local : t.global}. ${t[state] || t.unavailable}`}>
-          <div><b dir="ltr">{item.label}</b><span>{item.classification === "local" ? t.local : t.global} · {t[state] || t.unavailable}</span></div>
-          <strong dir="ltr">{item.id === "USD/IQD" ? <>{t.buy} {format(item.buyRate,item.id)} / {t.sell} {format(item.sellRate,item.id)}</> : format(item.value,item.id)}</strong>
-          <span className="market-move"><Icon aria-hidden="true" />{movement == null ? "—" : `${movement > 0 ? "+" : ""}${format(movement,item.id)}%`}</span>
-          <small>{t.source}: {item.source} · {item.unit}<br/>{t.updated}: {item.observedAt ? new Intl.DateTimeFormat(lang === "en" ? "en-GB" : "ckb", { dateStyle:"short", timeStyle:"short" }).format(new Date(item.observedAt)) : t.unavailable}{item.cache && item.cache !== "miss" ? ` · ${t.cached}` : ""}</small>
-        </article>; })}
+  const statusLabel = refreshing ? `${t.refresh}…` : t[health] || t.unavailable;
+  const value = (item) => item.id === "USD/IQD"
+    ? `${format(item.buyRate, item.id)} / ${format(item.sellRate, item.id)}`
+    : format(item.value, item.id);
+  const renderGroup = (duplicate = false) => <div className="market-ticker-group" role={duplicate ? undefined : "list"} aria-hidden={duplicate || undefined}>
+    {rows.map((item) => <article key={`${duplicate ? "copy-" : ""}${item.id}`} role={duplicate ? undefined : "listitem"} className={`market-ticker-item tone-${item.tone} is-${item.freshness}`} aria-label={duplicate ? undefined : `${item.id}. ${item.classification === "local" ? t.local : t.global}. ${value(item)}. ${t[item.freshness] || t.unavailable}`}>
+      <span className="market-ticker-symbol" dir="ltr">{item.symbol}</span>
+      <strong dir="ltr">{value(item)}</strong>
+    </article>)}
+  </div>;
+
+  return <section className={`market-ticker market-ticker-${health}`} aria-label={`${BRAND.name} ${t.title}`}>
+    <div className="market-ticker-lights" role="status" aria-live="polite" aria-label={statusLabel} title={statusLabel}>
+      <span className={`market-light market-light-green ${health === "live" ? "is-active" : ""}`} aria-hidden="true" />
+      <span className={`market-light market-light-red ${health !== "live" ? "is-active" : ""}`} aria-hidden="true" />
     </div>
+    <div className="market-ticker-viewport">
+      <div className="market-ticker-track">{renderGroup(false)}{renderGroup(true)}</div>
+    </div>
+    <button className="market-ticker-refresh" type="button" onClick={load} disabled={refreshing || !online} aria-label={t.refresh} title={t.refresh}>
+      <RotateCcw aria-hidden="true" />
+    </button>
   </section>;
 }

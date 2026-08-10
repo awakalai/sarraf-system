@@ -3,6 +3,9 @@ import { Search, X } from "lucide-react";
 import { operationalSearch, safeCommand } from "../../services/operationalControl";
 
 const NAV = [
+  { label: "Action Inbox", kind: "navigation", type: "Command", path: "#/action-inbox" },
+  { label: "Integrity Center", kind: "navigation", type: "Command", path: "#/integrity" },
+  { label: "Export & Audit Center", kind: "navigation", type: "Command", path: "#/export-audit" },
   { label: "Receipts", kind: "navigation", type: "Command", path: "#/receipts" },
   { label: "Approvals", kind: "navigation", type: "Command", path: "#/approvals" },
   { label: "Audit log", kind: "navigation", type: "Command", path: "#/audit" },

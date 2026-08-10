@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "./lib/supabase";
 import { ReceiptLifecycle, ReceiptSmartInspector } from "./components/receipts/ReceiptCommandCenter";
+import { ReceiptPolicyPanel } from "./components/receipts/ReceiptPolicyPanel";
 import { createReceiptIngestionCommand, ingestReceiptBatch } from "./services/receiptIngestion";
+import { createReceiptReviewCommand, finalizeReceiptBatch, loadReceiptPolicy, reviewReceiptBatch } from "./services/receiptReview";
 import { claimSharedReceiptHandoff, finishSharedReceiptHandoff, releaseSharedReceiptHandoff, sharedReceiptMessage, validateClaimedSharedFiles } from "./services/sharedReceiptHandoff";
 import { PortalDataStatus, PortalFrame, PortalPagedList, usePortalRoute } from "./components/portal/PortalFoundation";
 import { separatedCurrencySummary } from "./components/portal/portalModel";
@@ -9,12 +11,14 @@ import MarketPulse from "./components/market/MarketPulse";
 import { BRAND } from "./brand/brand";
 import { BrandLogo } from "./brand/BrandLogo";
 import { OperationalPalette } from "./components/operations/OperationalPalette";
+import { ActionInbox, IntegrityCenter } from "./components/operations/OperationalCenters";
+import { ExportAuditCenter } from "./components/operations/ExportAuditCenter";
 import "./components/portal/portal.css";
 import {
   LayoutDashboard, Vault, ArrowLeftRight, ListOrdered, Users, Handshake,
   TrendingUp, Building2, UserCog, PieChart, History, Plus, Trash2, Pencil,
   CheckCircle2, AlertTriangle, Eye, LogOut, Wallet, ChevronLeft, Coins,
-  Receipt, TrendingDown, ScanLine, Upload, XCircle, SlidersHorizontal, Search, MoreHorizontal, Zap, ArrowDownLeft, ArrowUpRight, X, Share2, Database, Download, ClipboardCheck, RotateCcw, MessageCircle, Moon, Sun, WifiOff, Wifi, EyeOff, Bell, QrCode, Camera, Fingerprint, ShieldCheck, KeyRound
+  Receipt, TrendingDown, ScanLine, Upload, XCircle, SlidersHorizontal, Search, MoreHorizontal, Zap, ArrowDownLeft, ArrowUpRight, X, Share2, Database, Download, ClipboardCheck, RotateCcw, MessageCircle, Moon, Sun, WifiOff, Wifi, EyeOff, Bell, QrCode, Camera, Fingerprint, ShieldCheck, KeyRound, Inbox, ShieldAlert, FileCheck2
 } from "lucide-react";
 
 /* ══════════════════ یارمەتیدەرەکان ══════════════════ */
@@ -1045,6 +1049,11 @@ html[lang="en"] body, html[lang="en"] input, html[lang="en"] select, html[lang="
 @keyframes drop { from{opacity:0;transform:translateY(-8px) scale(.98)} to{opacity:1;transform:none} }
 @keyframes sheet { from{transform:translateY(100%)} to{transform:none} }
 @keyframes breathe { 0%,100%{opacity:.72} 50%{opacity:1} }
+@keyframes zeman-status-pulse { 0%,100%{opacity:.65;transform:scale(.86)} 50%{opacity:1;transform:scale(1.12)} }
+@keyframes zeman-aura-drift { 0%,100%{transform:translate3d(-2%,0,0) scale(1)} 50%{transform:translate3d(3%,2%,0) scale(1.06)} }
+@keyframes zeman-hero-sheen { 0%,70%,100%{transform:translateX(-125%) skewX(-18deg)} 86%{transform:translateX(145%) skewX(-18deg)} }
+@keyframes zeman-card-arrive { from{opacity:0;transform:translateY(10px) scale(.99)} to{opacity:1;transform:none} }
+@keyframes zeman-chart-flow { to{stroke-dashoffset:-26} }
 .rise{animation:rise .38s cubic-bezier(.16,1,.3,1) both}.pop{animation:pop .28s ease both}.drop{animation:drop .25s ease both}.sheet{animation:sheet .32s cubic-bezier(.16,1,.3,1) both}.breathe{animation:breathe 2.6s ease-in-out infinite}
 
 .card { background:var(--surf); border:1px solid var(--line); border-radius:var(--r); box-shadow:var(--sh-1),var(--ring); }
@@ -1114,6 +1123,32 @@ body{
     radial-gradient(900px 420px at 82% -120px,rgba(var(--ac-gl),.065),transparent 64%),
     var(--bg);
 }
+.zeman-shell{position:relative;isolation:isolate;overflow:clip}
+.zeman-shell::before{
+  content:"";
+  position:fixed;z-index:-1;pointer-events:none;
+  width:min(70vw,920px);height:min(70vw,920px);
+  inset-inline-end:-28vw;top:12vh;
+  border-radius:999px;
+  background:radial-gradient(circle,rgba(94,234,212,.07),rgba(25,200,120,.028) 42%,transparent 70%);
+  filter:blur(8px);
+  animation:zeman-aura-drift 16s ease-in-out infinite;
+}
+.zeman-system-status{
+  display:flex;align-items:center;gap:5px;
+  min-height:30px;padding:5px 9px;
+  border:1px solid var(--line);border-radius:999px;
+  color:var(--txt-3);background:var(--glass);
+  font-size:9.5px;font-weight:750;white-space:nowrap;
+}
+.zeman-system-light{width:6px;height:6px;border-radius:999px;opacity:.2;transform:scale(.82)}
+.zeman-system-light.is-green{background:var(--pos)}
+.zeman-system-light.is-red{background:var(--neg)}
+.zeman-system-status.is-live .is-green,.zeman-system-status.is-attention .is-red{
+  opacity:1;animation:zeman-status-pulse 1.65s ease-in-out infinite;
+}
+.zeman-system-status.is-live .is-green{box-shadow:0 0 0 4px var(--pos-bg),0 0 11px color-mix(in srgb,var(--pos) 78%,transparent)}
+.zeman-system-status.is-attention .is-red{box-shadow:0 0 0 4px var(--neg-bg),0 0 11px color-mix(in srgb,var(--neg) 78%,transparent)}
 .sarraf-brand-mark{
   background:linear-gradient(145deg,#2BDE8D,#18C877);
   color:#07130D;
@@ -1152,15 +1187,20 @@ body{
 }
 .fin-card{
   border-radius:20px;
+  transition:transform .22s cubic-bezier(.2,.8,.2,1),border-color .22s ease,box-shadow .22s ease;
 }
 .fin-card:hover{
+  transform:translateY(-2px);
   border-color:color-mix(in srgb,var(--line-2) 78%,transparent);
+  box-shadow:var(--sh-2),var(--ring);
 }
 .metric-card{
   min-height:126px;
   position:relative;
   overflow:hidden;
+  animation:zeman-card-arrive .5s cubic-bezier(.16,1,.3,1) both;
 }
+.metric-card:nth-child(2){animation-delay:.05s}.metric-card:nth-child(3){animation-delay:.1s}.metric-card:nth-child(4){animation-delay:.15s}
 .metric-card::after{
   content:"";
   position:absolute;
@@ -1232,6 +1272,14 @@ body{
     linear-gradient(135deg,#35E395 0%,#20CE80 55%,#16B66D 100%);
   box-shadow:0 16px 38px rgba(var(--ac-gl),.20);
 }
+.dashboard-hero::before{
+  content:"";position:absolute;z-index:1;inset:-25% auto -25% -32%;width:34%;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.23),transparent);
+  transform:translateX(-125%) skewX(-18deg);
+  animation:zeman-hero-sheen 8s ease-in-out infinite;
+  pointer-events:none;
+}
+.dashboard-hero>svg path:last-of-type{stroke-dasharray:13 5;animation:zeman-chart-flow 3.8s linear infinite}
 @media(max-width:767px){
   .dashboard-quick-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .metric-card{min-height:116px}
@@ -1241,6 +1289,11 @@ body{
 @media(max-width:390px){
   .quick-action-card{padding:10px}
   .quick-action-icon{width:32px;height:32px;flex-basis:32px}
+}
+@media(prefers-reduced-motion:reduce){
+  .zeman-shell::before,.zeman-system-light,.metric-card,.dashboard-hero::before,.dashboard-hero>svg path:last-of-type{animation:none!important}
+  .fin-card,.tap{transition-duration:.01ms!important}
+  .fin-card:hover{transform:none}
 }
 
 
@@ -3087,6 +3140,10 @@ export default function App() {
   const isOwner = isAdmin && profile.adminLevel === "owner";
   const va = viewAs ? usr(viewAs) : null;
   const portalUser = !isAdmin ? profile : va;
+  const systemNeedsAttention = !online || !!stale || !!data?.runtime?.maintenance_mode;
+  const systemStatusLabel = systemNeedsAttention
+    ? (!online ? "ZEMAN offline" : data?.runtime?.maintenance_mode ? "ZEMAN emergency freeze" : "ZEMAN data refresh required")
+    : "ZEMAN live";
 
   const navSectionLabel = (ku, en, ar) => lang === "en" ? en : lang === "ar" ? ar : ku;
   const NAV_GROUPS = [
@@ -3115,7 +3172,10 @@ export default function App() {
     {
       label: navSectionLabel("سیستەم", "System", "النظام"),
       items: [
+        ["action-inbox", "Action Inbox", Inbox],
+        ["integrity", "Integrity Center", ShieldAlert],
         ["approvals", "کۆنترۆڵ و پەسەندکردن", ShieldCheck],
+        ["export-audit", "Export & Audit Center", FileCheck2],
         ["audit", tr("تۆمار"), History],
         ["close", tr("بەستنی ڕۆژ"), ClipboardCheck],
         ["backup", tr("پاراستنی داتا"), Database],
@@ -3131,7 +3191,7 @@ export default function App() {
     readModel: data?.readModel || null, loadTxHistoryPage, loadRangeReport, loadInventorySnapshot };
 
   return (
-    <div dir={LANGS[lang]?.dir || "rtl"} key={lang} className="min-h-screen" style={{ background: "var(--bg)", color: "var(--txt)" }}>
+    <div dir={LANGS[lang]?.dir || "rtl"} key={lang} className="zeman-shell min-h-screen" style={{ background: "var(--bg)", color: "var(--txt)" }}>
       <Styles />
 
       {(!online || stale) && (
@@ -3182,6 +3242,11 @@ export default function App() {
               <div className="text-[11.5px] truncate" style={{ color: "var(--txt-3)" }}>
                 {va ? `${tr("بینین وەک")} · ${va.name}` : (isOwner ? "خاوەنی سیستەم" : tr(ROLE_KU[profile.role]))}
               </div>
+            </div>
+            <div className={`zeman-system-status ${systemNeedsAttention ? "is-attention" : "is-live"}`} role="status" aria-label={systemStatusLabel} title={systemStatusLabel}>
+              <span className="zeman-system-light is-green" aria-hidden="true" />
+              <span className="zeman-system-light is-red" aria-hidden="true" />
+              <span className="hidden lg:inline">{systemNeedsAttention ? "Attention" : "Live"}</span>
             </div>
           </div>
 
@@ -3339,6 +3404,9 @@ export default function App() {
               onMakeTx={(b) => { setPendingBatch(b); setPage("newtx"); }} />}
             {page === "people" && <PeopleHub {...shared} accountMove={accountMove} accountTransfer={accountTransfer} profile={profile} detailId={detailId} setDetailId={setDetailId} onSave={saveTx} transfer={transfer} officePay={officePay} settle={settle} createUser={createUser} deleteUser={deleteUser} setUserRate={setUserRate} flash={flash} />}
             {page === "report" && <Report {...shared} />}
+            {page === "action-inbox" && <ActionInbox client={supabase} onNavigate={(path) => setPage(path.slice(2))} />}
+            {page === "integrity" && <IntegrityCenter client={supabase} onNavigate={(path) => setPage(path.slice(2))} />}
+            {page === "export-audit" && <ExportAuditCenter client={supabase} />}
             {page === "approvals" && <ApprovalCenter
               data={data} profile={profile} isOwner={isOwner} cur={cur}
               approve={approveApproval} reject={rejectApproval} cancel={cancelApproval}
@@ -7138,10 +7206,11 @@ function ReceiptsHub({ data, usr, batches, reloadBatches, flash, onMakeTx, profi
   const waN = (batches || []).filter((b) => b.status === "new" && b.source === "whatsapp").length;
   const TABS = [["control", "Control Room"], ["inbox", `ئینباکس (${newN})`], ["done", tr("بەستراوەکان")], ["loc", tr("لای کێ")], ["add", tr("ناردنی فیش")], ["wa", tr("واتساپ")]];
   const lifecycleOf = (b) => b.receipt_stage || (b.tx_id ? "matched" : b.status === "new" ? "needs_review" : "verified");
+  const lifecycleTone = (stage) => stage === "matched" || stage === "finalized" ? "green" : stage === "rejected" ? "red" : stage === "archived" ? "slate" : "amber";
   const summary = (batches || []).reduce((out, b) => {
     const stage = lifecycleOf(b); out.total += Number(b.n) || 0; out[stage] = (out[stage] || 0) + (Number(b.n) || 0);
     out.duplicates += Number(b.dup_n) || 0; out.failed += Number(b.rejected_n) || 0; return out;
-  }, { total: 0, reading: 0, needs_review: 0, verified: 0, matched: 0, archived: 0, duplicates: 0, failed: 0 });
+  }, { total: 0, reading: 0, needs_review: 0, verified: 0, matched: 0, rejected: 0, finalized: 0, archived: 0, duplicates: 0, failed: 0 });
   const filteredBatches = (batches || []).filter((b) => {
     const query = normalizeSearchText(batchSearch);
     const haystack = normalizeSearchText([b.id, b.customer_name, b.partner_id && usr(b.partner_id).name, b.source, b.currency].filter(Boolean).join(" "));
@@ -7156,7 +7225,7 @@ function ReceiptsHub({ data, usr, batches, reloadBatches, flash, onMakeTx, profi
     window.history.replaceState(null, "", `${window.location.pathname}${q.size ? `?${q}` : ""}${window.location.hash}`);
   }, [tab, batchSearch, stageFilter, batchSort]);
 
-  if (sel) return <BatchDetail id={sel} back={() => { setSel(null); reloadBatches(); }} usr={usr} data={data} onMakeTx={onMakeTx} flash={flash} reloadBatches={reloadBatches} />;
+  if (sel) return <BatchDetail id={sel} back={() => { setSel(null); reloadBatches(); }} usr={usr} data={data} profile={profile} onMakeTx={onMakeTx} flash={flash} reloadBatches={reloadBatches} />;
 
   return (
     <div className="space-y-4">
@@ -7172,15 +7241,15 @@ function ReceiptsHub({ data, usr, batches, reloadBatches, flash, onMakeTx, profi
 
       {tab === "control" && <>
         <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-2" role="status" aria-label="Persisted receipt summary">
-          {[["Total / کۆ", summary.total], ["Reading / خوێندنەوە", summary.reading], ["Needs review / پشکنین", summary.needs_review], ["Verified / پشتڕاست", summary.verified], ["Duplicates / دووبارە", summary.duplicates], ["Matched / بەستراو", summary.matched], ["Archived / ئەرشیف", summary.archived], ["Failed / هەڵە", summary.failed]].map(([label, value]) => <Card key={label} className="p-3"><div className="text-[10px] text-[var(--txt-3)]">{label}</div><div className="text-xl font-bold mt-1" style={num}>{value}</div></Card>)}
+          {[["Total / کۆ", summary.total], ["Reading / خوێندنەوە", summary.reading], ["Needs review / پشکنین", summary.needs_review], ["Verified / پشتڕاست", summary.verified], ["Matched / بەستراو", summary.matched], ["Rejected / ڕەتکراو", summary.rejected], ["Finalized / کۆتایی", summary.finalized], ["Archived / ئەرشیف", summary.archived]].map(([label, value]) => <Card key={label} className="p-3"><div className="text-[10px] text-[var(--txt-3)]">{label}</div><div className="text-xl font-bold mt-1" style={num}>{value}</div></Card>)}
         </div>
         <Card className="p-4 space-y-3">
           <div className="grid grid-cols-1 md:grid-cols-[minmax(240px,1fr)_180px_160px] gap-2">
             <label className="relative"><span className="sr-only">Search receipt batches</span><Search className="absolute start-3 top-3 w-4 h-4 text-[var(--txt-3)]"/><Inp className="ps-9" value={batchSearch} onChange={(e) => { setBatchSearch(e.target.value); setBatchPage(1); }} placeholder="Batch ID, customer, partner, platform, currency…" /></label>
-            <Sel aria-label="Lifecycle filter" value={stageFilter} onChange={(e) => { setStageFilter(e.target.value); setBatchPage(1); }}><option value="all">All lifecycle states</option>{["received","reading","needs_review","verified","matched","archived"].map((x) => <option value={x} key={x}>{x.replace("_", " ")}</option>)}</Sel>
+            <Sel aria-label="Lifecycle filter" value={stageFilter} onChange={(e) => { setStageFilter(e.target.value); setBatchPage(1); }}><option value="all">All lifecycle states</option>{["received","reading","needs_review","verified","matched","rejected","finalized","archived"].map((x) => <option value={x} key={x}>{x.replace("_", " ")}</option>)}</Sel>
             <Sel aria-label="Sort batches" value={batchSort} onChange={(e) => setBatchSort(e.target.value)}><option value="newest">Newest</option><option value="oldest">Oldest</option><option value="amount">Amount</option><option value="status">Status</option></Sel>
           </div>
-          {!pageBatches.length ? <StatePanel type="empty" title="No receipt batches match / هیچ کۆمەڵەیەک نەدۆزرایەوە" compact /> : <div className="space-y-2">{pageBatches.map((b) => <button type="button" key={b.id} onClick={() => setSel(b.id)} className="w-full min-h-14 text-start rounded-xl p-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--ac)]" style={{ background: "var(--surf-2)", border: "1px solid var(--line)" }} aria-label={`Open batch ${b.id}`}><div className="flex justify-between gap-3"><div className="min-w-0"><div className="font-bold truncate">{b.customer_name || (b.partner_id ? usr(b.partner_id).name : b.id)}</div><div className="text-[10px] text-[var(--txt-3)] mt-1" dir="ltr">{b.id} · {new Date(b.created_at).toLocaleString("en-GB")}</div></div><div className="text-end shrink-0"><Pill tone={lifecycleOf(b) === "matched" ? "green" : lifecycleOf(b) === "archived" ? "slate" : "amber"}>{lifecycleOf(b).replace("_", " ")}</Pill><div className="text-xs font-bold mt-1" style={num}>{fmtMoney(data, b.total_net, b.currency)} {b.currency}</div></div></div></button>)}</div>}
+          {!pageBatches.length ? <StatePanel type="empty" title="No receipt batches match / هیچ کۆمەڵەیەک نەدۆزرایەوە" compact /> : <div className="space-y-2">{pageBatches.map((b) => <button type="button" key={b.id} onClick={() => setSel(b.id)} className="w-full min-h-14 text-start rounded-xl p-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--ac)]" style={{ background: "var(--surf-2)", border: "1px solid var(--line)" }} aria-label={`Open batch ${b.id}`}><div className="flex justify-between gap-3"><div className="min-w-0"><div className="font-bold truncate">{b.customer_name || (b.partner_id ? usr(b.partner_id).name : b.id)}</div><div className="text-[10px] text-[var(--txt-3)] mt-1" dir="ltr">{b.id} · {new Date(b.created_at).toLocaleString("en-GB")}</div></div><div className="text-end shrink-0"><Pill tone={lifecycleTone(lifecycleOf(b))}>{lifecycleOf(b).replace("_", " ")}</Pill><div className="text-xs font-bold mt-1" style={num}>{fmtMoney(data, b.total_net, b.currency)} {b.currency}</div></div></div></button>)}</div>}
           {pageBatches.length < filteredBatches.length && <Btn kind="ghost" className="w-full" onClick={() => setBatchPage((p) => p + 1)}>Load {Math.min(pageSize, filteredBatches.length - pageBatches.length)} more / زیاتر</Btn>}
           <div className="text-[10px] text-[var(--txt-3)]" aria-live="polite">Showing {pageBatches.length} of {filteredBatches.length}; server load is bounded to 200 visible batches.</div>
         </Card>
@@ -7201,7 +7270,7 @@ function ReceiptsHub({ data, usr, batches, reloadBatches, flash, onMakeTx, profi
                       </span>
                     )}
                     <Pill tone={b.direction === "out" ? "amber" : "green"}>{DIR_KU[b.direction || "in"]}</Pill>
-                    {b.status === "new" ? <Pill tone="green">{tr("نوێ")}</Pill> : <Pill tone="slate">{tr("بەستراوە")}</Pill>}
+                    <Pill tone={lifecycleTone(lifecycleOf(b))}>{lifecycleOf(b).replace("_", " ")}</Pill>
                     {(b.rejected_n || b.dup_n) > 0 && <Pill tone="red">{b.rejected_n || b.dup_n} ڕەتکراو</Pill>}
                     {b.partner_id && <Pill tone="amber">لای {usr(b.partner_id).name}</Pill>}
                   </div>
@@ -7689,33 +7758,47 @@ function LocationReceipts({ partnerId, data, title, flash }) {
 }
 
 /* ─────────── وردەکاری کۆمەڵەیەک ─────────── */
-function BatchDetail({ id, back, usr, data, onMakeTx, flash, reloadBatches }) {
+function BatchDetail({ id, back, usr, data, profile, onMakeTx, flash, reloadBatches }) {
   const [b, setB] = useState(null);
   const [recs, setRecs] = useState(null);
   const [events, setEvents] = useState([]);
   const [candidates, setCandidates] = useState([]);
+  const [receiptPolicy, setReceiptPolicy] = useState(null);
   const [matchReason, setMatchReason] = useState("");
   const [matchBusy, setMatchBusy] = useState(null);
-  const [archiveReason, setArchiveReason] = useState("");
-  const [archiveBusy, setArchiveBusy] = useState(false);
+  const [decisionBusy, setDecisionBusy] = useState(null);
+  const [finalizationReason, setFinalizationReason] = useState("");
+  const [finalizationBusy, setFinalizationBusy] = useState(false);
   const [split, setSplit] = useState(false);
   const [share, setShare] = useState(false);
   const [pick, setPick] = useState({});        // {receiptId: partnerId|""}
   const [saving, setSaving] = useState(false);
   const matchCommandRef = useRef(null);
-  const archiveCommandRef = useRef(null);
+  const decisionCommandRef = useRef(null);
+  const finalizationCommandRef = useRef(null);
   const partners = data.users.filter((u) => u.role === "partner" && !u.deleted);
 
   const load = async () => {
-    const [bb, rr, ee, cc] = await Promise.all([
+    const [bb, rr, ee, aa, cc, pp] = await Promise.all([
       supabase.from("receipt_batches").select("*").eq("id", id).single(),
       supabase.from("receipts").select("*").eq("batch_id", id).order("created_at"),
       supabase.from("receipt_events").select("*").eq("batch_id", id).order("created_at", { ascending: true }),
+      supabase.from("receipt_audit_events").select("*").eq("batch_id", id).order("created_at", { ascending: true }),
       supabase.rpc("sarraf_receipt_match_candidates", { p_batch_id: id, p_limit: 5 }),
+      loadReceiptPolicy(supabase).catch(() => null),
     ]);
     setB(bb.data || null); setRecs(rr.data || []);
-    setEvents(ee.error ? [] : (ee.data || []));
+    const legacyEvents = ee.error ? [] : (ee.data || []);
+    const auditedEvents = aa.error ? [] : (aa.data || []).map((event) => ({
+      id: `audit-${event.id}`,
+      event_type: event.event_type,
+      created_at: event.created_at,
+      actor_user_id: event.actor_id,
+      detail: event.metadata?.reason || event.metadata?.decision || null,
+    }));
+    setEvents([...legacyEvents, ...auditedEvents].sort((left, right) => new Date(left.created_at) - new Date(right.created_at)));
     setCandidates(cc.error ? [] : (cc.data || []));
+    setReceiptPolicy(pp || null);
     setPick(Object.fromEntries((rr.data || []).map((r) => [r.id, r.partner_id || ""])));
   };
   useEffect(() => { load(); }, [id]);
@@ -7752,52 +7835,80 @@ function BatchDetail({ id, back, usr, data, onMakeTx, flash, reloadBatches }) {
   const setAll = (pid) => setPick(Object.fromEntries(good.map((r) => [r.id, pid])));
 
   const confirmMatch = async (candidate) => {
-    if (candidate.score < 80 && matchReason.trim().length < 8) {
-      return flash("بۆ نمرەی کەمتر لە ٨٠٪، هۆکارێکی ڕوون بنووسە");
+    const minimum = receiptPolicy?.min_match_score ?? 80;
+    const reasonBelow = receiptPolicy?.require_reason_below ?? 90;
+    if (Number(candidate.score) < minimum) {
+      return flash(`ئەم پێشنیارە ژێر policy threshold ـی ${minimum}% ـە`);
+    }
+    if (Number(candidate.score) < reasonBelow && matchReason.trim().length < 8) {
+      return flash(`بۆ نمرەی کەمتر لە ${reasonBelow}%، هۆکارێکی ڕوون بنووسە`);
     }
     if (!matchCommandRef.current || matchCommandRef.current.txId !== candidate.tx_id) {
-      matchCommandRef.current = { txId: candidate.tx_id, key: `receipt-match:${id}:${candidate.tx_id}:${uid()}` };
+      matchCommandRef.current = { txId: candidate.tx_id, key: createReceiptReviewCommand("accept", id, candidate.tx_id) };
     }
     setMatchBusy(candidate.tx_id);
-    const result = await supabase.rpc("sarraf_confirm_receipt_match", {
-      p_batch_id: id,
-      p_tx_id: candidate.tx_id,
-      p_reason: matchReason.trim() || null,
-      p_command_key: matchCommandRef.current.key,
-    });
-    if (result.error) {
-      console.error("receipt match", result.error);
-      flash(`بەستنەوە سەرکەوتوو نەبوو — ${result.error.message || "هەڵە"}`);
-    } else {
+    try {
+      await reviewReceiptBatch(supabase, { batchId: id, decision: "accept", txId: candidate.tx_id,
+        reviewReason: matchReason, commandKey: matchCommandRef.current.key });
       flash("فیشەکان بە مامەڵەکەوە بەسترانەوە ✓");
       matchCommandRef.current = null;
       setMatchReason("");
       await load();
       reloadBatches && reloadBatches();
+    } catch (error) {
+      console.error("receipt match", error);
+      flash(`بەستنەوە سەرکەوتوو نەبوو — ${error?.message || "هەڵە"}`);
+    } finally {
+      setMatchBusy(null);
     }
-    setMatchBusy(null);
   };
 
-  const archiveBatch = async () => {
-    if (archiveReason.trim().length < 8) return flash("هۆکاری ئەرشیفکردن لانیکەم ٨ پیت بێت");
-    if (!archiveCommandRef.current) archiveCommandRef.current = `receipt-archive:${id}:${uid()}`;
-    setArchiveBusy(true);
-    const result = await supabase.rpc("sarraf_archive_receipt_batch", {
-      p_batch_id: id,
-      p_reason: archiveReason.trim(),
-      p_command_key: archiveCommandRef.current,
-    });
-    if (result.error) {
-      console.error("receipt archive", result.error);
-      flash(`ئەرشیفکردن سەرکەوتوو نەبوو — ${result.error.message || "هەڵە"}`);
-    } else {
-      flash("کۆمەڵەکە ئەرشیف کرا ✓");
-      archiveCommandRef.current = null;
-      setArchiveReason("");
+  const decideWithoutMatch = async (decision) => {
+    if (matchReason.trim().length < 8) return flash("هۆکاری بڕیارەکە لانیکەم ٨ پیت بێت");
+    if (!decisionCommandRef.current || decisionCommandRef.current.decision !== decision) {
+      decisionCommandRef.current = { decision, key: createReceiptReviewCommand(decision, id) };
+    }
+    setDecisionBusy(decision);
+    try {
+      await reviewReceiptBatch(supabase, { batchId: id, decision, reviewReason: matchReason,
+        commandKey: decisionCommandRef.current.key });
+      flash(decision === "reject" ? "Receipt batch ڕەتکرایەوە ✓" : "Receipt batch گەڕێندرایەوە بۆ correction ✓");
+      decisionCommandRef.current = null;
+      setMatchReason("");
       await load();
       reloadBatches && reloadBatches();
+    } catch (error) {
+      console.error("receipt decision", error);
+      flash(error?.message || "بڕیاری receipt جێبەجێ نەکرا");
+    } finally {
+      setDecisionBusy(null);
     }
-    setArchiveBusy(false);
+  };
+
+  const finalizeDecision = async () => {
+    const sameMaker = b?.decision_by && b.decision_by === profile?.id;
+    const ownerOverride = sameMaker && profile?.adminLevel === "owner";
+    const requiredLength = ownerOverride ? 12 : 8;
+    if (finalizationReason.trim().length < requiredLength) {
+      return flash(`هۆکاری finalization لانیکەم ${requiredLength} پیت بێت`);
+    }
+    if (sameMaker && !ownerOverride) return flash("ئەدمینێکی جیاواز دەبێت ئەم بڕیارە finalize بکات");
+    finalizationCommandRef.current ||= createReceiptReviewCommand("finalize", id);
+    setFinalizationBusy(true);
+    try {
+      await finalizeReceiptBatch(supabase, { batchId: id, finalizationReason,
+        ownerOverride, commandKey: finalizationCommandRef.current });
+      finalizationCommandRef.current = null;
+      setFinalizationReason("");
+      flash("Receipt decision finalize و audit کرا ✓");
+      await load();
+      reloadBatches && reloadBatches();
+    } catch (error) {
+      console.error("receipt finalization", error);
+      flash(error?.message || "Finalization سەرکەوتوو نەبوو");
+    } finally {
+      setFinalizationBusy(false);
+    }
   };
 
   const lifecycleStage = b.receipt_stage === "received" ? "capture"
@@ -7805,11 +7916,16 @@ function BatchDetail({ id, back, usr, data, onMakeTx, flash, reloadBatches }) {
       : b.receipt_stage === "needs_review" ? "review"
         : b.receipt_stage === "verified" ? "verify"
           : b.receipt_stage === "matched" ? "match"
-            : b.receipt_stage === "archived" ? "archive"
-              : b.tx_id ? "match" : "verify";
+            : b.receipt_stage === "rejected" ? "review"
+                : b.receipt_stage === "finalized" ? "archive"
+                  : b.receipt_stage === "archived" ? "archive"
+                    : b.tx_id ? "match" : "verify";
+  const requiresFinalization = receiptPolicy?.require_finalization !== false;
   const eventLabels = {
     received: "کۆمەڵە وەرگیرا", ai_read: "AI خوێندییەوە", needs_review: "پشکنینی مرۆڤ پێویستە",
     verified: "پشتڕاست کرایەوە", matched: "بە مامەڵەوە بەسترا", unlinked: "بەستنەوە هەڵوەشایەوە",
+    decision_rejected: "بڕیاری ڕەتکردنەوە تۆمار کرا", correction_requested: "گەڕێندرایەوە بۆ correction",
+    finalized: "بڕیارەکە finalize کرا", policy_updated: "Receipt policy نوێ کرایەوە",
     archived: "ئەرشیف کرا", rejected_summary: "ڕەتکراوەکان تۆمار کران", split_updated: "دابەشکردن نوێکرایەوە",
   };
 
@@ -7824,7 +7940,13 @@ function BatchDetail({ id, back, usr, data, onMakeTx, flash, reloadBatches }) {
         </div>
         <div className="flex gap-1.5 flex-wrap">
           <Pill tone={isOut ? "amber" : "green"}>{DIR_KU[b.direction || "in"]}</Pill>
-          {b.status === "new" ? <Pill tone="green">{tr("چاوەڕوانی مامەڵە")}</Pill> : <Pill tone="slate">{tr("بەستراوە")}</Pill>}
+          {b.receipt_stage === "rejected"
+            ? <Pill tone="red">ڕەتکراوە</Pill>
+            : b.status === "new"
+              ? <Pill tone="green">{tr("چاوەڕوانی مامەڵە")}</Pill>
+              : b.tx_id
+                ? <Pill tone="slate">{tr("بەستراوە")}</Pill>
+                : <Pill tone="slate">بڕیار تەواوە</Pill>}
         </div>
       </div>
 
@@ -7838,26 +7960,33 @@ function BatchDetail({ id, back, usr, data, onMakeTx, flash, reloadBatches }) {
           title={tr("وردەکاری فیشەکان")} flash={flash} onClose={() => setShare(false)} />
       )}
 
-      {b.status === "new" && !b.tx_id && candidates.length > 0 && (
+      {b.status === "new" && !b.tx_id && (
         <Card className="p-5">
           <div className="flex items-start justify-between gap-3 flex-wrap mb-4">
             <div>
               <SecLbl>Smart Reconciliation</SecLbl>
               <div className="text-[11px] text-[var(--txt-3)] mt-1">پێشنیارەکان تەنها یارمەتیدەرن؛ بەستنەوە تەنها دوای پشتڕاستکردنەوەی تۆ ئەنجام دەدرێت.</div>
             </div>
-            <Pill tone="amber">Human approval</Pill>
+            <div className="flex gap-1.5 flex-wrap">
+              <Pill tone="amber">Human approval</Pill>
+              <Pill tone="slate">Policy v{receiptPolicy?.version || "—"} · min {receiptPolicy?.min_match_score ?? 80}%</Pill>
+            </div>
           </div>
           <div className="space-y-3">
+            {candidates.length === 0 && <StatePanel type="empty" title="هیچ transaction candidate ـێکی پارێزراو نەدۆزرایەوە" detail="دەتوانیت batch ـەکە ڕەت بکەیتەوە یان بۆ correction بیگەڕێنیتەوە." compact />}
             {candidates.map((candidate) => {
               const reasons = candidate.reasons || {};
-              const lowScore = Number(candidate.score) < 80;
+              const minimum = receiptPolicy?.min_match_score ?? 80;
+              const reasonBelow = receiptPolicy?.require_reason_below ?? 90;
+              const belowPolicy = Number(candidate.score) < minimum;
+              const reasonRequired = Number(candidate.score) < reasonBelow;
               return (
                 <div key={candidate.tx_id} className="rounded-2xl p-4" style={{ background: "var(--surf-2)", border: "1px solid var(--line)" }}>
                   <div className="flex items-start justify-between gap-3 flex-wrap">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-[13px] font-bold text-[var(--txt)]" style={num}>#{candidate.tx_code || "—"}</span>
-                        <Pill tone={candidate.score >= 80 ? "green" : "amber"}>{candidate.score}%</Pill>
+                        <Pill tone={candidate.score >= minimum ? "green" : "red"}>{candidate.score}%</Pill>
                         <span className="text-[10px] text-[var(--txt-3)]">{candidate.tx_type} · {candidate.tx_status}</span>
                       </div>
                       <div className="text-[12px] font-semibold text-[var(--txt)] mt-2" style={num}>
@@ -7865,8 +7994,8 @@ function BatchDetail({ id, back, usr, data, onMakeTx, flash, reloadBatches }) {
                       </div>
                       <div className="text-[10px] text-[var(--txt-3)] mt-1" style={num}>{candidate.tx_date ? new Date(candidate.tx_date).toLocaleString("en-GB") : "—"}</div>
                     </div>
-                    <Btn onClick={() => confirmMatch(candidate)} disabled={!!matchBusy || (lowScore && matchReason.trim().length < 8)}>
-                      {matchBusy === candidate.tx_id ? "بەستنەوە..." : "پشتڕاستکردنەوە و بەستن"}
+                    <Btn onClick={() => confirmMatch(candidate)} disabled={!!matchBusy || !!decisionBusy || belowPolicy || (reasonRequired && matchReason.trim().length < 8)}>
+                      {matchBusy === candidate.tx_id ? "بەستنەوە..." : belowPolicy ? "ژێر Policy" : "Accept و بەستن"}
                     </Btn>
                   </div>
                   <div className="flex gap-1.5 flex-wrap mt-3">
@@ -7881,8 +8010,16 @@ function BatchDetail({ id, back, usr, data, onMakeTx, flash, reloadBatches }) {
             })}
           </div>
           <div className="mt-4">
-            <Lbl>هۆکاری بەستنەوە {candidates.some((candidate) => candidate.score < 80) ? "(بۆ نمرەی ژێر ٨٠٪ پێویستە)" : "(ئارەزوومەندانە)"}</Lbl>
-            <Inp value={matchReason} onChange={(e) => setMatchReason(e.target.value)} placeholder="بۆ نموونە: بڕ، دراو، کڕیار و کات یەکدەگرنەوە" />
+            <Lbl>هۆکاری بڕیار {candidates.some((candidate) => candidate.score < (receiptPolicy?.require_reason_below ?? 90)) ? "(بۆ accept ـی ژێر threshold، reject و correction پێویستە)" : "(بۆ reject/correction پێویستە)"}</Lbl>
+            <Inp value={matchReason} onChange={(e) => setMatchReason(e.target.value)} placeholder="بۆ نموونە: بڕ/دراو/کڕیار یەکناگرنەوە، یان پشکنینەکە پشتڕاستە" />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3 pt-3 border-t border-[var(--line)]">
+            <Btn kind="danger" onClick={() => decideWithoutMatch("reject")} disabled={!!matchBusy || !!decisionBusy || receiptPolicy?.allow_reject === false || matchReason.trim().length < 8}>
+              {decisionBusy === "reject" ? "ڕەتکردنەوە..." : "Reject batch"}
+            </Btn>
+            <Btn kind="ghost" onClick={() => decideWithoutMatch("correction")} disabled={!!matchBusy || !!decisionBusy || receiptPolicy?.allow_correction === false || matchReason.trim().length < 8}>
+              {decisionBusy === "correction" ? "گەڕاندنەوە..." : "Return for correction"}
+            </Btn>
           </div>
         </Card>
       )}
@@ -8012,31 +8149,37 @@ function BatchDetail({ id, back, usr, data, onMakeTx, flash, reloadBatches }) {
           )}
         </Card>
       )}
-      {b.tx_id && (
+      {(b.tx_id || b.decision_status === "rejected") && (
         <Card className="p-5">
           <div className="flex items-start justify-between gap-3 flex-wrap">
             <div>
               <div className="text-sm text-[var(--txt-2)]">
-                {tr("بەستراوە بە مامەڵەی")} <b style={num}>#{(data.txs.find((t) => t.id === b.tx_id) || {}).code || "—"}</b>
+                {b.decision_status === "rejected"
+                  ? "Receipt batch ڕەتکراوەتەوە"
+                  : <>{tr("بەستراوە بە مامەڵەی")} <b style={num}>#{(data.txs.find((t) => t.id === b.tx_id) || {}).code || "—"}</b></>}
               </div>
               <div className="flex gap-1.5 mt-2 flex-wrap">
-                {b.matched_score != null && <Pill tone={b.matched_score >= 80 ? "green" : "amber"}>Match {b.matched_score}%</Pill>}
-                <Pill tone={b.receipt_stage === "archived" ? "slate" : "green"}>{b.receipt_stage === "archived" ? "ئەرشیفکراو" : "بەستراو"}</Pill>
+                {b.matched_score != null && <Pill tone={b.matched_score >= (receiptPolicy?.min_match_score ?? 80) ? "green" : "amber"}>Match {b.matched_score}%</Pill>}
+                <Pill tone={b.decision_status === "rejected" ? "red" : "green"}>{b.decision_status || (b.tx_id ? "accepted" : "—")}</Pill>
+                <Pill tone={b.receipt_stage === "finalized" || !requiresFinalization ? "green" : "amber"}>{b.receipt_stage === "finalized" ? "Finalized" : requiresFinalization ? "Waiting finalization" : "Decision complete · finalization optional"}</Pill>
+                {b.policy_version && <Pill tone="slate">Policy v{b.policy_version}</Pill>}
               </div>
-              {b.match_reason && <div className="text-[10.5px] text-[var(--txt-3)] mt-2">{b.match_reason}</div>}
+              {(b.decision_reason || b.match_reason) && <div className="text-[10.5px] text-[var(--txt-3)] mt-2">{b.decision_reason || b.match_reason}</div>}
             </div>
           </div>
-          {b.receipt_stage !== "archived" && (
+          {b.receipt_stage !== "finalized" && b.receipt_stage !== "archived" && (
             <div className="mt-4 pt-4 border-t border-[var(--line)]">
-              <Lbl>هۆکاری ئەرشیفکردن</Lbl>
+              <Lbl>{requiresFinalization ? "هۆکاری Finalization" : "Finalization ـی ئارەزوومەندانە"} {b.decision_by === profile?.id && profile?.adminLevel === "owner" ? "(Owner override ـە؛ لانیکەم ١٢ پیت)" : "(لانیکەم ٨ پیت)"}</Lbl>
+              {b.decision_by === profile?.id && profile?.adminLevel !== "owner" && <div className="text-[10.5px] text-[var(--warn)] mb-2">Maker و finalizer دەبێت دوو ئەدمینی جیاواز بن.</div>}
               <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto] gap-2.5">
-                <Inp value={archiveReason} onChange={(e) => setArchiveReason(e.target.value)} placeholder="بۆ نموونە: پشکنین تەواو بوو و مامەڵەکە پشتڕاستە" />
-                <Btn kind="ghost" onClick={archiveBatch} disabled={archiveBusy || archiveReason.trim().length < 8}>
-                  {archiveBusy ? "ئەرشیفکردن..." : "ئەرشیفکردن"}
+                <Inp value={finalizationReason} onChange={(e) => setFinalizationReason(e.target.value)} placeholder="پشکنینی کۆتایی، policy و transaction/receipt پەیوەندییەکە پشتڕاستە" />
+                <Btn onClick={finalizeDecision} disabled={finalizationBusy || profile?.role !== "admin" || (b.decision_by === profile?.id && profile?.adminLevel !== "owner") || finalizationReason.trim().length < (b.decision_by === profile?.id && profile?.adminLevel === "owner" ? 12 : 8)}>
+                  {finalizationBusy ? "Finalizing..." : "Finalize decision"}
                 </Btn>
               </div>
             </div>
           )}
+          {b.receipt_stage === "finalized" && <div className="mt-4 pt-4 border-t border-[var(--line)] text-[11px] text-[var(--pos)] flex items-center gap-2"><CheckCircle2 className="w-4 h-4" /> Finalization تۆمار و audit کرا{b.finalized_at ? ` · ${new Date(b.finalized_at).toLocaleString("en-GB")}` : ""}</div>}
         </Card>
       )}
 
@@ -10299,6 +10442,8 @@ function ApprovalCenter({
           <div className="mt-4 flex justify-end"><Btn disabled={busy} onClick={save}>پاشەکەوتکردنی کۆنترۆڵ</Btn></div>
         </Card>
       )}
+
+      <ReceiptPolicyPanel client={supabase} isOwner={isOwner} flash={flash} />
 
       <Card className="p-5">
         <SecLbl>Transaction Version History</SecLbl>

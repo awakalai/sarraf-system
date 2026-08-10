@@ -8,6 +8,7 @@
     "build": "vite build",
     "test": "node --test",
     "verify:brand": "node scripts/verify-brand-assets.mjs",
+    "verify:share": "node scripts/verify-share.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

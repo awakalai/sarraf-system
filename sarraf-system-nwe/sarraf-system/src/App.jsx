@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "./lib/supabase";
 import { ReceiptLifecycle, ReceiptSmartInspector } from "./components/receipts/ReceiptCommandCenter";
 import { createReceiptIngestionCommand, ingestReceiptBatch } from "./services/receiptIngestion";
+import { claimSharedReceiptHandoff, finishSharedReceiptHandoff, releaseSharedReceiptHandoff, sharedReceiptMessage, validateClaimedSharedFiles } from "./services/sharedReceiptHandoff";
 import { PortalDataStatus, PortalFrame, PortalPagedList, usePortalRoute } from "./components/portal/PortalFoundation";
 import { separatedCurrencySummary } from "./components/portal/portalModel";
 import MarketPulse from "./components/market/MarketPulse";
@@ -1589,6 +1590,18 @@ export default function App() {
     return () => clearInterval(id);
   }, [profile, accessState]);
   useEffect(() => { if (online && stale && session && accessState === "ready") { setStale(null); loadAll(); } }, [online, stale, session, accessState]);
+  useEffect(() => {
+    const handoff = new URLSearchParams(window.location.search).get("receiptShare");
+    if (!handoff || !profile || accessState !== "ready") return;
+    if (profile.role === "customer" || profile.role === "partner") {
+      window.location.hash = `#/portal/${profile.role}/upload`;
+    } else if (profile.role === "admin") {
+      const q = new URLSearchParams(window.location.search);
+      q.set("receiptTab", "add");
+      window.history.replaceState(null, "", `${window.location.pathname}?${q}${window.location.hash}`);
+      setPage("receipts");
+    }
+  }, [profile?.id, accessState]);
 
   const flash = (t) => { setMsg(t); setTimeout(() => setMsg(null), 3000); };
 
@@ -6114,6 +6127,7 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
   const shareInputRef = useRef(null);
   const receiptCommandRef = useRef(null);
   const maxAge = 7;
+  const shareImportStarted = useRef(false);
 
   const commitRows = (updater) => {
     setRows((prev) => {
@@ -6401,6 +6415,36 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
     setWorking(false);
     setProg(null);
   };
+
+  useEffect(() => {
+    const handoffId = new URLSearchParams(window.location.search).get("receiptShare");
+    if (!handoffId || handoffId === "invalid" || shareImportStarted.current || working) {
+      if (handoffId === "invalid" && !shareImportStarted.current) { shareImportStarted.current = true; flash(sharedReceiptMessage("invalid")); }
+      return;
+    }
+    const owner = `${uploaderId || ""}:${customerId || partnerId || ""}`;
+    if (!uploaderId || (!customerId && !partnerId)) return;
+    shareImportStarted.current = true;
+    let claimed;
+    (async () => {
+      flash(sharedReceiptMessage("loading"));
+      try {
+        claimed = await claimSharedReceiptHandoff(handoffId, owner);
+        if (claimed.status !== "ready") { flash(sharedReceiptMessage(claimed.status)); return; }
+        const checked = await validateClaimedSharedFiles(claimed.files);
+        if (!checked.accepted.length) throw new Error("no valid shared receipt images");
+        await onFiles(checked.accepted, "share");
+        await finishSharedReceiptHandoff(handoffId, claimed.lease);
+        const q = new URLSearchParams(window.location.search); q.delete("receiptShare"); q.delete("shareRejected");
+        window.history.replaceState(null, "", `${window.location.pathname}${q.size ? `?${q}` : ""}${window.location.hash}`);
+        flash(sharedReceiptMessage("ready", claimed.rejected.length + checked.rejected.length));
+      } catch (_) {
+        if (claimed?.lease) await releaseSharedReceiptHandoff(handoffId, claimed.lease).catch(() => {});
+        shareImportStarted.current = false;
+        flash("نەتوانرا وێنە هاوبەشکراوەکان بکرێنەوە؛ تکایە دووبارە هەوڵ بدەوە.");
+      }
+    })();
+  }, [uploaderId, customerId, partnerId]);
 
   const retryRow = async (id) => {
     const r = rowsRef.current.find((x) => x.id === id);

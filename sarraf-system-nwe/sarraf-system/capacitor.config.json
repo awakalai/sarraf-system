@@ -1,6 +1,6 @@
 {
   "appId": "com.mycompany.sarraf",
-  "appName": "سیستەمی دراو",
+  "appName": "ZEMAN",
   "webDir": "dist",
   "server": {
     "androidScheme": "https"

@@ -3,6 +3,10 @@ import { readFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 
 const roots = ["public", "app-files/public"];
+const expectedShareTarget = {
+  action: "/receipt-share", method: "POST", enctype: "multipart/form-data",
+  params: { files: [{ name: "receipts", accept: ["image/jpeg", "image/png", "image/webp"] }] },
+};
 const expected = new Map([
   ["apple-touch-icon.png", [180, 180]],
   ["icon-192.png", [192, 192]],
@@ -24,7 +28,7 @@ for (const root of roots) {
   assert.equal(manifest.scope, "/");
   assert.equal(manifest.lang, "ckb");
   assert.equal(manifest.dir, "rtl");
-  assert.ok(!("share_target" in manifest), "Phase E share_target must not be present");
+  assert.deepEqual(manifest.share_target, expectedShareTarget, "Phase E share target must stay exact");
 
   const declared = new Map(manifest.icons.map((icon) => [icon.src.replace(/^\//, ""), icon]));
   for (const [path, dimensions] of expected) {

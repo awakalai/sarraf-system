@@ -4,6 +4,7 @@ import { ReceiptLifecycle, ReceiptSmartInspector } from "./components/receipts/R
 import { createReceiptIngestionCommand, ingestReceiptBatch } from "./services/receiptIngestion";
 import { PortalDataStatus, PortalFrame, PortalPagedList, usePortalRoute } from "./components/portal/PortalFoundation";
 import { separatedCurrencySummary } from "./components/portal/portalModel";
+import MarketPulse from "./components/market/MarketPulse";
 import "./components/portal/portal.css";
 import {
   LayoutDashboard, Vault, ArrowLeftRight, ListOrdered, Users, Handshake,
@@ -3263,6 +3264,8 @@ export default function App() {
           </div>
         </div>
       </header>
+
+      {!portalUser && <MarketPulse currencies={data.currencies} lang={lang} online={online} />}
 
       {portalUser ? (
         <main className="px-4 pt-5 pb-28 md:px-8 md:pb-10 max-w-[920px] mx-auto"><Portal user={portalUser} {...shared} officePay={officePay} settle={settle} flash={flash} reloadBatches={reloadBatches} accountMove={accountMove} accountTransfer={accountTransfer} online={online} stale={stale} refreshing={refreshing} refreshedAt={refreshedAt} refresh={() => loadAll(profile)} /></main>
@@ -9451,9 +9454,9 @@ function WorldRates({ data, cur }) {
 
   const load = () => {
     setRates(null);
-    fetch("https://api.exchangerate-api.com/v4/latest/USD")
+    fetch("/api/market-rates", { headers: { Accept: "application/json" } })
       .then((r) => r.json())
-      .then((j) => { setRates(j.rates || {}); setAt(Date.now()); })
+      .then((j) => { const values = Object.fromEntries((j.instruments || []).filter(i => i.value).map(i => i.id === "USD/CNY" ? ["CNY",i.value] : i.id === "EUR/USD" ? ["EUR",1/i.value] : i.id === "GBP/USD" ? ["GBP",1/i.value] : [i.id,i.value])); setRates(values); setAt(j.retrievedAt ? Date.parse(j.retrievedAt) : null); })
       .catch(() => setRates({}));
   };
   useEffect(() => { load(); }, []);

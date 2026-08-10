@@ -1,18 +1,14 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "./lib/supabase";
-import { ReceiptLifecycle, ReceiptSmartInspector } from "./components/receipts/ReceiptCommandCenter";
-import { ReceiptPolicyPanel } from "./components/receipts/ReceiptPolicyPanel";
 import { createReceiptIngestionCommand, ingestReceiptBatch } from "./services/receiptIngestion";
+import { validateReceiptArithmetic } from "./services/receiptValidation";
 import { createReceiptReviewCommand, finalizeReceiptBatch, loadReceiptPolicy, reviewReceiptBatch } from "./services/receiptReview";
 import { claimSharedReceiptHandoff, finishSharedReceiptHandoff, releaseSharedReceiptHandoff, sharedReceiptMessage, validateClaimedSharedFiles } from "./services/sharedReceiptHandoff";
 import { PortalDataStatus, PortalFrame, PortalPagedList, usePortalRoute } from "./components/portal/PortalFoundation";
 import { separatedCurrencySummary } from "./components/portal/portalModel";
-import MarketPulse from "./components/market/MarketPulse";
 import { BRAND } from "./brand/brand";
 import { BrandLogo } from "./brand/BrandLogo";
 import { OperationalPalette } from "./components/operations/OperationalPalette";
-import { ActionInbox, IntegrityCenter } from "./components/operations/OperationalCenters";
-import { ExportAuditCenter } from "./components/operations/ExportAuditCenter";
 import "./components/portal/portal.css";
 import {
   LayoutDashboard, Vault, ArrowLeftRight, ListOrdered, Users, Handshake,
@@ -20,6 +16,21 @@ import {
   CheckCircle2, AlertTriangle, Eye, LogOut, Wallet, ChevronLeft, Coins,
   Receipt, TrendingDown, ScanLine, Upload, XCircle, SlidersHorizontal, Search, MoreHorizontal, Zap, ArrowDownLeft, ArrowUpRight, X, Share2, Database, Download, ClipboardCheck, RotateCcw, MessageCircle, Moon, Sun, WifiOff, Wifi, EyeOff, Bell, QrCode, Camera, Fingerprint, ShieldCheck, KeyRound, Inbox, ShieldAlert, FileCheck2
 } from "lucide-react";
+
+const lazyNamed = (loader, name) => React.lazy(() => loader().then((module) => ({ default: module[name] })));
+const MarketPulse = React.lazy(() => import("./components/market/MarketPulse"));
+const ReceiptLifecycle = lazyNamed(() => import("./components/receipts/ReceiptCommandCenter"), "ReceiptLifecycle");
+const ReceiptSmartInspector = lazyNamed(() => import("./components/receipts/ReceiptCommandCenter"), "ReceiptSmartInspector");
+const ReceiptPolicyPanel = lazyNamed(() => import("./components/receipts/ReceiptPolicyPanel"), "ReceiptPolicyPanel");
+const ActionInbox = lazyNamed(() => import("./components/operations/OperationalCenters"), "ActionInbox");
+const IntegrityCenter = lazyNamed(() => import("./components/operations/OperationalCenters"), "IntegrityCenter");
+const ExportAuditCenter = lazyNamed(() => import("./components/operations/ExportAuditCenter"), "ExportAuditCenter");
+
+function DeferredPanel({ children, compact = false }) {
+  return <React.Suspense fallback={<section className={`animate-pulse rounded-[var(--r)] border border-[var(--line)] bg-[var(--surf)] ${compact ? "h-12" : "h-28"}`} aria-live="polite" aria-label="Loading ZEMAN module" />}>
+    {children}
+  </React.Suspense>;
+}
 
 /* ══════════════════ یارمەتیدەرەکان ══════════════════ */
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -245,6 +256,7 @@ let _lang = (() => { try { return localStorage.getItem("lang") || "ku"; } catch 
 const setLangGlobal = (l) => { _lang = l; try { localStorage.setItem("lang", l); } catch {} };
 /* t() — گەر وەرگێڕان نەبوو، کوردییەکە دەگەڕێنێتەوە */
 const tr = (k) => (_lang === "ku" ? k : (DICT[_lang]?.[k] ?? k));
+const l10n = (ku, en, ar) => _lang === "en" ? en : _lang === "ar" ? ar : ku;
 
 /* ئایکۆنی ئاگادارییەکان */
 const NOTE_ICON = {
@@ -992,8 +1004,6 @@ textarea {
 @media (max-width:640px){
   .sarraf-detail-grid{grid-template-columns:1fr;gap:10px}
 }
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
-
 :root, [data-theme="light"] {
   --bg:        #F3F5F8;
   --bg-2:      #E9EDF2;
@@ -1082,6 +1092,8 @@ html[lang="en"] body, html[lang="en"] input, html[lang="en"] select, html[lang="
 ::-webkit-scrollbar{width:7px;height:7px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:99px}
 input,select,textarea{color-scheme:light} [data-theme="dark"] input,[data-theme="dark"] select,[data-theme="dark"] textarea{color-scheme:dark}
 *:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
+.zeman-skip-link{position:fixed;z-index:100;inset-inline-start:16px;top:10px;transform:translateY(-160%);min-height:42px;padding:10px 14px;border-radius:11px;background:var(--ac);color:var(--ac-ink);font-size:12px;font-weight:800;box-shadow:var(--sh-3);transition:transform .18s ease}
+.zeman-skip-link:focus{transform:translateY(0)}
 @media(max-width:767px){
   .sarraf-sidebar{display:none}
   .sarraf-topbar{box-shadow:0 1px 0 var(--line)}
@@ -1598,7 +1610,7 @@ export default function App() {
   const changeLang = (l) => { setLangGlobal(l); setLang(l); };
   useEffect(() => {
     const d = LANGS[lang]?.dir || "rtl";
-    document.documentElement.setAttribute("lang", lang);
+    document.documentElement.setAttribute("lang", lang === "ku" ? "ckb" : lang);
     document.documentElement.setAttribute("dir", d);
   }, [lang]);
 
@@ -3140,12 +3152,19 @@ export default function App() {
   const isOwner = isAdmin && profile.adminLevel === "owner";
   const va = viewAs ? usr(viewAs) : null;
   const portalUser = !isAdmin ? profile : va;
+  const navSectionLabel = (ku, en, ar) => lang === "en" ? en : lang === "ar" ? ar : ku;
   const systemNeedsAttention = !online || !!stale || !!data?.runtime?.maintenance_mode;
   const systemStatusLabel = systemNeedsAttention
-    ? (!online ? "ZEMAN offline" : data?.runtime?.maintenance_mode ? "ZEMAN emergency freeze" : "ZEMAN data refresh required")
-    : "ZEMAN live";
+    ? (!online
+      ? navSectionLabel("ZEMAN ئۆفلاینە", "ZEMAN offline", "ZEMAN غير متصل")
+      : data?.runtime?.maintenance_mode
+        ? navSectionLabel("ZEMAN لە دۆخی وەستاندنی فریاکەوتندایە", "ZEMAN emergency freeze", "ZEMAN في وضع التجميد الطارئ")
+        : navSectionLabel("داتای ZEMAN پێویستی بە نوێکردنەوە هەیە", "ZEMAN data refresh required", "بيانات ZEMAN بحاجة إلى تحديث"))
+    : navSectionLabel("ZEMAN بەستراوە", "ZEMAN online", "ZEMAN متصل");
+  const systemStatusText = systemNeedsAttention
+    ? navSectionLabel("سەرنج", "Attention", "تنبيه")
+    : navSectionLabel("بەستراو", "Online", "متصل");
 
-  const navSectionLabel = (ku, en, ar) => lang === "en" ? en : lang === "ar" ? ar : ku;
   const NAV_GROUPS = [
     {
       label: navSectionLabel("سەرەکی", "Overview", "نظرة عامة"),
@@ -3172,10 +3191,10 @@ export default function App() {
     {
       label: navSectionLabel("سیستەم", "System", "النظام"),
       items: [
-        ["action-inbox", "Action Inbox", Inbox],
-        ["integrity", "Integrity Center", ShieldAlert],
-        ["approvals", "کۆنترۆڵ و پەسەندکردن", ShieldCheck],
-        ["export-audit", "Export & Audit Center", FileCheck2],
+        ["action-inbox", navSectionLabel("ئینباکسی کارەکان", "Action Inbox", "صندوق الإجراءات"), Inbox],
+        ["integrity", navSectionLabel("ناوەندی یەکپارچەیی", "Integrity Center", "مركز سلامة البيانات"), ShieldAlert],
+        ["approvals", navSectionLabel("کۆنترۆڵ و پەسەندکردن", "Controls & Approvals", "التحكم والموافقات"), ShieldCheck],
+        ["export-audit", navSectionLabel("هەناردە و وردبینی", "Export & Audit Center", "مركز التصدير والتدقيق"), FileCheck2],
         ["audit", tr("تۆمار"), History],
         ["close", tr("بەستنی ڕۆژ"), ClipboardCheck],
         ["backup", tr("پاراستنی داتا"), Database],
@@ -3193,6 +3212,7 @@ export default function App() {
   return (
     <div dir={LANGS[lang]?.dir || "rtl"} key={lang} className="zeman-shell min-h-screen" style={{ background: "var(--bg)", color: "var(--txt)" }}>
       <Styles />
+      <a className="zeman-skip-link" href="#zeman-main-content">{navSectionLabel("بڕۆ بۆ ناوەڕۆکی سەرەکی", "Skip to main content", "الانتقال إلى المحتوى الرئيسي")}</a>
 
       {(!online || stale) && (
         <div className="sticky top-[57px] z-30 px-3 py-2 text-center text-[12px] font-semibold flex items-center justify-center gap-2"
@@ -3246,12 +3266,12 @@ export default function App() {
             <div className={`zeman-system-status ${systemNeedsAttention ? "is-attention" : "is-live"}`} role="status" aria-label={systemStatusLabel} title={systemStatusLabel}>
               <span className="zeman-system-light is-green" aria-hidden="true" />
               <span className="zeman-system-light is-red" aria-hidden="true" />
-              <span className="hidden lg:inline">{systemNeedsAttention ? "Attention" : "Live"}</span>
+              <span className="hidden lg:inline">{systemStatusText}</span>
             </div>
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
-            <OperationalPalette client={supabase} onNavigate={(path) => setPage(path.slice(2))} />
+            <OperationalPalette client={supabase} lang={lang} onNavigate={(path) => setPage(path.slice(2))} />
             {isAdmin && va && (
               <button onClick={() => setViewAs(null)}
                 className="flex items-center gap-1.5 text-[12px] font-semibold px-3 py-2 rounded-full tap"
@@ -3262,6 +3282,7 @@ export default function App() {
             {/* زەنگی ئاگاداری */}
             <div className="relative">
               <button onClick={() => { setNoteOpen(!noteOpen); if (!noteOpen) setTimeout(seeAll, 1800); }}
+                aria-label={tr("ئاگادارییەکان")} aria-expanded={noteOpen} aria-controls="zeman-notifications-panel"
                 className="w-9 h-9 rounded-full tap flex items-center justify-center relative"
                 style={{ background: "var(--glass)", border: "1px solid var(--line)", color: "var(--txt-2)" }}>
                 <Bell className="w-4 h-4" />
@@ -3275,7 +3296,7 @@ export default function App() {
               {noteOpen && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setNoteOpen(false)} />
-                  <div className="fixed sm:absolute inset-x-3 sm:inset-x-auto top-[70px] sm:top-full sm:mt-2 sm:end-0 z-50 rounded-[var(--r)] overflow-hidden drop sm:w-[340px]"
+                  <div id="zeman-notifications-panel" className="fixed sm:absolute inset-x-3 sm:inset-x-auto top-[70px] sm:top-full sm:mt-2 sm:end-0 z-50 rounded-[var(--r)] overflow-hidden drop sm:w-[340px]"
                     style={{ background: "var(--surf-2)", border: "1px solid var(--line)", boxShadow: "var(--sh-3)" }}>
                     <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: "1px solid var(--line)" }}>
                       <span className="text-[13px] font-semibold" style={{ color: "var(--txt)" }}>{tr("ئاگادارییەکان")}</span>
@@ -3314,6 +3335,7 @@ export default function App() {
 
             <div className="relative">
               <button onClick={() => setLangOpen(!langOpen)}
+                aria-label={navSectionLabel("گۆڕینی زمان", "Change language", "تغيير اللغة")} aria-expanded={langOpen}
                 className="w-9 h-9 rounded-full text-[11px] font-bold tap flex items-center justify-center"
                 style={{ background: "var(--glass)", border: "1px solid var(--line)", color: "var(--txt-2)" }}>
                 {LANGS[lang]?.flag || "KU"}
@@ -3335,11 +3357,12 @@ export default function App() {
               )}
             </div>
             <button onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              aria-label={theme === "dark" ? navSectionLabel("ڕووناککردنی ڕووکار", "Use light theme", "استخدام المظهر الفاتح") : navSectionLabel("تاریککردنی ڕووکار", "Use dark theme", "استخدام المظهر الداكن")}
               className="w-9 h-9 rounded-full tap flex items-center justify-center"
               style={{ background: "var(--glass)", border: "1px solid var(--line)", color: "var(--txt-2)" }}>
               {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
-            <button onClick={signOut} className="w-9 h-9 rounded-full tap flex items-center justify-center"
+            <button onClick={signOut} aria-label={navSectionLabel("چوونەدەرەوە", "Sign out", "تسجيل الخروج")} className="w-9 h-9 rounded-full tap flex items-center justify-center"
               style={{ background: "var(--glass)", border: "1px solid var(--line)", color: "var(--txt-2)" }}>
               <LogOut className="w-4 h-4" />
             </button>
@@ -3347,10 +3370,10 @@ export default function App() {
         </div>
       </header>
 
-      {!portalUser && <MarketPulse currencies={data.currencies} lang={lang} online={online} />}
+      {!portalUser && <DeferredPanel compact><MarketPulse currencies={data.currencies} lang={lang} online={online} /></DeferredPanel>}
 
       {portalUser ? (
-        <main className="px-4 pt-5 pb-28 md:px-8 md:pb-10 max-w-[920px] mx-auto"><Portal user={portalUser} {...shared} officePay={officePay} settle={settle} flash={flash} reloadBatches={reloadBatches} accountMove={accountMove} accountTransfer={accountTransfer} online={online} stale={stale} refreshing={refreshing} refreshedAt={refreshedAt} refresh={() => loadAll(profile)} /></main>
+        <main id="zeman-main-content" tabIndex={-1} className="px-4 pt-5 pb-28 md:px-8 md:pb-10 max-w-[920px] mx-auto"><Portal user={portalUser} {...shared} officePay={officePay} settle={settle} flash={flash} reloadBatches={reloadBatches} accountMove={accountMove} accountTransfer={accountTransfer} online={online} stale={stale} refreshing={refreshing} refreshedAt={refreshedAt} refresh={() => loadAll(profile)} /></main>
       ) : (
         <div className="flex flex-col md:flex-row">
           {/* لیستی لاتەنیشت — تەنها لە شاشەی گەورە */}
@@ -3391,7 +3414,7 @@ export default function App() {
               </div>
             )}
           </nav>
-          <main className="sarraf-main sarraf-desktop-content flex-1 px-4 pt-5 pb-28 md:px-8 md:pt-7 md:pb-10 max-w-[1600px] w-full mx-auto">
+          <main id="zeman-main-content" tabIndex={-1} className="sarraf-main sarraf-desktop-content flex-1 px-4 pt-5 pb-28 md:px-8 md:pt-7 md:pb-10 max-w-[1600px] w-full mx-auto">
             {page === "dash" && <Dashboard {...shared} batches={batches} go={setPage} />}
             {page === "safes" && <><Back onClick={() => setPage("dash")} t={tr("گەڕانەوە بۆ داشبۆرد")} /><Safes {...shared} addDeposit={addDeposit} addExpense={addExpense} addCurrency={addCurrency} /></>}
             {page === "rates" && <><Back onClick={() => setPage("dash")} t={tr("گەڕانەوە بۆ داشبۆرد")} /><Rates {...shared} saveRates={saveRates} /></>}
@@ -3404,9 +3427,9 @@ export default function App() {
               onMakeTx={(b) => { setPendingBatch(b); setPage("newtx"); }} />}
             {page === "people" && <PeopleHub {...shared} accountMove={accountMove} accountTransfer={accountTransfer} profile={profile} detailId={detailId} setDetailId={setDetailId} onSave={saveTx} transfer={transfer} officePay={officePay} settle={settle} createUser={createUser} deleteUser={deleteUser} setUserRate={setUserRate} flash={flash} />}
             {page === "report" && <Report {...shared} />}
-            {page === "action-inbox" && <ActionInbox client={supabase} onNavigate={(path) => setPage(path.slice(2))} />}
-            {page === "integrity" && <IntegrityCenter client={supabase} onNavigate={(path) => setPage(path.slice(2))} />}
-            {page === "export-audit" && <ExportAuditCenter client={supabase} />}
+            {page === "action-inbox" && <DeferredPanel><ActionInbox client={supabase} lang={lang} onNavigate={(path) => setPage(path.slice(2))} /></DeferredPanel>}
+            {page === "integrity" && <DeferredPanel><IntegrityCenter client={supabase} lang={lang} onNavigate={(path) => setPage(path.slice(2))} /></DeferredPanel>}
+            {page === "export-audit" && <DeferredPanel><ExportAuditCenter client={supabase} lang={lang} /></DeferredPanel>}
             {page === "approvals" && <ApprovalCenter
               data={data} profile={profile} isOwner={isOwner} cur={cur}
               approve={approveApproval} reject={rejectApproval} cancel={cancelApproval}
@@ -6254,20 +6277,25 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
       : (orderAmountV != null ? orderAmountV : Math.max(0, amountV - feeV));
     const plat = detectPlatform(`${d?.platform || ""} ${d?.bank || ""} ${d?.platformEvidence || ""}`) || d?.platform || null;
     const rn = normRef(d?.refNo);
+    const merchantRn = normRef(d?.merchantOrderNo);
     const fc = d?.fieldConfidence && typeof d.fieldConfidence === "object" ? d.fieldConfidence : {};
     const conf = clamp01(d?.confidence, 0.5);
 
     // Exact reference duplicate = hard duplicate. Same amount/time alone is only a review warning.
-    if (rn) {
-      const local = rowsRef.current.find((r) => r.id !== id && r.refNo && normRef(r.refNo) === rn && r.status !== "error");
+    if (rn || merchantRn) {
+      const local = rowsRef.current.find((r) => r.id !== id && r.status !== "error" && (
+        (rn && r.refNo && normRef(r.refNo) === rn) ||
+        (merchantRn && r.merchantOrderNo && normRef(r.merchantOrderNo) === merchantRn)
+      ));
       let old = null;
       try {
         const { data: hit } = await supabase.rpc("check_receipt_dupe", { p_hash: null, p_ref: rn });
         if (hit?.length) old = hit[0];
       } catch {}
       if (local || old) {
+        const repeatedIdentifier = rn && local?.refNo && normRef(local.refNo) === rn ? d.refNo : d.merchantOrderNo;
         const reason = local
-          ? `هەمان ژمارەی مامەڵە (${d.refNo}) لەم کۆمەڵەیەدا دووبارە بووەتەوە`
+          ? `هەمان ناسنامەی مامەڵە (${repeatedIdentifier}) لەم کۆمەڵەیەدا دووبارە بووەتەوە`
           : `ژمارەی مامەڵەی ${d.refNo} پێشتر تۆمار کراوە لە ${old?.d ? new Date(old.d).toLocaleString("en-GB") : "پێشتر"}${old?.who ? ` لەلایەن ${old.who}` : ""}`;
         return {
           id, url: img.url, blob: img.blob, hash: img.hash, ocrImage: img.b64 || img.ocrImage, mediaType: img.mediaType,
@@ -6303,25 +6331,18 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
       reviewCode = reviewCode || "unknown_platform";
     }
 
-    // Do not trust vision alone when the tested WeChat layout exposes all three
-    // accounting values. Validate gross ≈ order amount + fee deterministically.
-    let weChatValidation = d?.validation || null;
-    if (plat === "WeChat" && amountV > 0 && orderAmountV != null) {
-      const expectedGross = orderAmountV + feeV;
-      const delta = Math.abs(amountV - expectedGross);
-      const tolerance = Math.max(0.02, amountV * 0.00005);
-      const grossMatches = delta <= tolerance;
-      weChatValidation = {
-        ...(weChatValidation || {}),
-        type: "wechat_gross_equation",
-        checked: true,
-        grossMatches,
-        expectedGross,
-        delta,
-        tolerance,
+    // Never trust OCR arithmetic. Validate every layout that exposes an order amount,
+    // using integer minor units to avoid floating-point false mismatches.
+    let arithmeticValidation = d?.validation || null;
+    if (amountV > 0 && orderAmountV != null) {
+      const checked = validateReceiptArithmetic({ amount: amountV, fee: feeV, orderAmount: orderAmountV, netAmount: netV });
+      arithmeticValidation = {
+        ...(arithmeticValidation || {}), type: "gross_order_fee_equation", checked: true,
+        grossMatches: !checked.issues.includes("gross_order_fee_mismatch"), issues: checked.issues,
+        expectedGross: checked.orderAmount + checked.fee,
       };
-      if (!grossMatches) {
-        reviewReasons.push(`وی‌چات: کۆی گشتی لەگەڵ بڕی بنەڕەتی + فی یەک ناگرێتەوە`);
+      if (!checked.valid) {
+        reviewReasons.push("کۆی گشتی، بڕی بنەڕەتی، فی و نەت یەک ناگرنەوە");
         reviewCode = reviewCode || "amount_validation";
       }
     }
@@ -6369,7 +6390,7 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
       note, ageDays,
       amount: amountV, fee: feeV, feeOriginal: feeOrig, feeDiscount: feeDisc, net: netV,
       orderAmount: orderAmountV,
-      validation: weChatValidation,
+      validation: arithmeticValidation,
       currency: d?.currency, sender: d?.sender, receiver: d?.receiver, refNo: d?.refNo,
       merchantOrderNo: d?.merchantOrderNo || null,
       paymentMethod: d?.paymentMethod || null, cardLast4: d?.cardLast4 || null,
@@ -6545,8 +6566,10 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
     patchRow(id, (r) => {
       const numeric = ["amount", "fee", "net", "orderAmount", "feeOriginal", "feeDiscount"].includes(key);
       const next = { ...r, [key]: numeric ? (value === "" ? "" : Number(value)) : value, manualEdited: true };
-      if ((key === "amount" || key === "fee") && Number.isFinite(Number(next.amount)) && Number.isFinite(Number(next.fee))) {
-        next.net = Math.max(0, Number(next.amount) - Number(next.fee));
+      if (["amount", "fee", "orderAmount"].includes(key) && Number.isFinite(Number(next.amount)) && Number.isFinite(Number(next.fee))) {
+        next.net = Number.isFinite(Number(next.orderAmount)) && next.orderAmount !== ""
+          ? Math.max(0, Number(next.orderAmount))
+          : Math.max(0, Number(next.amount) - Number(next.fee));
       }
       return next;
     });
@@ -6559,6 +6582,8 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
     if (!(Number(r.amount) > 0) || !String(r.currency || "").trim()) {
       return flash("بڕ و دراو پێویستن پێش پشتڕاستکردنەوە");
     }
+    const arithmetic = validateReceiptArithmetic({ amount: r.amount, fee: r.fee, orderAmount: r.orderAmount, netAmount: r.net });
+    if (!arithmetic.valid) return flash("ژمارەکانی فیشەکە یەک ناگرنەوە؛ بڕ، فی، بڕی بنەڕەتی و نەت بپشکنە");
     patchRow(id, {
       status: "ok", counted: true, reviewRequired: false,
       rejectCode: null, rejectReason: null,
@@ -6825,7 +6850,7 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
 
   return (
     <div className="space-y-4">
-      <ReceiptLifecycle stage={lifecycleStage} />
+      <ReceiptLifecycle stage={lifecycleStage} lang={_lang} />
 
       {allowDirection && (
         <Card className="p-4">
@@ -7000,7 +7025,7 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
           )}
 
           {inspectedReceipt && (
-            <ReceiptSmartInspector receipt={inspectedReceipt} data={data}
+            <ReceiptSmartInspector receipt={inspectedReceipt} data={data} lang={_lang}
               Card={Card} Btn={Btn} Pill={Pill} clamp01={clamp01} fmtMoney={fmtMoney} num={num} platMeta={platMeta}
               onEdit={() => setEditingId(inspectedReceipt.id)}
               onConfirm={() => confirmRow(inspectedReceipt.id)}
@@ -7101,14 +7126,14 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
                           <div><div className="flex justify-between"><Lbl>دراو</Lbl>{fieldConf(r, "currency")}</div><Inp value={r.currency ?? ""} onChange={(e) => editField(r.id, "currency", e.target.value.toUpperCase())} placeholder="IQD / USD / CNY..." /></div>
                           <div><div className="flex justify-between"><Lbl>فی / عمولە</Lbl>{fieldConf(r, "fee")}</div><Inp type="number" value={r.fee ?? ""} onChange={(e) => editField(r.id, "fee", e.target.value)} /></div>
                           <div><Lbl>بڕی نەت</Lbl><Inp type="number" value={r.net ?? ""} onChange={(e) => editField(r.id, "net", e.target.value)} /></div>
-                          <div><div className="flex justify-between"><Lbl>Order amount / بڕی بنەڕەتی</Lbl>{fieldConf(r, "orderAmount")}</div><Inp type="number" value={r.orderAmount ?? ""} onChange={(e) => editField(r.id, "orderAmount", e.target.value)} /></div>
-                          <div><div className="flex justify-between"><Lbl>ژمارەی مامەڵە / Order No.</Lbl>{fieldConf(r, "refNo")}</div><Inp value={r.refNo ?? ""} onChange={(e) => editField(r.id, "refNo", e.target.value)} /></div>
-                          <div><div className="flex justify-between"><Lbl>Merchant order No.</Lbl>{fieldConf(r, "merchantOrderNo")}</div><Inp value={r.merchantOrderNo ?? ""} onChange={(e) => editField(r.id, "merchantOrderNo", e.target.value)} /></div>
-                          <div><div className="flex justify-between"><Lbl>Payment method</Lbl>{fieldConf(r, "paymentMethod")}</div><Inp value={r.paymentMethod ?? ""} onChange={(e) => editField(r.id, "paymentMethod", e.target.value)} placeholder="Visa / Mastercard..." /></div>
-                          <div><Lbl>Card last 4</Lbl><Inp value={r.cardLast4 ?? ""} onChange={(e) => editField(r.id, "cardLast4", e.target.value.replace(/\D/g, "").slice(-4))} placeholder="0233" /></div>
-                          <div><div className="flex justify-between"><Lbl>Transaction status</Lbl>{fieldConf(r, "transactionStatus")}</div><Inp value={r.transactionStatus ?? ""} onChange={(e) => editField(r.id, "transactionStatus", e.target.value)} /></div>
-                          <div><Lbl>Recipient note</Lbl><Inp value={r.recipientNote ?? ""} onChange={(e) => editField(r.id, "recipientNote", e.target.value)} /></div>
-                          <div><Lbl>Merchant / Display name</Lbl><Inp value={r.merchantName ?? ""} onChange={(e) => editField(r.id, "merchantName", e.target.value)} /></div>
+                          <div><div className="flex justify-between"><Lbl>{l10n("بڕی بنەڕەتی", "Order amount", "مبلغ الطلب الأساسي")}</Lbl>{fieldConf(r, "orderAmount")}</div><Inp type="number" value={r.orderAmount ?? ""} onChange={(e) => editField(r.id, "orderAmount", e.target.value)} /></div>
+                          <div><div className="flex justify-between"><Lbl>{l10n("ژمارەی مامەڵە", "Order number", "رقم الطلب")}</Lbl>{fieldConf(r, "refNo")}</div><Inp value={r.refNo ?? ""} onChange={(e) => editField(r.id, "refNo", e.target.value)} /></div>
+                          <div><div className="flex justify-between"><Lbl>{l10n("ژمارەی مامەڵەی فرۆشیار", "Merchant order number", "رقم طلب التاجر")}</Lbl>{fieldConf(r, "merchantOrderNo")}</div><Inp value={r.merchantOrderNo ?? ""} onChange={(e) => editField(r.id, "merchantOrderNo", e.target.value)} /></div>
+                          <div><div className="flex justify-between"><Lbl>{l10n("شێوازی پارەدان", "Payment method", "طريقة الدفع")}</Lbl>{fieldConf(r, "paymentMethod")}</div><Inp value={r.paymentMethod ?? ""} onChange={(e) => editField(r.id, "paymentMethod", e.target.value)} placeholder="Visa / Mastercard..." /></div>
+                          <div><Lbl>{l10n("کۆتا ٤ ژمارەی کارت", "Card last 4 digits", "آخر 4 أرقام من البطاقة")}</Lbl><Inp value={r.cardLast4 ?? ""} onChange={(e) => editField(r.id, "cardLast4", e.target.value.replace(/\D/g, "").slice(-4))} placeholder="0233" /></div>
+                          <div><div className="flex justify-between"><Lbl>{l10n("دۆخی مامەڵە", "Transaction status", "حالة المعاملة")}</Lbl>{fieldConf(r, "transactionStatus")}</div><Inp value={r.transactionStatus ?? ""} onChange={(e) => editField(r.id, "transactionStatus", e.target.value)} /></div>
+                          <div><Lbl>{l10n("تێبینی وەرگر", "Recipient note", "ملاحظة المستفيد")}</Lbl><Inp value={r.recipientNote ?? ""} onChange={(e) => editField(r.id, "recipientNote", e.target.value)} /></div>
+                          <div><Lbl>{l10n("ناوی فرۆشیار", "Merchant display name", "اسم التاجر الظاهر")}</Lbl><Inp value={r.merchantName ?? ""} onChange={(e) => editField(r.id, "merchantName", e.target.value)} /></div>
                           <div><div className="flex justify-between"><Lbl>وەرگر</Lbl>{fieldConf(r, "receiver")}</div><Inp value={r.receiver ?? ""} onChange={(e) => editField(r.id, "receiver", e.target.value)} /></div>
                           <div><div className="flex justify-between"><Lbl>ناردەر</Lbl>{fieldConf(r, "sender")}</div><Inp value={r.sender ?? ""} onChange={(e) => editField(r.id, "sender", e.target.value)} /></div>
                           <div><div className="flex justify-between"><Lbl>ئەپ / بانک</Lbl>{fieldConf(r, "platform")}</div><Inp value={r.bank ?? r.platform ?? ""} onChange={(e) => { editField(r.id, "bank", e.target.value); editField(r.id, "platform", detectPlatform(e.target.value) || r.platform); }} /></div>
@@ -7204,9 +7229,10 @@ function ReceiptsHub({ data, usr, batches, reloadBatches, flash, onMakeTx, profi
   const inbox = (batches || []).filter((b) => (tab === "inbox" ? b.status === "new" : b.status !== "new"));
 
   const waN = (batches || []).filter((b) => b.status === "new" && b.source === "whatsapp").length;
-  const TABS = [["control", "Control Room"], ["inbox", `ئینباکس (${newN})`], ["done", tr("بەستراوەکان")], ["loc", tr("لای کێ")], ["add", tr("ناردنی فیش")], ["wa", tr("واتساپ")]];
+  const TABS = [["control", l10n("ژووری کۆنترۆڵ", "Control Room", "غرفة التحكم")], ["inbox", `${l10n("ئینباکس", "Inbox", "صندوق الوارد")} (${newN})`], ["done", tr("بەستراوەکان")], ["loc", tr("لای کێ")], ["add", tr("ناردنی فیش")], ["wa", tr("واتساپ")]];
   const lifecycleOf = (b) => b.receipt_stage || (b.tx_id ? "matched" : b.status === "new" ? "needs_review" : "verified");
   const lifecycleTone = (stage) => stage === "matched" || stage === "finalized" ? "green" : stage === "rejected" ? "red" : stage === "archived" ? "slate" : "amber";
+  const lifecycleLabel = (stage) => ({ received: l10n("وەرگیرا", "Received", "مستلم"), reading: l10n("دەخوێندرێتەوە", "Reading", "قيد القراءة"), needs_review: l10n("پشکنین پێویستە", "Needs review", "بحاجة إلى مراجعة"), verified: l10n("پشتڕاستکراو", "Verified", "موثّق"), matched: l10n("بەستراو", "Matched", "مرتبط"), rejected: l10n("ڕەتکراو", "Rejected", "مرفوض"), finalized: l10n("کۆتایی‌هاتوو", "Finalized", "مغلق نهائياً"), archived: l10n("ئەرشیفکراو", "Archived", "مؤرشف") }[stage] || stage);
   const summary = (batches || []).reduce((out, b) => {
     const stage = lifecycleOf(b); out.total += Number(b.n) || 0; out[stage] = (out[stage] || 0) + (Number(b.n) || 0);
     out.duplicates += Number(b.dup_n) || 0; out.failed += Number(b.rejected_n) || 0; return out;
@@ -7229,7 +7255,7 @@ function ReceiptsHub({ data, usr, batches, reloadBatches, flash, onMakeTx, profi
 
   return (
     <div className="space-y-4">
-      <H sub="فیشەکانی کڕیاران و هاوبەشان — پشکنین، کۆکردنەوە، و بەستنەوە بە مامەڵەوە">{tr("فیشەکان")}</H>
+      <H sub={l10n("فیشەکانی کڕیاران و هاوبەشان — پشکنین، کۆکردنەوە و بەستنەوە بە مامەڵە", "Customer and partner receipts — review, reconcile, and match to transactions", "إيصالات الزبائن والشركاء — مراجعة وتسوية وربط بالمعاملات")}>{tr("فیشەکان")}</H>
 
       <div className="flex gap-1 rounded-[var(--r)] p-1 overflow-x-auto" style={{ background: "var(--surf)", border: "1px solid var(--line)", boxShadow: "var(--sh-1)" }}>
         {TABS.map(([k, t]) => (
@@ -7240,14 +7266,14 @@ function ReceiptsHub({ data, usr, batches, reloadBatches, flash, onMakeTx, profi
       </div>
 
       {tab === "control" && <>
-        <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-2" role="status" aria-label="Persisted receipt summary">
-          {[["Total / کۆ", summary.total], ["Reading / خوێندنەوە", summary.reading], ["Needs review / پشکنین", summary.needs_review], ["Verified / پشتڕاست", summary.verified], ["Matched / بەستراو", summary.matched], ["Rejected / ڕەتکراو", summary.rejected], ["Finalized / کۆتایی", summary.finalized], ["Archived / ئەرشیف", summary.archived]].map(([label, value]) => <Card key={label} className="p-3"><div className="text-[10px] text-[var(--txt-3)]">{label}</div><div className="text-xl font-bold mt-1" style={num}>{value}</div></Card>)}
+        <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-2" role="status" aria-label={l10n("پوختەی فیشە هەڵگیراوەکان", "Persisted receipt summary", "ملخص الإيصالات المحفوظة")}>
+          {[[l10n("کۆ", "Total", "المجموع"), summary.total], ...["reading", "needs_review", "verified", "matched", "rejected", "finalized", "archived"].map((stage) => [lifecycleLabel(stage), summary[stage]])].map(([label, value]) => <Card key={label} className="p-3"><div className="text-[10px] text-[var(--txt-3)]">{label}</div><div className="text-xl font-bold mt-1" style={num}>{value}</div></Card>)}
         </div>
         <Card className="p-4 space-y-3">
           <div className="grid grid-cols-1 md:grid-cols-[minmax(240px,1fr)_180px_160px] gap-2">
-            <label className="relative"><span className="sr-only">Search receipt batches</span><Search className="absolute start-3 top-3 w-4 h-4 text-[var(--txt-3)]"/><Inp className="ps-9" value={batchSearch} onChange={(e) => { setBatchSearch(e.target.value); setBatchPage(1); }} placeholder="Batch ID, customer, partner, platform, currency…" /></label>
-            <Sel aria-label="Lifecycle filter" value={stageFilter} onChange={(e) => { setStageFilter(e.target.value); setBatchPage(1); }}><option value="all">All lifecycle states</option>{["received","reading","needs_review","verified","matched","rejected","finalized","archived"].map((x) => <option value={x} key={x}>{x.replace("_", " ")}</option>)}</Sel>
-            <Sel aria-label="Sort batches" value={batchSort} onChange={(e) => setBatchSort(e.target.value)}><option value="newest">Newest</option><option value="oldest">Oldest</option><option value="amount">Amount</option><option value="status">Status</option></Sel>
+            <label className="relative"><span className="sr-only">{l10n("گەڕان لە کۆمەڵە فیشەکان", "Search receipt batches", "البحث في دُفعات الإيصالات")}</span><Search className="absolute start-3 top-3 w-4 h-4 text-[var(--txt-3)]"/><Inp className="ps-9" value={batchSearch} onChange={(e) => { setBatchSearch(e.target.value); setBatchPage(1); }} placeholder={l10n("ناسنامە، کڕیار، هاوبەش، پلاتفۆرم یان دراو…", "Batch ID, customer, partner, platform, or currency…", "معرّف الدفعة أو الزبون أو الشريك أو المنصة أو العملة…")} /></label>
+            <Sel aria-label={l10n("فلتەری ڕێڕەو", "Lifecycle filter", "تصفية دورة الإيصال")} value={stageFilter} onChange={(e) => { setStageFilter(e.target.value); setBatchPage(1); }}><option value="all">{l10n("هەموو دۆخەکان", "All lifecycle states", "جميع الحالات")}</option>{["received","reading","needs_review","verified","matched","rejected","finalized","archived"].map((x) => <option value={x} key={x}>{lifecycleLabel(x)}</option>)}</Sel>
+            <Sel aria-label={l10n("ڕیزکردنی کۆمەڵەکان", "Sort batches", "ترتيب الدُفعات")} value={batchSort} onChange={(e) => setBatchSort(e.target.value)}><option value="newest">{l10n("نوێترین", "Newest", "الأحدث")}</option><option value="oldest">{l10n("کۆنترین", "Oldest", "الأقدم")}</option><option value="amount">{l10n("بڕ", "Amount", "المبلغ")}</option><option value="status">{l10n("دۆخ", "Status", "الحالة")}</option></Sel>
           </div>
           {!pageBatches.length ? <StatePanel type="empty" title="No receipt batches match / هیچ کۆمەڵەیەک نەدۆزرایەوە" compact /> : <div className="space-y-2">{pageBatches.map((b) => <button type="button" key={b.id} onClick={() => setSel(b.id)} className="w-full min-h-14 text-start rounded-xl p-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--ac)]" style={{ background: "var(--surf-2)", border: "1px solid var(--line)" }} aria-label={`Open batch ${b.id}`}><div className="flex justify-between gap-3"><div className="min-w-0"><div className="font-bold truncate">{b.customer_name || (b.partner_id ? usr(b.partner_id).name : b.id)}</div><div className="text-[10px] text-[var(--txt-3)] mt-1" dir="ltr">{b.id} · {new Date(b.created_at).toLocaleString("en-GB")}</div></div><div className="text-end shrink-0"><Pill tone={lifecycleTone(lifecycleOf(b))}>{lifecycleOf(b).replace("_", " ")}</Pill><div className="text-xs font-bold mt-1" style={num}>{fmtMoney(data, b.total_net, b.currency)} {b.currency}</div></div></div></button>)}</div>}
           {pageBatches.length < filteredBatches.length && <Btn kind="ghost" className="w-full" onClick={() => setBatchPage((p) => p + 1)}>Load {Math.min(pageSize, filteredBatches.length - pageBatches.length)} more / زیاتر</Btn>}
@@ -7932,7 +7958,7 @@ function BatchDetail({ id, back, usr, data, profile, onMakeTx, flash, reloadBatc
   return (
     <div className="space-y-4">
       <Back onClick={back} t={tr("گەڕانەوە")} />
-      <ReceiptLifecycle stage={lifecycleStage} />
+      <ReceiptLifecycle stage={lifecycleStage} lang={_lang} />
       <div className="flex items-start justify-between flex-wrap gap-2">
         <div>
           <h2 className="text-xl font-bold text-[var(--txt)]">{b.customer_name || (b.partner_id ? usr(b.partner_id).name : "—")}</h2>
@@ -10443,7 +10469,7 @@ function ApprovalCenter({
         </Card>
       )}
 
-      <ReceiptPolicyPanel client={supabase} isOwner={isOwner} flash={flash} />
+      <ReceiptPolicyPanel client={supabase} isOwner={isOwner} flash={flash} lang={_lang} />
 
       <Card className="p-5">
         <SecLbl>Transaction Version History</SecLbl>

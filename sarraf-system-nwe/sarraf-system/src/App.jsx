@@ -1574,28 +1574,48 @@ export default function App() {
     }
   };
 
-  const loadAll = async () => {
+  const loadAll = async (activeProfile = profile) => {
     try {
       reloadBatches();
-      const [c, u, l, t, a, ac, rh] = await Promise.all([
+      const adminMode = activeProfile?.role === "admin";
+      const noQuery = Promise.resolve({ data: [], error: null });
+      const [c, u, l, t, a, ac, rh, apr, ape, tv, ctrl] = await Promise.all([
         supabase.from("currencies").select("*").order("code"),
         supabase.from("app_users").select("*").order("created_at"),
         supabase.from("ledger").select("*").order("date"),
         supabase.from("txs").select("*").order("date"),
-        supabase.from("audit").select("*").order("date", { ascending: false }).limit(300),
+        supabase.from("audit").select("*").order("date", { ascending: false }).limit(500),
         supabase.from("account_ledger").select("*").order("created_at", { ascending: false }).limit(5000),
-        // Optional for backwards compatibility. Cross-pair USD bookkeeping uses it when available.
         supabase.from("rate_history").select("*").order("created_at", { ascending: true }).limit(5000),
+        adminMode ? supabase.from("approval_requests").select("*").order("created_at", { ascending: false }).limit(500) : noQuery,
+        adminMode ? supabase.from("approval_events").select("*").order("created_at", { ascending: false }).limit(1500) : noQuery,
+        adminMode ? supabase.from("tx_versions").select("*").order("created_at", { ascending: false }).limit(3000) : noQuery,
+        adminMode ? supabase.rpc("sarraf_control_snapshot") : Promise.resolve({ data: null, error: null }),
       ]);
-      const queryErrors = [c, u, l, t, a, ac].filter((r) => r?.error);
+      const queryErrors = [c, u, l, t, a, ac, apr, ape, tv, ctrl].filter((r) => r?.error);
       if (queryErrors.length) throw queryErrors[0].error;
       const d = {
         currencies: (c.data || []).map((r) => ({ id: r.id, code: r.code, name: r.name, symbol: r.symbol, dec: r.dec, external: !!r.external, buyRate: r.buy_rate == null ? null : +r.buy_rate, sellRate: r.sell_rate == null ? null : +r.sell_rate, rateUpdated: r.rate_updated })),
         users: (u.data || []).map((r) => ({ id: r.id, authId: r.auth_id, name: r.name, role: r.role, adminLevel: r.admin_level || null, rate: +r.rate || 0, scope: Array.isArray(r.scope_curs) ? r.scope_curs : [], phone: r.phone, address: r.address, note: r.note, deleted: r.deleted })),
-        ledger: (l.data || []).map((r) => ({ id: r.id, type: r.type, owner: r.owner, investorId: r.investor_id, curId: r.cur_id, amount: +r.amount, partnerId: r.partner_id, txId: r.tx_id, note: r.note, date: r.date })),
+        ledger: (l.data || []).map((r) => ({
+          id: r.id, type: r.type, owner: r.owner, investorId: r.investor_id, curId: r.cur_id,
+          amount: +r.amount, partnerId: r.partner_id, txId: r.tx_id, note: r.note, date: r.date,
+          reversalOf: r.reversal_of || null, commandKey: r.command_key || null,
+          createdBy: r.created_by || null, approvalId: r.approval_id || null,
+          commissionRateSnapshot: r.commission_rate_snapshot == null ? null : +r.commission_rate_snapshot,
+          commissionAmountSnapshot: r.commission_amount_snapshot == null ? null : +r.commission_amount_snapshot,
+        })),
         txs: (t.data || []).map((r) => ({ id: r.id, code: r.code, type: r.type, direct: !!r.direct,
           pairId: r.pair_id, directRole: r.direct_role, ownMoney: !!r.own_money,
-          buyRate: r.buy_rate == null ? null : +r.buy_rate, buyTotal: r.buy_total == null ? null : +r.buy_total, cpId: r.cp_id, cpName: r.cp_name, curId: r.cur_id, amount: +r.amount, rate: +r.rate, againstId: r.against_id, total: +r.total, partnerId: r.partner_id, status: r.status, paidAt: r.paid_at, profit: r.profit == null ? null : +r.profit, profitCurId: r.profit_cur_id, note: r.note, date: r.date, edited: r.edited, deleted: r.deleted })),
+          buyRate: r.buy_rate == null ? null : +r.buy_rate, buyTotal: r.buy_total == null ? null : +r.buy_total,
+          costBasisUsd: r.cost_basis_usd == null ? null : +r.cost_basis_usd,
+          partnerRateSnapshot: r.partner_rate_snapshot == null ? null : +r.partner_rate_snapshot,
+          partnerFeeSnapshot: r.partner_fee_snapshot == null ? null : +r.partner_fee_snapshot,
+          versionNo: Number(r.version_no) || 0, lastApprovalId: r.last_approval_id || null,
+          cpId: r.cp_id, cpName: r.cp_name, curId: r.cur_id, amount: +r.amount, rate: +r.rate, againstId: r.against_id,
+          total: +r.total, partnerId: r.partner_id, status: r.status, paidAt: r.paid_at,
+          profit: r.profit == null ? null : +r.profit, profitCurId: r.profit_cur_id, note: r.note, date: r.date,
+          edited: r.edited, deleted: r.deleted })),
         audit: (a.data || []).map((r) => ({ id: r.id, date: r.date, action: r.action, detail: r.detail })),
         acct: (ac.data || []).map((r) => ({ id: r.id, userId: r.user_id, kind: r.kind, curId: r.cur_id,
           amount: +r.amount, type: r.type, refId: r.ref_id, note: r.note, date: r.created_at })),
@@ -1605,6 +1625,26 @@ export default function App() {
           sellRate: r.sell_rate == null ? null : +r.sell_rate,
           createdAt: r.created_at,
         })),
+        approvals: (apr.data || []).map((r) => ({
+          id: r.id, requestKey: r.request_key, operation: r.operation, subjectKey: r.subject_key || null,
+          payload: r.payload || {}, amountUsd: r.amount_usd == null ? null : +r.amount_usd,
+          reason: r.reason, status: r.status, makerAuthId: r.maker_auth_id, makerAppId: r.maker_app_id,
+          makerName: r.maker_name, checkerAuthId: r.checker_auth_id, checkerAppId: r.checker_app_id,
+          checkerName: r.checker_name, decisionNote: r.decision_note, ownerOverride: !!r.owner_override,
+          result: r.result, errorText: r.error_text, createdAt: r.created_at, expiresAt: r.expires_at,
+          decidedAt: r.decided_at, executedAt: r.executed_at,
+        })),
+        approvalEvents: (ape.data || []).map((r) => ({
+          id: r.id, approvalId: r.approval_id, event: r.event, actorAuthId: r.actor_auth_id,
+          actorAppId: r.actor_app_id, actorName: r.actor_name, detail: r.detail, createdAt: r.created_at,
+        })),
+        txVersions: (tv.data || []).map((r) => ({
+          id: r.id, txId: r.tx_id, txCode: r.tx_code, versionNo: r.version_no, action: r.action,
+          beforeData: r.before_data, afterData: r.after_data, commandKey: r.command_key,
+          approvalId: r.approval_id, makerAuthId: r.maker_auth_id, checkerAuthId: r.checker_auth_id,
+          actorAuthId: r.actor_auth_id, actorAppId: r.actor_app_id, createdAt: r.created_at,
+        })),
+        control: ctrl.data && typeof ctrl.data === "object" ? ctrl.data : null,
       };
       setData(d);
       // Financial data is intentionally kept in memory only. Do not persist
@@ -1675,7 +1715,7 @@ export default function App() {
 
         if (cancelled) return;
         setAccessState("ready");
-        await loadAll();
+        await loadAll(gateProfile);
       } catch (err) {
         console.error("security bootstrap", err);
         if (!cancelled) {
@@ -1698,6 +1738,14 @@ export default function App() {
   const commandKey = (kind = "cmd") => {
     const id = globalThis.crypto?.randomUUID?.() || uid();
     return `${kind}:${profile?.id || "user"}:${id}`;
+  };
+
+  const approvalQueued = (result, label = "کردار") => {
+    if (!result?.approval_required) return false;
+    const id = result?.approval_id ? ` — ${result.approval_id}` : "";
+    flash(`${label} بۆ پەسەندکردنی ئەدمینی دووەم نێردرا${id}`);
+    setPage("approvals");
+    return true;
   };
   const rpcStrict = async (name, args) => {
     const { data: out, error } = await supabase.rpc(name, args);
@@ -2044,12 +2092,13 @@ export default function App() {
     if (!(Math.abs(+f.amount) > 0)) { flash("بڕ پێویستە"); return; }
     const amount = roundMoney(data, f.dir === "in" ? Math.abs(+f.amount) : -Math.abs(+f.amount), f.curId);
     const e = { id: uid(), type: f.dir === "in" ? "deposit" : "withdraw", owner: f.owner === "self" ? "self" : "investor", investorId: f.owner === "self" ? null : f.owner, curId: f.curId, amount, partnerId: null, txId: null, note: f.note, date: now() };
-    await rpcStrict("sarraf_post_ledger_command", {
+    const result = await rpcStrict("sarraf_post_ledger_command", {
       p_ledger: [LR(e)],
       p_command_key: commandKey("cash"),
       p_action: f.dir === "in" ? "پارە داخڵکردن" : "پارە دەرهێنان",
       p_detail: `${fmt(Math.abs(amount))} ${cur(f.curId).code} — ${f.owner === "self" ? "هی خۆم" : usr(f.owner).name}`,
     });
+    if (approvalQueued(result, f.dir === "in" ? "پارە داخڵکردن" : "پارە دەرهێنان")) return result;
     flash("تۆمار کرا ✓");
   });
 
@@ -2145,15 +2194,17 @@ export default function App() {
         const detail = `${fmt(amount)} ${cur(f.curId).code} · خێر ${fmt(profit)} ${cur(f.againstId).code}`;
         const result = await rpcStrict("sarraf_commit_transactions", {
           p_txs: [TR(t1), TR(t2)],
-          p_ledger: es.map(LR),
+          // Phase 13C ignores browser accounting rows and calculates them on the server.
+          p_ledger: [],
           p_batch_id: null,
           p_command_key: commandKey("direct"),
           p_action: "مامەڵەی ڕاستەوخۆ",
           p_detail: detail,
         });
+        setEditTx(null);
+        if (approvalQueued(result, "مامەڵەی ڕاستەوخۆ")) return result;
         const saved = Array.isArray(result?.transactions) ? result.transactions : [];
         const codes = saved.map((x) => x.code).filter(Boolean);
-        setEditTx(null);
         flash(`مامەڵە تۆمار کرا ✓${codes.length ? ` — #${codes.join("/")}` : ""} — خێر ${fmt(profit)} ${cur(f.againstId).code}`);
       });
     }
@@ -2205,7 +2256,7 @@ export default function App() {
       if (existing) {
         result = await rpcStrict("sarraf_edit_transaction", {
           p_tx: TR(t),
-          p_ledger: entries,
+          p_ledger: [],
           p_command_key: commandKey("edit"),
           p_action: "دەستکاری مامەڵە",
           p_detail: detail,
@@ -2213,7 +2264,7 @@ export default function App() {
       } else {
         result = await rpcStrict("sarraf_commit_transactions", {
           p_txs: [TR(t)],
-          p_ledger: entries,
+          p_ledger: [],
           p_batch_id: f.batchId || null,
           p_command_key: commandKey("tx"),
           p_action: t.type === "buy" ? "کڕین" : "فرۆشتن",
@@ -2221,10 +2272,13 @@ export default function App() {
         });
       }
 
-      const saved = Array.isArray(result?.transactions) ? result.transactions[0] : result?.transaction;
-      if (saved?.code) t.code = saved.code;
       if (f.batchId) setPendingBatch(null);
       reloadBatches();
+      setEditTx(null);
+      if (approvalQueued(result, existing ? "دەستکاری مامەڵە" : "مامەڵە")) return result;
+
+      const saved = Array.isArray(result?.transactions) ? result.transactions[0] : result?.transaction;
+      if (saved?.code) t.code = saved.code;
 
       if (!existing) {
         const who = t.cpId ? usr(t.cpId).name : t.cpName;
@@ -2240,7 +2294,6 @@ export default function App() {
             `${who} · ${fmt(t.total, cur(f.againstId).dec ?? 0)} ${cur(f.againstId).code}`, null, t.id);
         }
       }
-      setEditTx(null);
       flash(existing ? "دەستکاری پاشەکەوت کرا ✓" : `مامەڵە تۆمار کرا ✓${t.code ? ` — #${t.code}` : ""}`);
     });
   };
@@ -2252,13 +2305,14 @@ export default function App() {
     }
     if (!window.confirm("ئەم مامەڵەیە بە تۆماری هەڵوەشاندنەوە ناچالاک بکرێت؟ هیچ تۆمارێکی دەفتەر ناسڕدرێتەوە.")) return false;
     return run(async () => {
-      await rpcStrict("sarraf_void_transaction", {
+      const result = await rpcStrict("sarraf_void_transaction", {
         p_tx_id: t.id,
         p_command_key: commandKey("void"),
         p_action: "هەڵوەشاندنەوەی مامەڵە",
         p_detail: `#${t.code || "—"} — ${fmt(t.amount)} ${cur(t.curId).code}`,
       });
       reloadBatches();
+      if (approvalQueued(result, "هەڵوەشاندنەوەی مامەڵە")) return result;
       flash("مامەڵەکە هەڵوەشێندرایەوە ✓");
     });
   };
@@ -2307,12 +2361,13 @@ export default function App() {
         curId: f.curId, amount: -amt, partnerId: null, txId: null,
         note: `${f.category}${f.note ? " — " + f.note : ""}`, date: now(),
       };
-      await rpcStrict("sarraf_post_ledger_command", {
+      const result = await rpcStrict("sarraf_post_ledger_command", {
         p_ledger: [LR(e)],
         p_command_key: commandKey("expense"),
         p_action: isPayout ? "پارەدانی خێری وەبەرهێنەر" : "خەرجی",
         p_detail: `${fmt(amt)} ${cur(f.curId).code} — ${isPayout ? usr(f.investorId).name : f.category}`,
       });
+      if (approvalQueued(result, isPayout ? "پارەدانی خێری وەبەرهێنەر" : "خەرجی")) return result;
       flash("تۆمار کرا ✓");
     });
   };
@@ -2327,15 +2382,14 @@ export default function App() {
            { ...base, id: uid(), type: "transfer", amount: +amt, partnerId: f.partnerId }]
         : [{ ...base, id: uid(), type: "transfer", amount: +amt, partnerId: null },
            { ...base, id: uid(), type: "transfer", amount: -amt, partnerId: f.partnerId }];
-      const fr = usr(f.partnerId).rate || 0;
-      if (f.dir === "to" && fr > 0) es.push({ ...base, id: uid(), type: "partner_fee", amount: -roundMoney(data, amt * fr / 100, f.curId), partnerId: f.partnerId, note: `عمولەی ${fr}٪` });
-
-      await rpcStrict("sarraf_post_ledger_command", {
+      // Partner commission is calculated and frozen by Phase 13C on the server.
+      const result = await rpcStrict("sarraf_post_ledger_command", {
         p_ledger: es.map(LR),
         p_command_key: commandKey("partner-transfer"),
         p_action: "گواستنەوە",
         p_detail: `${fmt(amt)} ${cur(f.curId).code} ${f.dir === "to" ? "بۆ لای" : "لە لای"} ${usr(f.partnerId).name}`,
       });
+      if (approvalQueued(result, "گواستنەوەی هاوبەش")) return result;
       flash("گواستنەوە تۆمار کرا ✓");
     });
   };
@@ -2471,13 +2525,14 @@ export default function App() {
         investorId: f.userId, curId: f.curId, amount: sign * amt, note: f.note, date: at }));
     }
 
-    await rpcStrict("sarraf_account_move", {
+    const result = await rpcStrict("sarraf_account_move", {
       p_account_row: ae,
-      p_ledger: ledgerRows,
+      p_ledger: [],
       p_command_key: commandKey("account-move"),
       p_action: f.dir === "in" ? "دانانی پارە" : "دەرهێنانی پارە",
       p_detail: `${fmt(amt)} ${cur(f.curId).code} — ${u.name}`,
     });
+    if (approvalQueued(result, f.dir === "in" ? "دانانی پارە" : "دەرهێنانی پارە")) return result;
 
     await notify(f.userId, "transfer",
       f.dir === "in" ? tr("پارە خرایە حسابەکەت") : tr("پارە لە حسابەکەت دەرهێنرا"),
@@ -2511,14 +2566,15 @@ export default function App() {
     if (a.role === "investor") inv.push(LR({ id: uid(), type: "withdraw", owner: "investor", investorId: f.fromId, curId: f.curId, amount: -amt, note: `بۆ ${b.name}`, date: at }));
     if (b.role === "investor") inv.push(LR({ id: uid(), type: "deposit", owner: "investor", investorId: f.toId, curId: f.curId, amount: +amt, note: `لە ${a.name}`, date: at }));
 
-    await rpcStrict("sarraf_account_transfer", {
-      p_account_rows: rows,
+    const result = await rpcStrict("sarraf_account_transfer", {
+      p_account_rows: [],
       p_transfer: transferRow,
-      p_ledger: inv,
+      p_ledger: [],
       p_command_key: commandKey("account-transfer"),
       p_action: "گواستنەوەی حساب",
       p_detail: `${fmt(amt)} ${cur(f.curId).code} — لە ${a.name} بۆ ${b.name}`,
     });
+    if (approvalQueued(result, "گواستنەوەی حساب")) return result;
 
     await notify(f.fromId, "transfer", tr("پارە لە حسابەکەت دەرچوو"), `${fmt(amt, cur(f.curId).dec ?? 0)} ${cur(f.curId).code} → ${b.name}`);
     await notify(f.toId, "transfer", tr("پارە هاتە حسابەکەت"), `${fmt(amt, cur(f.curId).dec ?? 0)} ${cur(f.curId).code} ← ${a.name}`);
@@ -2533,7 +2589,7 @@ export default function App() {
     const closePayload = {
       id: uid(), close_date: new Date().toISOString().slice(0, 10),
       lines, total_diff: totalDiffUsd, has_diff: hasDiff, note: note || null,
-      closed_by: profile?.id || null,
+      adjust: !!adjust, closed_by: profile?.id || null,
     };
     const es = adjust
       ? lines.filter((l) => l.diff).map((l) => LR({
@@ -2542,13 +2598,14 @@ export default function App() {
         }))
       : [];
 
-    await rpcStrict("sarraf_close_day", {
+    const result = await rpcStrict("sarraf_close_day", {
       p_close: closePayload,
-      p_ledger: es,
+      p_ledger: [],
       p_command_key: commandKey("day-close"),
       p_action: "بەستنی ڕۆژ",
       p_detail: lines.map((l) => `${cur(l.cur).code}: ${l.diff >= 0 ? "+" : ""}${fmtMoney(data, l.diff, l.cur)}`).join("، ") || "بێ جیاوازی",
     });
+    if (approvalQueued(result, "بەستنی ڕۆژ")) return result;
     flash(!hasDiff ? "ڕۆژ بەسترا — هیچ جیاوازییەک نییە ✓" : "ڕۆژ بەسترا ✓");
   });
 
@@ -2556,14 +2613,84 @@ export default function App() {
   const unsettle = (t) => {
     if (!window.confirm("پارەدانەکە بە تۆماری پێچەوانە هەڵبوەشێنرێتەوە؟ مامەڵەکە دەگەڕێتەوە بۆ «چاوەڕوان».")) return;
     run(async () => {
-      await rpcStrict("sarraf_unsettle_transaction", {
+      const result = await rpcStrict("sarraf_unsettle_transaction", {
         p_tx_id: t.id,
         p_command_key: commandKey("unsettle"),
         p_action: "هەڵوەشاندنەوەی پارەدان",
         p_detail: `#${t.code || "—"} — ${fmt(t.total)} ${cur(t.againstId).code}`,
       });
+      if (approvalQueued(result, "هەڵوەشاندنەوەی پارەدان")) return result;
       flash("پارەدان بە تۆماری پێچەوانە هەڵوەشێندرایەوە ✓");
     });
+  };
+
+  /* ── Maker / Checker + reconciliation ── */
+  const approveApproval = (r, note = "") => run(async () => {
+    const result = await rpcStrict("sarraf_approve_request", {
+      p_approval_id: r.id,
+      p_command_key: commandKey("approval-approve"),
+      p_note: note || null,
+    });
+    if (result?.ok === false) {
+      flash(result?.error || "جێبەجێکردنی داواکاری سەرکەوتوو نەبوو");
+    } else {
+      flash("داواکاری پەسەند کرا و جێبەجێ کرا ✓");
+      reloadBatches();
+    }
+    return result;
+  });
+
+  const rejectApproval = (r, note) => run(async () => {
+    const reason = String(note || "").trim();
+    if (reason.length < 3) { flash("هۆکاری ڕەتکردنەوە بنووسە"); return false; }
+    const result = await rpcStrict("sarraf_reject_request", {
+      p_approval_id: r.id,
+      p_command_key: commandKey("approval-reject"),
+      p_note: reason,
+    });
+    flash("داواکاری ڕەتکرایەوە ✓");
+    return result;
+  });
+
+  const cancelApproval = (r, note = "") => run(async () => {
+    const result = await rpcStrict("sarraf_cancel_approval_request", {
+      p_approval_id: r.id,
+      p_command_key: commandKey("approval-cancel"),
+      p_note: String(note || "").trim() || null,
+    });
+    flash("داواکاری هەڵوەشێندرایەوە ✓");
+    return result;
+  });
+
+  const ownerOverrideApproval = (r, reason) => run(async () => {
+    const why = String(reason || "").trim();
+    if (why.length < 12) { flash("هۆکاری Owner Override لانیکەم ١٢ پیت بێت"); return false; }
+    const result = await rpcStrict("sarraf_owner_override_approval", {
+      p_approval_id: r.id,
+      p_command_key: commandKey("owner-override"),
+      p_reason: why,
+    });
+    if (result?.ok === false) flash(result?.error || "Owner Override سەرکەوتوو نەبوو");
+    else {
+      flash("Owner Override جێبەجێ کرا ✓");
+      reloadBatches();
+    }
+    return result;
+  });
+
+  const saveControlSettings = (settings) => run(async () => {
+    const result = await rpcStrict("sarraf_update_control_settings", {
+      p_settings: settings,
+      p_command_key: commandKey("control-settings"),
+    });
+    flash("ڕێکخستنەکانی کۆنترۆڵ پاشەکەوت کران ✓");
+    return result;
+  });
+
+  const runReconciliation = async () => {
+    const { data: result, error } = await supabase.rpc("sarraf_reconciliation_report");
+    if (error) throw error;
+    return result;
   };
 
   /* ── باکئەپ ── */
@@ -2719,6 +2846,7 @@ export default function App() {
     {
       label: navSectionLabel("سیستەم", "System", "النظام"),
       items: [
+        ["approvals", "کۆنترۆڵ و پەسەندکردن", ShieldCheck],
         ["audit", tr("تۆمار"), History],
         ["close", tr("بەستنی ڕۆژ"), ClipboardCheck],
         ["backup", tr("پاراستنی داتا"), Database],
@@ -2928,6 +3056,12 @@ export default function App() {
               onMakeTx={(b) => { setPendingBatch(b); setPage("newtx"); }} />}
             {page === "people" && <PeopleHub {...shared} accountMove={accountMove} accountTransfer={accountTransfer} profile={profile} detailId={detailId} setDetailId={setDetailId} onSave={saveTx} transfer={transfer} officePay={officePay} settle={settle} createUser={createUser} deleteUser={deleteUser} setUserRate={setUserRate} flash={flash} />}
             {page === "report" && <Report {...shared} />}
+            {page === "approvals" && <ApprovalCenter
+              data={data} profile={profile} isOwner={isOwner} cur={cur}
+              approve={approveApproval} reject={rejectApproval} cancel={cancelApproval}
+              ownerOverride={ownerOverrideApproval} saveSettings={saveControlSettings}
+              reconcile={runReconciliation} busy={busy} flash={flash}
+            />}
             {page === "audit" && <Audit data={data} />}
             {page === "insights" && <Insights {...shared} flash={flash} />}
             {page === "close" && <DayClose data={data} calc={calc} cur={cur} usr={usr} closeDay={closeDay} sumUsd={sumUsd} />}
@@ -7600,30 +7734,36 @@ function AccountMoney({ data, cur, usr, accountMove, accountTransfer, flash }) {
   const all = data.users.filter((u) => u.role !== "admin" && !u.deleted);
   const [mv, setMv] = useState({ dir: "in", userId: "", curId: data.currencies[0]?.id, amount: "", note: "" });
   const [xfer, setXfer] = useState({ fromId: "", toId: "", curId: data.currencies[0]?.id, amount: "", note: "" });
-  const [hist, setHist] = useState(null);
-  const [histErr, setHistErr] = useState("");
+  const hist = useMemo(() => {
+    const rows = data.acct || [];
+    const out = [];
+    const seenTransfers = new Set();
 
-  const load = async () => {
-    setHistErr("");
-    try {
-      const [m, t] = await Promise.all([
-        supabase.from("account_moves").select("*").order("created_at", { ascending: false }).limit(50),
-        supabase.from("account_transfers").select("*").order("created_at", { ascending: false }).limit(50),
-      ]);
-      if (m.error) throw m.error;
-      if (t.error) throw t.error;
-      const rows = [
-        ...(m.data || []).map((x) => ({ ...x, kind: "move" })),
-        ...(t.data || []).map((x) => ({ ...x, kind: "transfer" })),
-      ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 60);
-      setHist(rows);
-    } catch (e) {
-      console.error("account-money-history", e);
-      setHistErr(e?.message || "نەتوانرا مێژووی پارە وەربگیرێت");
-      setHist([]);
+    for (const h of rows) {
+      if ((h.type === "transfer_out" || h.type === "transfer_in") && h.refId) {
+        if (seenTransfers.has(h.refId)) continue;
+        seenTransfers.add(h.refId);
+        const pair = rows.filter((x) => x.refId === h.refId);
+        const from = pair.find((x) => x.type === "transfer_out");
+        const to = pair.find((x) => x.type === "transfer_in");
+        out.push({
+          id: `transfer:${h.refId}`, kind: "transfer", curId: h.curId,
+          amount: Math.abs(Number(from?.amount ?? to?.amount ?? 0)),
+          fromName: from ? usr(from.userId).name : "—",
+          toName: to ? usr(to.userId).name : "—",
+          note: from?.note || to?.note || null,
+          date: from?.date || to?.date || h.date,
+        });
+      } else if (h.type === "deposit" || h.type === "withdraw") {
+        out.push({
+          id: h.id, kind: "move", dir: Number(h.amount) >= 0 ? "in" : "out",
+          userName: usr(h.userId).name, curId: h.curId, amount: Math.abs(Number(h.amount) || 0),
+          note: h.note, date: h.date,
+        });
+      }
     }
-  };
-  useEffect(() => { load(); }, []);
+    return out.sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 60);
+  }, [data.acct, data.users]);
 
   const roleLbl = (u) => `${u.name} (${ROLE_KU[u.role]})`;
 
@@ -7658,7 +7798,7 @@ function AccountMoney({ data, cur, usr, accountMove, accountTransfer, flash }) {
             <div><Lbl>{tr("بڕ")}</Lbl><Inp type="number" value={mv.amount} onChange={(e) => setMv({ ...mv, amount: e.target.value })} placeholder="0" /></div>
             <div><Lbl>{tr("تێبینی")}</Lbl><Inp value={mv.note} onChange={(e) => setMv({ ...mv, note: e.target.value })} /></div>
             <div className="flex items-end">
-              <Btn className="w-full" onClick={() => { accountMove(mv); setMv({ ...mv, amount: "", note: "" }); setTimeout(load, 1200); }}>{tr("تۆمارکردن")}</Btn>
+              <Btn className="w-full" onClick={() => { accountMove(mv); setMv({ ...mv, amount: "", note: "" }); }}>{tr("تۆمارکردن")}</Btn>
             </div>
           </div>
           {mv.userId && (
@@ -7692,7 +7832,7 @@ function AccountMoney({ data, cur, usr, accountMove, accountTransfer, flash }) {
             <div><Lbl>{tr("بڕ")}</Lbl><Inp type="number" value={xfer.amount} onChange={(e) => setXfer({ ...xfer, amount: e.target.value })} placeholder="0" /></div>
             <div><Lbl>{tr("تێبینی")}</Lbl><Inp value={xfer.note} onChange={(e) => setXfer({ ...xfer, note: e.target.value })} /></div>
             <div className="flex items-end">
-              <Btn kind="gold" className="w-full" onClick={() => { accountTransfer(xfer); setXfer({ ...xfer, amount: "", note: "" }); setTimeout(load, 1200); }}>{tr("گواستنەوە")}</Btn>
+              <Btn kind="gold" className="w-full" onClick={() => { accountTransfer(xfer); setXfer({ ...xfer, amount: "", note: "" }); }}>{tr("گواستنەوە")}</Btn>
             </div>
           </div>
           {xfer.fromId && xfer.toId && +xfer.amount > 0 && (
@@ -7704,24 +7844,18 @@ function AccountMoney({ data, cur, usr, accountMove, accountTransfer, flash }) {
       )}
 
       <SecLbl>{tr("مێژوو")}</SecLbl>
-      {hist === null ? <Card><StatePanel type="loading" title={tr("بارکردن...")} compact /></Card> :
-        histErr ? <Card><StatePanel type="error" title="نەتوانرا مێژووی پارە وەربگیرێت" detail={histErr} onRetry={load} compact /></Card> :
-        hist.length === 0 ? (
-          <Card className="p-4">
-            <div className="text-sm text-[var(--warn)] bg-[color-mix(in_srgb,var(--warn)_11%,transparent)] border border-[color-mix(in_srgb,var(--warn)_26%,transparent)] rounded-[var(--r-sm)] p-3">
-              {tr("هێشتا هیچ نییە — ئایا خشتەکانی")} <b>account_moves</b> {tr("و")} <b>account_transfers</b> {tr("درووست کراون؟")}
-            </div>
-          </Card>
+      {hist.length === 0 ? (
+          <Card className="p-4"><Empty t="هێشتا هیچ جوڵانەوەی حساب نییە" /></Card>
         ) : hist.map((h) => (
           <Card key={h.id} className="p-3.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
             {h.kind === "transfer"
               ? <><Pill tone="amber">{tr("گواستنەوە")}</Pill>
-                  <span className="text-[var(--txt)]">{h.from_name} <span className="text-[var(--txt-3)]">←</span> {h.to_name}</span></>
+                  <span className="text-[var(--txt)]">{h.fromName} <span className="text-[var(--txt-3)]">←</span> {h.toName}</span></>
               : <><Pill tone={h.dir === "in" ? "green" : "red"}>{h.dir === "in" ? "وەرگرتن" : "دان"}</Pill>
-                  <span className="text-[var(--txt)]">{h.user_name}</span></>}
-            <span className="font-bold" style={num}>{fmt(h.amount, cur(h.cur_id).dec ?? 0)} {cur(h.cur_id).code}</span>
+                  <span className="text-[var(--txt)]">{h.userName}</span></>}
+            <span className="font-bold" style={num}>{fmt(h.amount, cur(h.curId).dec ?? 0)} {cur(h.curId).code}</span>
             {h.note && <span className="text-xs text-[var(--txt-2)]">{h.note}</span>}
-            <span className="text-[11px] text-[var(--txt-3)] mr-auto" style={num}>{new Date(h.created_at).toLocaleString("en-GB")}</span>
+            <span className="text-[11px] text-[var(--txt-3)] mr-auto" style={num}>{new Date(h.date).toLocaleString("en-GB")}</span>
           </Card>
         ))}
     </div>
@@ -9230,6 +9364,329 @@ function Insights({ data, calc, cur, usr, profitIn, ownProfitIn, sumUsd, ratesRe
 }
 
 /* ══════════════════ بەستنی ڕۆژ ══════════════════ */
+
+/* ══════════════════ کۆنترۆڵی دارایی / Maker-Checker ══════════════════ */
+function ApprovalCenter({
+  data, profile, isOwner, approve, reject, cancel, ownerOverride,
+  saveSettings, reconcile, busy, flash,
+}) {
+  const [status, setStatus] = useState("pending");
+  const [expanded, setExpanded] = useState(null);
+  const [notes, setNotes] = useState({});
+  const [overrideReason, setOverrideReason] = useState({});
+  const [recon, setRecon] = useState(null);
+  const [reconBusy, setReconBusy] = useState(false);
+  const c = data.control || {};
+  const [settings, setSettings] = useState({
+    transaction_approval_usd: c.transaction_approval_usd ?? "",
+    cash_approval_usd: c.cash_approval_usd ?? "",
+    transfer_approval_usd: c.transfer_approval_usd ?? "",
+    require_edit_approval: c.require_edit_approval !== false,
+    require_void_approval: c.require_void_approval !== false,
+    require_unsettle_approval: c.require_unsettle_approval !== false,
+    require_day_close_diff_approval: c.require_day_close_diff_approval !== false,
+    owner_override_enabled: c.owner_override_enabled !== false,
+    approval_expiry_hours: c.approval_expiry_hours ?? 24,
+    business_timezone: c.business_timezone || "Asia/Baghdad",
+  });
+
+  useEffect(() => {
+    const x = data.control || {};
+    setSettings({
+      transaction_approval_usd: x.transaction_approval_usd ?? "",
+      cash_approval_usd: x.cash_approval_usd ?? "",
+      transfer_approval_usd: x.transfer_approval_usd ?? "",
+      require_edit_approval: x.require_edit_approval !== false,
+      require_void_approval: x.require_void_approval !== false,
+      require_unsettle_approval: x.require_unsettle_approval !== false,
+      require_day_close_diff_approval: x.require_day_close_diff_approval !== false,
+      owner_override_enabled: x.owner_override_enabled !== false,
+      approval_expiry_hours: x.approval_expiry_hours ?? 24,
+      business_timezone: x.business_timezone || "Asia/Baghdad",
+    });
+  }, [data.control]);
+
+  const operationLabel = {
+    commit_transactions: "مامەڵەی نوێ",
+    edit_transaction: "دەستکاری مامەڵە",
+    void_transaction: "هەڵوەشاندنەوەی مامەڵە",
+    unsettle_transaction: "هەڵوەشاندنەوەی پارەدان",
+    post_ledger: "جوڵانەوەی قاسە/هاوبەش",
+    account_move: "جوڵانەوەی حساب",
+    account_transfer: "گواستنەوەی حساب",
+    close_day: "بەستنی ڕۆژ",
+  };
+  const statusLabel = {
+    pending: "چاوەڕوان",
+    executed: "جێبەجێکراو",
+    rejected: "ڕەتکراوە",
+    failed: "هەڵە",
+    expired: "بەسەرچوو",
+    cancelled: "هەڵوەشێنراو",
+  };
+  const statusTone = {
+    pending: "amber", executed: "green", rejected: "red",
+    failed: "red", expired: "slate", cancelled: "slate",
+  };
+
+  const rows = (data.approvals || []).filter((r) => status === "all" || r.status === status);
+  const pendingCount = (data.approvals || []).filter((r) => r.status === "pending").length;
+
+  const runRecon = async () => {
+    setReconBusy(true);
+    try {
+      const out = await reconcile();
+      setRecon(out || null);
+      if (out?.ok) flash("Reconciliation پاکە ✓");
+      else flash(`${out?.failures || 0} کێشە لە Reconciliation دۆزرایەوە`);
+    } catch (e) {
+      console.error(e);
+      flash(e?.message || "Reconciliation سەرکەوتوو نەبوو");
+    } finally {
+      setReconBusy(false);
+    }
+  };
+
+  const save = async () => {
+    const norm = (v) => v === "" || v == null ? null : Number(v);
+    const payload = {
+      transaction_approval_usd: norm(settings.transaction_approval_usd),
+      cash_approval_usd: norm(settings.cash_approval_usd),
+      transfer_approval_usd: norm(settings.transfer_approval_usd),
+      require_edit_approval: !!settings.require_edit_approval,
+      require_void_approval: !!settings.require_void_approval,
+      require_unsettle_approval: !!settings.require_unsettle_approval,
+      require_day_close_diff_approval: !!settings.require_day_close_diff_approval,
+      owner_override_enabled: !!settings.owner_override_enabled,
+      approval_expiry_hours: Number(settings.approval_expiry_hours) || 24,
+      business_timezone: String(settings.business_timezone || "Asia/Baghdad").trim(),
+    };
+    for (const k of ["transaction_approval_usd","cash_approval_usd","transfer_approval_usd"]) {
+      if (payload[k] != null && (!(payload[k] > 0) || !Number.isFinite(payload[k]))) {
+        flash("Threshold دەبێت ژمارەیەکی ئەرێنی بێت یان بەتاڵ بێت");
+        return;
+      }
+    }
+    await saveSettings(payload);
+  };
+
+  return (
+    <div className="space-y-5">
+      <H sub="دوو-ئادمین پەسەندکردن، کۆنترۆڵی مەترسی و پشکنینی یەکسانی دارایی">
+        کۆنترۆڵی دارایی
+      </H>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <Card className="p-4">
+          <div className="text-[11px]" style={{color:"var(--txt-3)"}}>چاوەڕوانی پەسەند</div>
+          <div className="text-2xl font-semibold mt-1" style={num}>{pendingCount}</div>
+        </Card>
+        <Card className="p-4">
+          <div className="text-[11px]" style={{color:"var(--txt-3)"}}>Business date</div>
+          <div className="text-[15px] font-semibold mt-1" style={num}>{c.business_date || "—"}</div>
+        </Card>
+        <Card className="p-4">
+          <div className="text-[11px]" style={{color:"var(--txt-3)"}}>ئاستی ئەدمین</div>
+          <div className="text-[15px] font-semibold mt-1">{isOwner ? "System Owner" : "Operational Admin"}</div>
+        </Card>
+        <Card className="p-4">
+          <div className="text-[11px]" style={{color:"var(--txt-3)"}}>Maker / Checker</div>
+          <div className="text-[15px] font-semibold mt-1">Active</div>
+        </Card>
+      </div>
+
+      <Card className="p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <SecLbl>Reconciliation</SecLbl>
+            <div className="text-[12px]" style={{color:"var(--txt-3)"}}>
+              Transaction، Ledger، Reversal، Cost Basis، Profit و Settlement یەکسان دەکاتەوە.
+            </div>
+          </div>
+          <Btn kind="ghost" disabled={busy || reconBusy} onClick={runRecon}>
+            {reconBusy ? "پشکنین..." : "پشکنینی یەکسانی"}
+          </Btn>
+        </div>
+        {recon && (
+          <div className="mt-4 grid md:grid-cols-2 gap-2">
+            {(recon.checks || []).map((x, i) => (
+              <div key={`${x.name}-${i}`} className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-[var(--r-sm)]"
+                style={{background:"var(--surf-2)",border:"1px solid var(--line)"}}>
+                <span className="text-[12px]">{x.name}</span>
+                <span className="text-[11px] font-semibold" style={{color:x.status==="PASS"?"var(--pos)":x.status==="WARN"?"var(--warn)":"var(--neg)"}}>
+                  {x.status} · {x.count ?? 0}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      <Card className="p-5">
+        <div className="flex flex-wrap gap-2 mb-4">
+          {[["pending","چاوەڕوان"],["executed","جێبەجێکراو"],["rejected","ڕەتکراوە"],["failed","هەڵە"],["all","هەموو"]].map(([k,t]) => (
+            <button key={k} onClick={() => setStatus(k)}
+              className="px-3 py-2 rounded-[var(--r-sm)] text-[12px] font-semibold tap"
+              style={status===k ? {background:"var(--txt)",color:"var(--surf)"} : {background:"var(--surf-2)",color:"var(--txt-2)",border:"1px solid var(--line)"}}>
+              {t}{k==="pending" && pendingCount ? ` (${pendingCount})` : ""}
+            </button>
+          ))}
+        </div>
+
+        {rows.length === 0 ? <Empty t="هیچ داواکارییەک لەم دۆخەدا نییە" /> : (
+          <div className="space-y-3">
+            {rows.map((r) => {
+              const ownRequest = r.makerAuthId === profile.authId;
+              const open = expanded === r.id;
+              const ev = (data.approvalEvents || []).filter((x) => x.approvalId === r.id);
+              return (
+                <div key={r.id} className="rounded-[var(--r)] overflow-hidden" style={{border:"1px solid var(--line)",background:"var(--surf-2)"}}>
+                  <button className="w-full text-start p-4 tap" onClick={() => setExpanded(open ? null : r.id)}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-[13px] font-semibold">{operationLabel[r.operation] || r.operation}</div>
+                        <div className="text-[11px] mt-1" style={{color:"var(--txt-3)"}}>
+                          Maker: {r.makerName || r.makerAppId || "—"} · {new Date(r.createdAt).toLocaleString("en-GB")}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {r.amountUsd != null && <span className="text-[12px] font-semibold" style={num}>${fmt(r.amountUsd,2)}</span>}
+                        <Pill tone={statusTone[r.status] || "gray"}>{statusLabel[r.status] || r.status}</Pill>
+                      </div>
+                    </div>
+                    <div className="text-[12px] mt-2 leading-relaxed" style={{color:"var(--txt-2)"}}>{r.reason}</div>
+                  </button>
+
+                  {open && (
+                    <div className="px-4 pb-4 space-y-3" style={{borderTop:"1px solid var(--line)"}}>
+                      <div className="grid md:grid-cols-2 gap-2 pt-3 text-[11px]">
+                        <div><span style={{color:"var(--txt-3)"}}>ID:</span> <span style={num}>{r.id}</span></div>
+                        <div><span style={{color:"var(--txt-3)"}}>Subject:</span> <span style={num}>{r.subjectKey || "—"}</span></div>
+                        <div><span style={{color:"var(--txt-3)"}}>Expiry:</span> <span style={num}>{r.expiresAt ? new Date(r.expiresAt).toLocaleString("en-GB") : "—"}</span></div>
+                        <div><span style={{color:"var(--txt-3)"}}>Checker:</span> {r.checkerName || r.checkerAppId || "—"}</div>
+                      </div>
+
+                      {r.errorText && (
+                        <div className="p-3 rounded-[var(--r-sm)] text-[12px]" style={{background:"color-mix(in srgb,var(--neg) 9%,transparent)",color:"var(--neg)"}}>
+                          {r.errorText}
+                        </div>
+                      )}
+
+                      {r.status === "pending" && (
+                        <>
+                          <div>
+                            <Lbl>تێبینی Checker</Lbl>
+                            <Inp value={notes[r.id] || ""} onChange={(e) => setNotes({...notes,[r.id]:e.target.value})} placeholder="ئارەزوومەندانە؛ بۆ ڕەتکردنەوە پێویستە" />
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <Btn disabled={busy || ownRequest} onClick={() => approve(r, notes[r.id] || "")}>
+                              پەسەندکردن و جێبەجێکردن
+                            </Btn>
+                            <Btn kind="danger" disabled={busy || ownRequest} onClick={() => reject(r, notes[r.id] || "")}>
+                              ڕەتکردنەوە
+                            </Btn>
+                            {(ownRequest || isOwner) && (
+                              <Btn kind="ghost" disabled={busy} onClick={() => cancel(r, notes[r.id] || "")}>هەڵوەشاندنەوەی داواکاری</Btn>
+                            )}
+                          </div>
+                          {ownRequest && (
+                            <div className="text-[11px]" style={{color:"var(--warn)"}}>
+                              Maker ناتوانێت داواکاری خۆی پەسەند یان ڕەت بکات؛ ئەدمینی دووەم پێویستە.
+                            </div>
+                          )}
+
+                          {isOwner && c.owner_override_enabled !== false && (
+                            <div className="pt-3 mt-2" style={{borderTop:"1px dashed var(--line)"}}>
+                              <Lbl>Owner emergency override — هۆکاری ورد پێویستە</Lbl>
+                              <div className="flex flex-col md:flex-row gap-2">
+                                <Inp value={overrideReason[r.id] || ""}
+                                  onChange={(e) => setOverrideReason({...overrideReason,[r.id]:e.target.value})}
+                                  placeholder="لانیکەم ١٢ پیت؛ تەنها بۆ دۆخی پێویست" />
+                                <Btn kind="gold" disabled={busy || (overrideReason[r.id] || "").trim().length < 12}
+                                  onClick={() => ownerOverride(r, overrideReason[r.id] || "")}>
+                                  Owner Override
+                                </Btn>
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      )}
+
+                      {ev.length > 0 && (
+                        <div className="space-y-1.5 pt-2">
+                          <Lbl>مێژووی داواکاری</Lbl>
+                          {ev.slice().reverse().map((e) => (
+                            <div key={e.id} className="text-[11px] flex flex-wrap gap-2">
+                              <span className="font-semibold">{e.event}</span>
+                              <span style={{color:"var(--txt-3)"}}>{e.actorName || e.actorAppId || "system"}</span>
+                              <span style={{...num,color:"var(--txt-3)"}}>{new Date(e.createdAt).toLocaleString("en-GB")}</span>
+                              {e.detail && <span style={{color:"var(--txt-2)"}}>— {e.detail}</span>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Card>
+
+      {isOwner && (
+        <Card className="p-5">
+          <SecLbl>ڕێکخستنەکانی Dual Approval</SecLbl>
+          <div className="text-[11.5px] mb-4 leading-relaxed" style={{color:"var(--txt-3)"}}>
+            Threshold ـی بەتاڵ واتە بڕی پارە بەخۆی approval ناچالاک ناکات. Edit/Void/Unsettle و جیاوازی Day Close بە هەڵبژاردنی خوارەوە جیاوازن.
+          </div>
+          <div className="grid md:grid-cols-3 gap-3">
+            <div><Lbl>Transaction threshold (USD)</Lbl><Inp type="number" min="0" value={settings.transaction_approval_usd} onChange={(e)=>setSettings({...settings,transaction_approval_usd:e.target.value})} placeholder="Disabled" /></div>
+            <div><Lbl>Cash threshold (USD)</Lbl><Inp type="number" min="0" value={settings.cash_approval_usd} onChange={(e)=>setSettings({...settings,cash_approval_usd:e.target.value})} placeholder="Disabled" /></div>
+            <div><Lbl>Transfer threshold (USD)</Lbl><Inp type="number" min="0" value={settings.transfer_approval_usd} onChange={(e)=>setSettings({...settings,transfer_approval_usd:e.target.value})} placeholder="Disabled" /></div>
+            <div><Lbl>Approval expiry (hours)</Lbl><Inp type="number" min="1" max="168" value={settings.approval_expiry_hours} onChange={(e)=>setSettings({...settings,approval_expiry_hours:e.target.value})} /></div>
+            <div className="md:col-span-2"><Lbl>Business timezone</Lbl><Inp dir="ltr" value={settings.business_timezone} onChange={(e)=>setSettings({...settings,business_timezone:e.target.value})} /></div>
+          </div>
+          <div className="grid md:grid-cols-2 gap-2 mt-4">
+            {[
+              ["require_edit_approval","Edit هەمیشە Checker پێویست بێت"],
+              ["require_void_approval","Void هەمیشە Checker پێویست بێت"],
+              ["require_unsettle_approval","Unsettle هەمیشە Checker پێویست بێت"],
+              ["require_day_close_diff_approval","Day Close ـی جیاواز Checker پێویست بێت"],
+              ["owner_override_enabled","Owner emergency override چالاک بێت"],
+            ].map(([k,t]) => (
+              <label key={k} className="flex items-center gap-2 p-3 rounded-[var(--r-sm)] text-[12px] cursor-pointer"
+                style={{background:"var(--surf-2)",border:"1px solid var(--line)"}}>
+                <input type="checkbox" checked={!!settings[k]} onChange={(e)=>setSettings({...settings,[k]:e.target.checked})} />
+                <span>{t}</span>
+              </label>
+            ))}
+          </div>
+          <div className="mt-4 flex justify-end"><Btn disabled={busy} onClick={save}>پاشەکەوتکردنی کۆنترۆڵ</Btn></div>
+        </Card>
+      )}
+
+      <Card className="p-5">
+        <SecLbl>Transaction Version History</SecLbl>
+        {(data.txVersions || []).length === 0 ? <Empty t="هێشتا هیچ وەشانی مامەڵە تۆمار نەکراوە" /> : (
+          <div className="space-y-2">
+            {(data.txVersions || []).slice(0,20).map((v) => (
+              <div key={v.id} className="flex flex-wrap items-center gap-2 px-3 py-2.5 rounded-[var(--r-sm)] text-[11.5px]"
+                style={{background:"var(--surf-2)",border:"1px solid var(--line)"}}>
+                <span className="font-semibold" style={num}>#{v.txCode || "—"}</span>
+                <span>v{v.versionNo}</span>
+                <span>{v.action}</span>
+                {v.approvalId && <span style={{color:"var(--txt-3)"}}>Approval: {v.approvalId}</span>}
+                <span className="ms-auto" style={{...num,color:"var(--txt-3)"}}>{new Date(v.createdAt).toLocaleString("en-GB")}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
 function DayClose({ data, calc, cur, usr, closeDay, sumUsd }) {
   const [counts, setCounts] = useState({});
   const [note, setNote] = useState("");

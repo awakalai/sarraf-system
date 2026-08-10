@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "./lib/supabase";
+import { ReceiptLifecycle, ReceiptSmartInspector } from "./components/receipts/ReceiptCommandCenter";
 import {
   LayoutDashboard, Vault, ArrowLeftRight, ListOrdered, Users, Handshake,
   TrendingUp, Building2, UserCog, PieChart, History, Plus, Trash2, Pencil,
@@ -6071,133 +6072,6 @@ function ReceiptList({ rows, showFrom }) {
   );
 }
 
-const RECEIPT_LIFECYCLE = [
-  ["capture", "وەرگرتن"],
-  ["read", "AI Read"],
-  ["review", "پشکنین"],
-  ["verify", "پشتڕاست"],
-  ["match", "بەستن"],
-  ["archive", "ئەرشیف"],
-];
-
-function ReceiptLifecycle({ stage = "capture", compact = false }) {
-  const active = Math.max(0, RECEIPT_LIFECYCLE.findIndex(([key]) => key === stage));
-  return (
-    <div className="rounded-[var(--r)] p-3 md:p-4 overflow-x-auto"
-      style={{ background: "var(--surf)", border: "1px solid var(--line)", boxShadow: "var(--sh-1)" }}>
-      <div className="flex items-center min-w-[620px]">
-        {RECEIPT_LIFECYCLE.map(([key, label], index) => {
-          const done = index < active;
-          const current = index === active;
-          return (
-            <React.Fragment key={key}>
-              <div className="flex items-center gap-2 shrink-0">
-                <span className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold"
-                  style={done || current
-                    ? { background: done ? "var(--pos)" : "var(--ac)", color: "#fff" }
-                    : { background: "var(--surf-3)", color: "var(--txt-3)", border: "1px solid var(--line)" }}>
-                  {done ? <CheckCircle2 className="w-3.5 h-3.5" /> : index + 1}
-                </span>
-                <span className={`${compact ? "text-[10px]" : "text-[11px]"} font-semibold whitespace-nowrap`}
-                  style={{ color: current ? "var(--txt)" : done ? "var(--pos)" : "var(--txt-3)" }}>
-                  {label}
-                </span>
-              </div>
-              {index < RECEIPT_LIFECYCLE.length - 1 && (
-                <span className="h-px min-w-6 flex-1 mx-2" style={{ background: index < active ? "var(--pos)" : "var(--line-2)" }} />
-              )}
-            </React.Fragment>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function ReceiptSmartInspector({ receipt: r, data, onEdit, onConfirm, onReject, onRetry, onClose }) {
-  if (!r) return null;
-  const confidence = (key) => {
-    const raw = r.fieldConfidence?.[key];
-    if (raw == null || !Number.isFinite(Number(raw))) return { label: "—", color: "var(--txt-3)", bg: "var(--surf-3)" };
-    const pct = Math.round(clamp01(raw) * 100);
-    if (pct >= 80) return { label: `${pct}%`, color: "var(--pos)", bg: "color-mix(in srgb, var(--pos) 9%, var(--surf))" };
-    if (pct >= 60) return { label: `${pct}%`, color: "var(--warn)", bg: "color-mix(in srgb, var(--warn) 10%, var(--surf))" };
-    return { label: `${pct}%`, color: "var(--neg)", bg: "color-mix(in srgb, var(--neg) 9%, var(--surf))" };
-  };
-  const fields = [
-    ["amount", "Amount / Gross", Number(r.amount) > 0 ? `${fmtMoney(data, r.amount, r.currency)} ${r.currency || ""}` : "—"],
-    ["currency", "Currency", r.currency || "—"],
-    ["fee", "Fee", Number.isFinite(Number(r.fee)) ? fmtMoney(data, r.fee, r.currency) : "—"],
-    ["netAmount", "Net", Number.isFinite(Number(r.net)) ? fmtMoney(data, r.net, r.currency) : "—"],
-    ["receiver", "Payee", r.receiver || r.merchantName || "—"],
-    ["refNo", "Order No.", r.refNo || "—"],
-    ["merchantOrderNo", "Merchant Order No.", r.merchantOrderNo || "—"],
-    ["paymentMethod", "Card / Method", r.paymentMethod || (r.cardLast4 ? `****${r.cardLast4}` : "—")],
-    ["platform", "Platform", r.platform ? platMeta(r.platform).ku : (r.bank || "—")],
-    ["txDate", "Date / Time", [r.txDate, r.txTime].filter(Boolean).join(" · ") || "—"],
-  ];
-  const overall = r.confidence == null ? null : Math.round(clamp01(r.confidence) * 100);
-  const stateTone = r.status === "ok" ? "green" : r.status === "suspect" || r.status === "retry" ? "amber" : r.status === "processing" ? "slate" : "red";
-  const stateLabel = {
-    processing: "دەخوێندرێتەوە", ok: "پشتڕاستکراو", suspect: "پشکنین پێویستە",
-    retry: "چاوەڕوانی دووبارە", dup: "دووبارە", error: "ڕەتکراو/هەڵە",
-  }[r.status] || r.status;
-
-  return (
-    <Card className="p-0 overflow-hidden">
-      <div className="p-4 border-b border-[var(--line)] flex items-center justify-between gap-3">
-        <div>
-          <div className="text-[13px] font-bold text-[var(--txt)]">Smart Inspector</div>
-          <div className="text-[10.5px] text-[var(--txt-3)] mt-0.5">وێنە و خانە هەستیارەکان لە یەک شوێن بپشکنە.</div>
-        </div>
-        <button onClick={onClose} className="p-2 rounded-lg text-[var(--txt-3)] hover:bg-[var(--surf-3)]" aria-label="Close inspector"><X className="w-4 h-4" /></button>
-      </div>
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(300px,0.95fr)_minmax(0,1.05fr)]">
-        <div className="min-h-[300px] lg:min-h-[470px] p-3 flex items-center justify-center"
-          style={{ background: "linear-gradient(145deg, var(--surf-3), var(--bg))" }}>
-          {r.url ? (
-            <a href={r.url} target="_blank" rel="noreferrer" className="block w-full h-full">
-              <img src={r.url} alt="Receipt preview" className="w-full h-[300px] lg:h-[450px] object-contain rounded-xl" />
-            </a>
-          ) : (
-            <div className="text-center text-[var(--txt-3)]">
-              {r.status === "processing" ? <RotateCcw className="w-7 h-7 animate-spin mx-auto" /> : <Receipt className="w-8 h-8 mx-auto" />}
-              <div className="text-xs mt-2">وێنە ئامادە نییە</div>
-            </div>
-          )}
-        </div>
-        <div className="p-4 md:p-5">
-          <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
-            <div className="flex items-center gap-2"><Pill tone={stateTone}>{stateLabel}</Pill>{overall != null && <span className="text-[11px] font-bold" style={{ color: overall >= 80 ? "var(--pos)" : overall >= 60 ? "var(--warn)" : "var(--neg)", ...num }}>AI {overall}%</span>}</div>
-            {r.platform && <span className="text-[11px] text-[var(--txt-3)]">{platMeta(r.platform).ku}</span>}
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-            {fields.map(([key, label, value]) => {
-              const tone = confidence(key);
-              return (
-                <div key={key} className="rounded-xl p-3" style={{ background: tone.bg, border: "1px solid var(--line)" }}>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-[10px] text-[var(--txt-3)]">{label}</span>
-                    <span className="text-[9px] font-bold" style={{ color: tone.color, ...num }}>{tone.label}</span>
-                  </div>
-                  <div className="text-[12px] font-semibold mt-1 break-words" style={{ color: "var(--txt)", ...num }}>{value}</div>
-                </div>
-              );
-            })}
-          </div>
-          {r.note && <div className="mt-3 p-3 rounded-xl text-[11px] leading-relaxed" style={{ background: "var(--surf-3)", color: r.status === "suspect" ? "var(--warn)" : r.status === "error" || r.status === "dup" ? "var(--neg)" : "var(--txt-2)" }}>{r.note}</div>}
-          <div className="flex flex-wrap gap-2 mt-4">
-            {r.status !== "processing" && r.status !== "dup" && <Btn kind="ghost" onClick={onEdit}><Pencil className="w-4 h-4" /> دەستکاری</Btn>}
-            {r.status === "suspect" && <Btn onClick={onConfirm}><CheckCircle2 className="w-4 h-4" /> پشتڕاستکردنەوە</Btn>}
-            {r.ocrImage && ["retry","suspect","error"].includes(r.status) && <Btn kind="ghost" onClick={onRetry}><RotateCcw className="w-4 h-4" /> دووبارە خوێندنەوە</Btn>}
-            {r.status !== "processing" && r.status !== "dup" && <Btn kind="ghost" style={{ color: "var(--neg)" }} onClick={onReject}><XCircle className="w-4 h-4" /> ڕەتکردنەوە</Btn>}
-          </div>
-        </div>
-      </div>
-    </Card>
-  );
-}
-
 /* ─────────── ئەپلۆدکەری فیش ─────────── */
 function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, direction = "in", onDone, flash, data, allowDirection }) {
   const [rows, setRows] = useState([]);
@@ -7140,6 +7014,7 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
 
           {inspectedReceipt && (
             <ReceiptSmartInspector receipt={inspectedReceipt} data={data}
+              Card={Card} Btn={Btn} Pill={Pill} clamp01={clamp01} fmtMoney={fmtMoney} num={num} platMeta={platMeta}
               onEdit={() => setEditingId(inspectedReceipt.id)}
               onConfirm={() => confirmRow(inspectedReceipt.id)}
               onReject={() => rejectRow(inspectedReceipt.id)}

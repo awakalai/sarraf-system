@@ -1649,7 +1649,7 @@ export default function App() {
       reloadBatches();
       const adminMode = activeProfile?.role === "admin";
       const noQuery = Promise.resolve({ data: [], error: null });
-      const [c, u, l, t, a, ac, rh, apr, ape, tv, ctrl, rm] = await Promise.all([
+      const [c, u, l, t, a, ac, rh, apr, ape, tv, ctrl, rm, rt] = await Promise.all([
         fetchAllRows("currencies", { orders: [{ column: "code", ascending: true }] }),
         fetchAllRows("app_users", { orders: [{ column: "created_at", ascending: true }, { column: "id", ascending: true }] }),
         fetchAllRows("ledger", { orders: [{ column: "date", ascending: true }, { column: "id", ascending: true }] }),
@@ -1662,10 +1662,22 @@ export default function App() {
         adminMode ? supabase.from("tx_versions").select("*").order("created_at", { ascending: false }).limit(3000) : noQuery,
         adminMode ? supabase.rpc("sarraf_control_snapshot") : Promise.resolve({ data: null, error: null }),
         adminMode ? supabase.rpc("sarraf_read_model_snapshot", { p_days: 30 }) : Promise.resolve({ data: null, error: null }),
+        adminMode ? supabase.rpc("sarraf_runtime_contract") : Promise.resolve({ data: null, error: null }),
       ]);
-      const queryErrors = [c, u, l, t, a, ac, rh, apr, ape, tv, ctrl].filter((r) => r?.error);
+      const queryErrors = [c, u, l, t, a, ac, rh, apr, ape, tv, ctrl, rt].filter((r) => r?.error);
       if (rm?.error) console.warn("server read model unavailable; using client fallback", rm.error);
+      if (adminMode && rt?.error) {
+        setAccessError("Runtime Contract بەردەست نییە — Phase 13F migration/deployment بپشکنە");
+        setAccessState("error");
+        throw rt.error;
+      }
       if (queryErrors.length) throw queryErrors[0].error;
+      if (adminMode && (!rt?.data?.ok || rt?.data?.contract_version !== "13f-v1" || !rt?.data?.phase13f_applied)) {
+        const contractError = new Error("Frontend/Database contract mismatch — Phase 13F production migration is required");
+        setAccessError(contractError.message);
+        setAccessState("error");
+        throw contractError;
+      }
       const d = {
         currencies: (c.data || []).map((r) => ({ id: r.id, code: r.code, name: r.name, symbol: r.symbol, dec: r.dec, external: !!r.external, buyRate: r.buy_rate == null ? null : +r.buy_rate, sellRate: r.sell_rate == null ? null : +r.sell_rate, rateUpdated: r.rate_updated })),
         users: (u.data || []).map((r) => ({ id: r.id, authId: r.auth_id, name: r.name, role: r.role, adminLevel: r.admin_level || null, rate: +r.rate || 0, scope: Array.isArray(r.scope_curs) ? r.scope_curs : [], phone: r.phone, address: r.address, note: r.note, deleted: r.deleted })),
@@ -1708,6 +1720,7 @@ export default function App() {
         })),
         control: ctrl.data && typeof ctrl.data === "object" ? ctrl.data : null,
         readModel: !rm?.error && rm?.data && typeof rm.data === "object" ? rm.data : null,
+        runtime: rt?.data && typeof rt.data === "object" ? rt.data : null,
       };
       setData(d);
       // Financial data is intentionally kept in memory only. Do not persist
@@ -1816,6 +1829,9 @@ export default function App() {
       const msg = String(error?.message || "");
       if (error?.code === "PGRST202" || /function .* does not exist|could not find the function/i.test(msg)) {
         throw new Error("Production migration ـەکە هێشتا لە Supabase جێبەجێ نەکراوە");
+      }
+      if (error?.code === "55000" || /financial writes are frozen/i.test(msg)) {
+        throw new Error("Emergency Freeze چالاکە — هیچ گۆڕانکارییەکی دارایی جێبەجێ ناکرێت");
       }
       throw error;
     }
@@ -2854,6 +2870,31 @@ export default function App() {
     return result;
   };
 
+  const setMaintenanceMode = async (enabled, reason) => {
+    const why = String(reason || "").trim();
+    if (why.length < 12) {
+      flash("هۆکاری Emergency Freeze لانیکەم ١٢ پیت بێت");
+      return false;
+    }
+    setBusy(true);
+    try {
+      const result = await rpcStrict("sarraf_set_maintenance_mode", {
+        p_enabled: !!enabled,
+        p_reason: why,
+        p_command_key: commandKey(enabled ? "freeze-on" : "freeze-off"),
+      });
+      await loadAll();
+      flash(enabled ? "Emergency Freeze چالاک کرا ✓" : "Emergency Freeze ناچالاک کرا ✓");
+      return result;
+    } catch (e) {
+      console.error("maintenance-mode", e);
+      flash(e?.message || "نەتوانرا Emergency Freeze بگۆڕدرێت");
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const loadTxHistoryPage = async ({ limit = 80, cursor = null, filters = {} } = {}) => {
     const args = {
       p_limit: limit,
@@ -3063,6 +3104,16 @@ export default function App() {
           {stale && <span className="opacity-75" style={num}>({new Date(stale).toLocaleTimeString("en-GB")})</span>}
         </div>
       )}
+      {isAdmin && data?.runtime?.maintenance_mode && (
+        <div className="sticky top-[57px] z-30 px-3 py-2.5 text-center text-[12px] font-bold flex items-center justify-center gap-2"
+          style={{ background: "color-mix(in srgb, var(--neg) 92%, black)", color: "#fff" }}>
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          <span>
+            Emergency Freeze چالاکە — گۆڕانکاری دارایی قەدەغەیە
+            {data.runtime.maintenance_reason ? ` · ${data.runtime.maintenance_reason}` : ""}
+          </span>
+        </div>
+      )}
       {msg && (
         <div className="fixed top-0 right-0 left-0 z-[60] flex justify-center px-4" style={{ paddingTop: "calc(env(safe-area-inset-top) + 12px)" }}>
           <div className={`drop flex items-center gap-2.5 px-5 py-3.5 rounded-[var(--r)] shadow-xl text-white font-bold text-sm max-w-md w-full justify-center ${/✓|کرا|تۆمار|نێردرا|وەرگ/.test(msg) ? "bg-emerald-600" : "bg-slate-900"}`}>
@@ -3256,7 +3307,7 @@ export default function App() {
             {page === "audit" && <Audit data={data} />}
             {page === "insights" && <Insights {...shared} flash={flash} />}
             {page === "close" && <DayClose data={data} calc={calc} cur={cur} usr={usr} closeDay={closeDay} sumUsd={sumUsd} />}
-            {page === "backup" && <Backup data={data} calc={calc} cur={cur} downloadBackup={downloadBackup} flash={flash} sumUsd={sumUsd} mySafe={mySafe} owners={owners} ratesReady={ratesReady} isOwner={isOwner} runSystemHealth={runSystemHealth} />}
+            {page === "backup" && <Backup data={data} calc={calc} cur={cur} downloadBackup={downloadBackup} flash={flash} sumUsd={sumUsd} mySafe={mySafe} owners={owners} ratesReady={ratesReady} isOwner={isOwner} runSystemHealth={runSystemHealth} setMaintenanceMode={setMaintenanceMode} />}
           </main>
 
           {/* لیستی خوارەوە — تەنها لە مۆبایل */}
@@ -9037,10 +9088,14 @@ function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare, s
 
 
 /* ══════════════════ پاراستنی داتا و باکئەپ ══════════════════ */
-function Backup({ data, calc, cur, downloadBackup, flash, sumUsd, mySafe, owners, ratesReady, isOwner, runSystemHealth }) {
+function Backup({ data, calc, cur, downloadBackup, flash, sumUsd, mySafe, owners, ratesReady, isOwner, runSystemHealth, setMaintenanceMode }) {
   const [busy, setBusy] = useState(false);
   const [recon, setRecon] = useState(null);
   const [reconErr, setReconErr] = useState("");
+  const [maintReason, setMaintReason] = useState("");
+  const [maintBusy, setMaintBusy] = useState(false);
+  const runtime = data?.runtime || null;
+  const frozen = !!runtime?.maintenance_mode;
 
   const counts = {
     مامەڵە: Number(data?.readModel?.counts?.active_txs ?? data.txs.filter((t) => !t.deleted).length),
@@ -9097,6 +9152,49 @@ function Backup({ data, calc, cur, downloadBackup, flash, sumUsd, mySafe, owners
   return (
     <div className="space-y-4">
       <H sub="پشکنینی دروستی داتا، reconciliation و ڕێنمایی گەڕاندنەوەی production">{tr("پاراستنی داتا")}</H>
+
+      <Card className={`p-4 ${frozen ? "border-[color-mix(in_srgb,var(--neg)_40%,transparent)] bg-[color-mix(in_srgb,var(--neg)_8%,transparent)]" : "border-[color-mix(in_srgb,var(--pos)_28%,transparent)]"}`}>
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <div className="font-bold text-[var(--txt)] flex items-center gap-2">
+              {frozen ? <AlertTriangle className="w-4 h-4 text-[var(--neg)]" /> : <CheckCircle2 className="w-4 h-4 text-[var(--pos)]" />}
+              Runtime Contract · {runtime?.contract_version || "—"}
+            </div>
+            <div className="text-xs mt-1" style={{ color: frozen ? "var(--neg)" : "var(--txt-3)" }}>
+              {frozen ? `Emergency Freeze چالاکە${runtime?.maintenance_reason ? ` · ${runtime.maintenance_reason}` : ""}` : "Financial write path کراوەیە"}
+            </div>
+          </div>
+          <Pill tone={frozen ? "red" : "green"}>{frozen ? "FROZEN" : "WRITE OPEN"}</Pill>
+        </div>
+
+        {isOwner && (
+          <div className="mt-4 pt-4 border-t border-[var(--line)]">
+            <Lbl>{frozen ? "هۆکاری کردنەوەی write path" : "هۆکاری Emergency Freeze"}</Lbl>
+            <Inp value={maintReason} onChange={(e) => setMaintReason(e.target.value)}
+              placeholder="لانیکەم ١٢ پیت — هۆکاری ڕوون بنووسە" />
+            <div className="mt-3 flex gap-2 flex-wrap">
+              <Btn
+                kind={frozen ? "gold" : "ghost"}
+                disabled={maintBusy || maintReason.trim().length < 12}
+                onClick={async () => {
+                  setMaintBusy(true);
+                  try {
+                    const ok = await setMaintenanceMode?.(!frozen, maintReason);
+                    if (ok) setMaintReason("");
+                  } finally {
+                    setMaintBusy(false);
+                  }
+                }}
+              >
+                {maintBusy ? "..." : frozen ? "کردنەوەی Financial Writes" : "چالاککردنی Emergency Freeze"}
+              </Btn>
+              <span className="text-[11px] self-center text-[var(--txt-3)]">
+                تەنها خاوەنی سیستەم · MFA/AAL2
+              </span>
+            </div>
+          </div>
+        )}
+      </Card>
 
       <Card className={`p-4 ${localOk && serverOk !== false ? "border-[color-mix(in_srgb,var(--pos)_34%,transparent)] bg-[color-mix(in_srgb,var(--pos)_8%,transparent)]" : "border-[color-mix(in_srgb,var(--warn)_34%,transparent)] bg-[color-mix(in_srgb,var(--warn)_9%,transparent)]"}`}>
         <div className="flex items-center gap-2 mb-3">

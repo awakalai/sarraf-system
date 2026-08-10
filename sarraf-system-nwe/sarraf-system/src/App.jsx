@@ -1497,6 +1497,25 @@ body{
 }
 
 /* ══════════════════ ئەپی سەرەکی ══════════════════ */
+
+const mapTxRecord = (r) => ({
+  id: r.id, code: r.code, type: r.type, direct: !!r.direct,
+  pairId: r.pair_id, directRole: r.direct_role, ownMoney: !!r.own_money,
+  buyRate: r.buy_rate == null ? null : +r.buy_rate,
+  buyTotal: r.buy_total == null ? null : +r.buy_total,
+  costBasisUsd: r.cost_basis_usd == null ? null : +r.cost_basis_usd,
+  partnerRateSnapshot: r.partner_rate_snapshot == null ? null : +r.partner_rate_snapshot,
+  partnerFeeSnapshot: r.partner_fee_snapshot == null ? null : +r.partner_fee_snapshot,
+  versionNo: Number(r.version_no) || 0,
+  lastApprovalId: r.last_approval_id || null,
+  cpId: r.cp_id, cpName: r.cp_name, curId: r.cur_id,
+  amount: +r.amount, rate: +r.rate, againstId: r.against_id,
+  total: +r.total, partnerId: r.partner_id, status: r.status,
+  paidAt: r.paid_at, profit: r.profit == null ? null : +r.profit,
+  profitCurId: r.profit_cur_id, note: r.note, date: r.date,
+  edited: r.edited, deleted: r.deleted,
+});
+
 export default function App() {
   const [session, setSession] = useState(undefined);
   const [data, setData] = useState(null);
@@ -1630,7 +1649,7 @@ export default function App() {
       reloadBatches();
       const adminMode = activeProfile?.role === "admin";
       const noQuery = Promise.resolve({ data: [], error: null });
-      const [c, u, l, t, a, ac, rh, apr, ape, tv, ctrl] = await Promise.all([
+      const [c, u, l, t, a, ac, rh, apr, ape, tv, ctrl, rm] = await Promise.all([
         fetchAllRows("currencies", { orders: [{ column: "code", ascending: true }] }),
         fetchAllRows("app_users", { orders: [{ column: "created_at", ascending: true }, { column: "id", ascending: true }] }),
         fetchAllRows("ledger", { orders: [{ column: "date", ascending: true }, { column: "id", ascending: true }] }),
@@ -1642,8 +1661,10 @@ export default function App() {
         adminMode ? supabase.from("approval_events").select("*").order("created_at", { ascending: false }).limit(1500) : noQuery,
         adminMode ? supabase.from("tx_versions").select("*").order("created_at", { ascending: false }).limit(3000) : noQuery,
         adminMode ? supabase.rpc("sarraf_control_snapshot") : Promise.resolve({ data: null, error: null }),
+        adminMode ? supabase.rpc("sarraf_read_model_snapshot", { p_days: 30 }) : Promise.resolve({ data: null, error: null }),
       ]);
       const queryErrors = [c, u, l, t, a, ac, rh, apr, ape, tv, ctrl].filter((r) => r?.error);
+      if (rm?.error) console.warn("server read model unavailable; using client fallback", rm.error);
       if (queryErrors.length) throw queryErrors[0].error;
       const d = {
         currencies: (c.data || []).map((r) => ({ id: r.id, code: r.code, name: r.name, symbol: r.symbol, dec: r.dec, external: !!r.external, buyRate: r.buy_rate == null ? null : +r.buy_rate, sellRate: r.sell_rate == null ? null : +r.sell_rate, rateUpdated: r.rate_updated })),
@@ -1656,17 +1677,7 @@ export default function App() {
           commissionRateSnapshot: r.commission_rate_snapshot == null ? null : +r.commission_rate_snapshot,
           commissionAmountSnapshot: r.commission_amount_snapshot == null ? null : +r.commission_amount_snapshot,
         })),
-        txs: (t.data || []).map((r) => ({ id: r.id, code: r.code, type: r.type, direct: !!r.direct,
-          pairId: r.pair_id, directRole: r.direct_role, ownMoney: !!r.own_money,
-          buyRate: r.buy_rate == null ? null : +r.buy_rate, buyTotal: r.buy_total == null ? null : +r.buy_total,
-          costBasisUsd: r.cost_basis_usd == null ? null : +r.cost_basis_usd,
-          partnerRateSnapshot: r.partner_rate_snapshot == null ? null : +r.partner_rate_snapshot,
-          partnerFeeSnapshot: r.partner_fee_snapshot == null ? null : +r.partner_fee_snapshot,
-          versionNo: Number(r.version_no) || 0, lastApprovalId: r.last_approval_id || null,
-          cpId: r.cp_id, cpName: r.cp_name, curId: r.cur_id, amount: +r.amount, rate: +r.rate, againstId: r.against_id,
-          total: +r.total, partnerId: r.partner_id, status: r.status, paidAt: r.paid_at,
-          profit: r.profit == null ? null : +r.profit, profitCurId: r.profit_cur_id, note: r.note, date: r.date,
-          edited: r.edited, deleted: r.deleted })),
+        txs: (t.data || []).map(mapTxRecord),
         audit: (a.data || []).map((r) => ({ id: r.id, date: r.date, action: r.action, detail: r.detail })),
         acct: (ac.data || []).map((r) => ({ id: r.id, userId: r.user_id, kind: r.kind, curId: r.cur_id,
           amount: +r.amount, type: r.type, refId: r.ref_id, note: r.note, date: r.created_at })),
@@ -1696,6 +1707,7 @@ export default function App() {
           actorAuthId: r.actor_auth_id, actorAppId: r.actor_app_id, createdAt: r.created_at,
         })),
         control: ctrl.data && typeof ctrl.data === "object" ? ctrl.data : null,
+        readModel: !rm?.error && rm?.data && typeof rm.data === "object" ? rm.data : null,
       };
       setData(d);
       // Financial data is intentionally kept in memory only. Do not persist
@@ -1831,6 +1843,72 @@ export default function App() {
   /* ───────── حیسابەکان ───────── */
   const calc = useMemo(() => {
     if (!data) return null;
+
+    // Phase 13E: use the server aggregate read model for current balances.
+    // Full tx/ledger history remains loaded as a correctness fallback and for
+    // detailed legacy screens, but current dashboard/account calculations no
+    // longer need to rescan every historical row in the browser.
+    const rm = data.readModel;
+    if (rm && rm.physical_by_currency && Array.isArray(rm.partner_balances)) {
+      const phys = Object.fromEntries(Object.entries(rm.physical_by_currency || {}).map(([k,v]) => [k, Number(v) || 0]));
+      const partner = {}, invCap = {}, invPaid = {}, expenses = {}, fees = {};
+      const selfCap = Object.fromEntries(Object.entries(rm.self_capital || {}).map(([k,v]) => [k, Number(v) || 0]));
+      const acctCash = {}, acctDebt = {}, cust = {};
+
+      for (const x of (rm.partner_balances || [])) {
+        if (!x?.partner_id || !x?.cur_id) continue;
+        partner[x.partner_id] = partner[x.partner_id] || {};
+        partner[x.partner_id][x.cur_id] = Number(x.amount) || 0;
+      }
+      for (const x of (rm.investor_capital || [])) {
+        if (!x?.investor_id || !x?.cur_id) continue;
+        invCap[x.investor_id] = invCap[x.investor_id] || {};
+        invCap[x.investor_id][x.cur_id] = Number(x.amount) || 0;
+      }
+      for (const x of (rm.investor_paid || [])) {
+        if (!x?.investor_id || !x?.cur_id) continue;
+        invPaid[x.investor_id] = invPaid[x.investor_id] || {};
+        invPaid[x.investor_id][x.cur_id] = Number(x.amount) || 0;
+      }
+      Object.entries(rm.expenses || {}).forEach(([k,v]) => { expenses[k] = Number(v) || 0; });
+      Object.entries(rm.partner_fees || {}).forEach(([k,v]) => { fees[k] = Number(v) || 0; });
+
+      for (const x of (rm.account_balances || [])) {
+        if (!x?.user_id || !x?.cur_id) continue;
+        const box = x.kind === "debt" ? acctDebt : acctCash;
+        box[x.user_id] = box[x.user_id] || {};
+        box[x.user_id][x.cur_id] = Number(x.amount) || 0;
+      }
+
+      for (const x of (rm.pending_customer_balances || [])) {
+        if (!x?.against_id) continue;
+        const key = x.cp_id || "name:" + (x.cp_name || "");
+        cust[key] = cust[key] || { owe: {}, due: {}, n: 0 };
+        const side = x.type === "buy" ? "owe" : "due";
+        cust[key][side][x.against_id] = (cust[key][side][x.against_id] || 0) + (Number(x.total) || 0);
+        cust[key].n += Number(x.tx_count) || 0;
+
+        if (x.cp_id) {
+          acctDebt[x.cp_id] = acctDebt[x.cp_id] || {};
+          const sign = x.type === "buy" ? 1 : -1;
+          acctDebt[x.cp_id][x.against_id] = (acctDebt[x.cp_id][x.against_id] || 0) + sign * (Number(x.total) || 0);
+        }
+      }
+
+      const invTotal = {};
+      Object.values(invCap).forEach((m) => Object.entries(m).forEach(([c,v]) => {
+        invTotal[c] = (invTotal[c] || 0) + (Number(v) || 0);
+      }));
+
+      const atMe = {};
+      for (const c of data.currencies) {
+        const atP = Object.values(partner).reduce((s,m) => s + (m[c.id] || 0),0);
+        atMe[c.id] = (phys[c.id] || 0) - atP;
+      }
+
+      return { phys, partner, atMe, invCap, invTotal, selfCap, invPaid, expenses, fees, cust, pending: cust, acctCash, acctDebt };
+    }
+
     const phys = {}, partner = {}, invCap = {}, selfCap = {}, invPaid = {}, expenses = {}, fees = {};
     for (const e of data.ledger) {
       phys[e.curId] = (phys[e.curId] || 0) + e.amount;
@@ -1920,8 +1998,17 @@ export default function App() {
     }
     return m;
   };
-  const ownProfitAll = useMemo(() => (data ? ownProfitIn(null, null) : {}), [data]);
-  const profitAll = useMemo(() => (data ? profitIn(null, null) : {}), [data]);
+  const readModelProfitMap = (direct) => {
+    if (!Array.isArray(data?.readModel?.profit_totals)) return null;
+    const out = {};
+    for (const x of data.readModel.profit_totals) {
+      if (!!x.direct !== !!direct || !x.cur_id) continue;
+      out[x.cur_id] = (out[x.cur_id] || 0) + (Number(x.amount) || 0);
+    }
+    return out;
+  };
+  const ownProfitAll = useMemo(() => data ? (readModelProfitMap(true) || ownProfitIn(null, null)) : {}, [data]);
+  const profitAll = useMemo(() => data ? (readModelProfitMap(false) || profitIn(null, null)) : {}, [data]);
 
   /* بەشی وەبەرهێنەرێک لە خێری دراوێک */
   // ئایا ئەم وەبەرهێنەرە لەم دراوەدا شەریکە؟ (بەتاڵ = لە هەموویان)
@@ -2064,6 +2151,23 @@ export default function App() {
   };
 
   const inventoryPosition = (curId, _againstId = null, excludeTxId = null, asOfDate = null) => {
+    if (!excludeTxId && !asOfDate && Array.isArray(data?.readModel?.inventory)) {
+      const snap = data.readModel.inventory.find((x) => x?.cur_id === curId);
+      if (snap) {
+        const qty = Number(snap.qty) || 0;
+        const costUsd = Number(snap.cost_usd) || 0;
+        const costComplete = Number(snap.missing_cost_rows || 0) === 0;
+        return {
+          qty,
+          cost: costUsd,
+          costUsd,
+          costComplete,
+          avgRate: costComplete && qty > 0 ? costUsd / qty : null,
+          avgUsdRate: costComplete && qty > 0 ? costUsd / qty : null,
+        };
+      }
+    }
+
     let qty = 0, costUsd = 0, costComplete = true;
     const asOfMs = asOfDate ? new Date(asOfDate).getTime() : null;
 
@@ -2750,6 +2854,48 @@ export default function App() {
     return result;
   };
 
+  const loadTxHistoryPage = async ({ limit = 80, cursor = null, filters = {} } = {}) => {
+    const args = {
+      p_limit: limit,
+      p_before_date: cursor?.date || null,
+      p_before_id: cursor?.id || null,
+      p_type: filters.type && filters.type !== "all" ? filters.type : null,
+      p_status: filters.status && filters.status !== "all" ? filters.status : null,
+      p_cur_id: filters.cur && filters.cur !== "all" ? filters.cur : null,
+      p_from: filters.from || null,
+      p_to: filters.to || null,
+      p_search: filters.q ? String(filters.q).trim() : null,
+    };
+    const { data: result, error } = await supabase.rpc("sarraf_tx_history_page", args);
+    if (error) throw error;
+    return {
+      items: (result?.items || []).map(mapTxRecord),
+      hasMore: !!result?.has_more,
+      nextCursor: result?.next_cursor || null,
+      matchedCount: Number(result?.matched_count || 0),
+      totalsByAgainst: Array.isArray(result?.totals_by_against) ? result.totals_by_against : [],
+    };
+  };
+
+  const loadRangeReport = async ({ from, to } = {}) => {
+    const { data: result, error } = await supabase.rpc("sarraf_report_range", {
+      p_from: from || null,
+      p_to: to || null,
+    });
+    if (error) throw error;
+    return result || null;
+  };
+
+  const loadInventorySnapshot = async ({ curId, asOf = null, excludeTxId = null } = {}) => {
+    const { data: result, error } = await supabase.rpc("sarraf_inventory_snapshot", {
+      p_cur_id: curId,
+      p_as_of: asOf,
+      p_exclude_tx_id: excludeTxId,
+    });
+    if (error) throw error;
+    return result || null;
+  };
+
   /* ── پاراستنی داتا / off-site export ──
      A JSON export is a supplementary owner-controlled export, NOT a substitute
      for Supabase platform backups/PITR. The old same-database "auto backup"
@@ -2902,7 +3048,8 @@ export default function App() {
 
   const shared = { data, calc, cur, usr, mySafe, profitAll, profitIn, ownProfitIn, ownProfitAll,
     inScope, scopedCap, investorsProfitIn, invShare, invUnpaid, autoRate, avgRate, inventoryPosition, usdValueAt, usdToCurrencyAt,
-    toUsd, sumUsd, ratesReady, owners, notify, waNotify, isOwner };
+    toUsd, sumUsd, ratesReady, owners, notify, waNotify, isOwner,
+    readModel: data?.readModel || null, loadTxHistoryPage, loadRangeReport, loadInventorySnapshot };
 
   return (
     <div dir={LANGS[lang]?.dir || "rtl"} key={lang} className="min-h-screen" style={{ background: "var(--bg)", color: "var(--txt)" }}>
@@ -3539,34 +3686,46 @@ function Login() {
 /* هەڵبژاردنی بەکارهێنەر بە گەڕان */
 
 /* ══════════════════ داشبۆرد ══════════════════ */
-function Dashboard({ data, calc, cur, mySafe, profitIn, ownProfitIn, investorsProfitIn, sumUsd, ratesReady, owners, batches, go }) {
+function Dashboard({ data, calc, cur, mySafe, profitIn, ownProfitIn, investorsProfitIn, sumUsd, ratesReady, owners, batches, go, readModel }) {
+  const rm = readModel || data.readModel || null;
   const today = dOnly(new Date().toISOString());
   const todayTxs = data.txs.filter((t) => !t.deleted && dOnly(t.date) === today);
   const pTod = profitIn(today, today);
   const ownTod = ownProfitIn ? ownProfitIn(today, today) : {};
-  const totalTodayProfit = sumUsd(Object.keys(pTod).reduce((m,k)=>{ m[k]=(pTod[k]||0)+(ownTod[k]||0); return m; },{}));
-  const pendingCount = data.txs.filter((t) => !t.deleted && t.status === "pending").length;
+  const fallbackTodayProfit = sumUsd(Object.keys(pTod).reduce((m,k)=>{ m[k]=(pTod[k]||0)+(ownTod[k]||0); return m; },{}));
+  const totalTodayProfit = ratesReady && Number.isFinite(Number(rm?.today_profit_usd))
+    ? Number(rm.today_profit_usd) : fallbackTodayProfit;
+  const pendingCount = Number(rm?.counts?.pending_txs ?? data.txs.filter((t) => !t.deleted && t.status === "pending").length);
+  const todayTxCount = Number(rm?.counts?.today_txs ?? todayTxs.length);
   const noRates = data.currencies.some((c) => c.id !== "usd" && (!c.buyRate || !c.sellRate));
-  const totalBalance = ratesReady ? sumUsd(calc.phys) : 0;
+  const totalBalance = ratesReady && Number.isFinite(Number(rm?.total_balance_usd))
+    ? Number(rm.total_balance_usd) : (ratesReady ? sumUsd(calc.phys) : 0);
 
-  const last7 = [...Array(7)].map((_, i) => {
-    const d = new Date(); d.setDate(d.getDate() - (6 - i));
-    const k = d.toISOString().slice(0,10);
-    const p = profitIn(k,k), o = ownProfitIn ? ownProfitIn(k,k) : {};
-    const all = {};
-    [...Object.keys(p), ...Object.keys(o)].forEach((c) => all[c]=(p[c]||0)+(o[c]||0));
-    return { k, v: ratesReady ? sumUsd(all) : (Object.values(all)[0] || 0) };
-  });
+  const rmDaily = Array.isArray(rm?.daily) ? rm.daily.slice(-7) : null;
+  const last7 = rmDaily?.length === 7
+    ? rmDaily.map((x) => ({ k: String(x.date), v: Number(x.profit_usd) || 0 }))
+    : [...Array(7)].map((_, i) => {
+        const d = new Date(); d.setDate(d.getDate() - (6 - i));
+        const k = d.toISOString().slice(0,10);
+        const p = profitIn(k,k), o = ownProfitIn ? ownProfitIn(k,k) : {};
+        const all = {};
+        [...Object.keys(p), ...Object.keys(o)].forEach((c) => all[c]=(p[c]||0)+(o[c]||0));
+        return { k, v: ratesReady ? sumUsd(all) : (Object.values(all)[0] || 0) };
+      });
   const weekProfit = last7.reduce((s,x)=>s+x.v,0);
   const chartMax = Math.max(...last7.map(x=>Math.abs(x.v)), 1);
 
-  const recent = [...data.txs].filter(t=>!t.deleted).sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,6);
-  const expenses = [...Array(7)].map((_, i) => {
-    const d = new Date(); d.setDate(d.getDate() - (6-i));
-    const k=d.toISOString().slice(0,10);
-    const v=data.ledger.filter(e=>e.type==="expense" && dOnly(e.date)===k).reduce((s,e)=>s+Math.abs(e.amount||0),0);
-    return {k,v};
-  });
+  const recent = Array.isArray(rm?.recent_txs)
+    ? rm.recent_txs.map(mapTxRecord).slice(0,6)
+    : [...data.txs].filter(t=>!t.deleted).sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,6);
+  const expenses = rmDaily?.length === 7
+    ? rmDaily.map((x) => ({ k: String(x.date), v: Number(x.expense_usd) || 0 }))
+    : [...Array(7)].map((_, i) => {
+        const d = new Date(); d.setDate(d.getDate() - (6-i));
+        const k=d.toISOString().slice(0,10);
+        const v=data.ledger.filter(e=>e.type==="expense" && dOnly(e.date)===k).reduce((s,e)=>s+Math.abs(e.amount||0),0);
+        return {k,v};
+      });
   const expMax=Math.max(...expenses.map(x=>x.v),1);
 
   const Stat = ({label,value,sub,positive}) => (
@@ -3626,7 +3785,7 @@ function Dashboard({ data, calc, cur, mySafe, profitIn, ownProfitIn, investorsPr
           <div className="absolute bottom-4 start-5 text-[10px] white-muted">{tr("کۆی گشتی")}</div>
         </div>
         <Stat label={tr("خێری ئەمڕۆ")} value={ratesReady?`${fmt(totalTodayProfit,0)} USD`:`${fmt(Object.values(pTod).reduce((a,b)=>a+b,0),0)}`} sub={totalTodayProfit>=0?`↗ ${tr("خێر")}`:`↘ ${tr("خێر و زەرەر")}`} positive={totalTodayProfit>=0}/>
-        <Stat label={tr("مامەڵەی ئەمڕۆ")} value={todayTxs.length} sub={`${todayTxs.length} · ${tr("ئەمڕۆ")}`} />
+        <Stat label={tr("مامەڵەی ئەمڕۆ")} value={todayTxCount} sub={`${todayTxCount} · ${tr("ئەمڕۆ")}`} />
         <Stat label={tr("چاوەڕوان") } value={pendingCount} sub={pendingCount?tr("پێویستی بە پشکنینە"):`✓ ${tr("هیچ نییە")}`} />
       </div>
 
@@ -5067,11 +5226,60 @@ function TxFilterBar({ data, f, setF, count, total }) {
 }
 
 /* ══════════════════ لیستی مامەڵەکان ══════════════════ */
-function TxList({ data, cur, usr, onEdit, onDel, settle, unsettle }) {
+function TxList({ data, cur, usr, onEdit, onDel, settle, unsettle, loadTxHistoryPage }) {
   const base = [...data.txs].filter((t) => !t.deleted).reverse();
-  const [list, f, setF] = useTxFilter(base, cur, usr);
+  const [localList, f, setF] = useTxFilter(base, cur, usr);
+  const [rows, setRows] = useState([]);
+  const [serverMeta, setServerMeta] = useState({ hasMore: false, nextCursor: null, matchedCount: 0, totalsByAgainst: [] });
+  const [loading, setLoading] = useState(false);
+  const [serverFailed, setServerFailed] = useState(false);
+  const [serverErr, setServerErr] = useState("");
+  const requestSeq = useRef(0);
+  const filterKey = JSON.stringify(f);
+  const refreshKey = data?.readModel?.generated_at || data?.txs?.length || 0;
+  const serverMode = !!loadTxHistoryPage && !serverFailed;
 
-  // گروپکردن بەپێی ڕۆژ
+  const fetchPage = async (reset = false) => {
+    if (!loadTxHistoryPage || (!reset && loading)) return;
+    const seq = ++requestSeq.current;
+    setLoading(true);
+    if (reset) setServerErr("");
+    try {
+      const result = await loadTxHistoryPage({
+        limit: 80,
+        cursor: reset ? null : serverMeta.nextCursor,
+        filters: f,
+      });
+      if (seq !== requestSeq.current) return;
+      setRows((prev) => reset ? result.items : [...prev, ...result.items]);
+      setServerMeta({
+        hasMore: !!result.hasMore,
+        nextCursor: result.nextCursor || null,
+        matchedCount: Number(result.matchedCount || 0),
+        totalsByAgainst: result.totalsByAgainst || [],
+      });
+      setServerFailed(false);
+    } catch (e) {
+      console.error("tx-history-page", e);
+      if (seq !== requestSeq.current) return;
+      setServerErr(e?.message || "نەتوانرا مێژووی مامەڵەکان لە سێرڤەر بار بکرێت");
+      setServerFailed(true); // safe fallback: Phase 13D full history is still in memory.
+    } finally {
+      if (seq === requestSeq.current) setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!loadTxHistoryPage) return;
+    setServerFailed(false);
+    const id = setTimeout(() => fetchPage(true), 220);
+    return () => clearTimeout(id);
+    // loadTxHistoryPage is intentionally omitted: App recreates the wrapper on render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterKey, refreshKey]);
+
+  const list = serverMode ? rows : localList;
+
   const groups = {};
   list.forEach((t) => { const k = dOnly(t.date); (groups[k] = groups[k] || []).push(t); });
   const today = new Date().toISOString().slice(0, 10);
@@ -5080,13 +5288,27 @@ function TxList({ data, cur, usr, onEdit, onDel, settle, unsettle }) {
     : new Date(k).toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short" });
 
   const total = {};
-  list.forEach((t) => { total[cur(t.againstId).code || "?"] = (total[cur(t.againstId).code || "?"] || 0) + t.total; });
+  if (serverMode && Array.isArray(serverMeta.totalsByAgainst)) {
+    serverMeta.totalsByAgainst.forEach((x) => {
+      const code = cur(x.against_id).code || x.against_id || "?";
+      total[code] = Number(x.amount) || 0;
+    });
+  } else {
+    localList.forEach((t) => { total[cur(t.againstId).code || "?"] = (total[cur(t.againstId).code || "?"] || 0) + t.total; });
+  }
+
+  const matchedCount = serverMode ? serverMeta.matchedCount : localList.length;
 
   return (
     <div className="space-y-4">
-      <H sub={`${list.length} ${tr("مامەڵە")}`}>{tr("مامەڵەکان")}</H>
-      <TxFilterBar data={data} f={f} setF={setF} count={list.length} total={total} />
-      {list.length === 0 ? <Card className="p-2"><Empty t={tr("هیچ مامەڵەیەک نەدۆزرایەوە")} /></Card> :
+      <H sub={`${matchedCount} ${tr("مامەڵە")}`}>{tr("مامەڵەکان")}</H>
+      <TxFilterBar data={data} f={f} setF={setF} count={matchedCount} total={total} />
+      {serverErr && !serverMode && (
+        <Card className="p-3 text-[11px]" style={{ color: "var(--warn)" }}>
+          مێژووی server-side بەردەست نەبوو؛ fallback ـی تەواوی Phase 13D بەکار هات.
+        </Card>
+      )}
+      {list.length === 0 && !loading ? <Card className="p-2"><Empty t={tr("هیچ مامەڵەیەک نەدۆزرایەوە")} /></Card> :
         Object.entries(groups).map(([day, items], gi) => (
           <div key={day} className="rise" style={{ animationDelay: `${Math.min(gi, 6) * 45}ms` }}>
             <div className="flex items-center gap-3 mb-1.5 px-1">
@@ -5103,6 +5325,17 @@ function TxList({ data, cur, usr, onEdit, onDel, settle, unsettle }) {
             </Card>
           </div>
         ))}
+      {serverMode && (
+        <div className="flex justify-center">
+          {serverMeta.hasMore ? (
+            <Btn kind="ghost" onClick={() => fetchPage(false)} disabled={loading}>
+              {loading ? "..." : "زیاتر باربکە"}
+            </Btn>
+          ) : rows.length > 0 ? (
+            <span className="text-[10.5px]" style={{ color: "var(--txt-3)" }}>کۆتایی مێژوو</span>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 }
@@ -8810,8 +9043,8 @@ function Backup({ data, calc, cur, downloadBackup, flash, sumUsd, mySafe, owners
   const [reconErr, setReconErr] = useState("");
 
   const counts = {
-    مامەڵە: data.txs.filter((t) => !t.deleted).length,
-    "تۆماری دەفتەر": data.ledger.length,
+    مامەڵە: Number(data?.readModel?.counts?.active_txs ?? data.txs.filter((t) => !t.deleted).length),
+    "تۆماری دەفتەر": Number(data?.readModel?.counts?.ledger_rows ?? data.ledger.length),
     بەکارهێنەر: data.users.filter((u) => !u.deleted).length,
     دراو: data.currencies.length,
   };
@@ -8856,7 +9089,10 @@ function Backup({ data, calc, cur, downloadBackup, flash, sumUsd, mySafe, owners
 
   const localOk = localChecks.every((c) => c.ok);
   const serverOk = recon ? !!recon.ok : null;
-  const rowPressure = data.txs.length + data.ledger.length + (data.acct?.length || 0);
+  const rowPressure =
+    Number(data?.readModel?.counts?.active_txs ?? data.txs.length) +
+    Number(data?.readModel?.counts?.ledger_rows ?? data.ledger.length) +
+    Number(data?.readModel?.counts?.account_ledger_rows ?? (data.acct?.length || 0));
 
   return (
     <div className="space-y-4">
@@ -9037,12 +9273,13 @@ function WorldRates({ data, cur }) {
 }
 
 /* ══════════════════ ڕەوت و شیکاری ══════════════════ */
-function Insights({ data, calc, cur, usr, profitIn, ownProfitIn, sumUsd, ratesReady, mySafe, flash }) {
+function Insights({ data, calc, cur, usr, profitIn, ownProfitIn, sumUsd, ratesReady, mySafe, flash, loadRangeReport }) {
   const [tab, setTab] = useState("trend");
   const [span, setSpan] = useState(14);
   const [rateCur, setRateCur] = useState(null);
   const [hist, setHist] = useState(null);
   const [histErr, setHistErr] = useState("");
+  const [serverRange, setServerRange] = useState(null);
 
   const loadRateHistory = async () => {
     setHist(null);
@@ -9060,6 +9297,19 @@ function Insights({ data, calc, cur, usr, profitIn, ownProfitIn, sumUsd, ratesRe
 
   useEffect(() => { loadRateHistory(); }, []);
 
+  useEffect(() => {
+    if (!loadRangeReport) return;
+    let cancelled = false;
+    const to = new Date();
+    const from = new Date(to);
+    from.setDate(from.getDate() - (span - 1));
+    loadRangeReport({ from: from.toISOString().slice(0,10), to: to.toISOString().slice(0,10) })
+      .then((r) => { if (!cancelled) setServerRange(r); })
+      .catch((e) => { console.warn("server range report unavailable; using client fallback", e); if (!cancelled) setServerRange(null); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [span, data?.readModel?.generated_at]);
+
   const iso = (d) => d.toISOString().slice(0, 10);
   const days = [...Array(span)].map((_, i) => {
     const d = new Date(); d.setDate(d.getDate() - (span - 1 - i)); return iso(d);
@@ -9067,7 +9317,12 @@ function Insights({ data, calc, cur, usr, profitIn, ownProfitIn, sumUsd, ratesRe
   const short = (k) => k.slice(8) + "/" + k.slice(5, 7);
 
   /* ── خێری ڕۆژانە ── */
+  const serverDaily = Array.isArray(serverRange?.daily) ? serverRange.daily : null;
+  const serverDailyMap = new Map((serverDaily || []).map((x) => [String(x.date), x]));
+
   const dayProfit = days.map((k) => {
+    const sr = serverDailyMap.get(k);
+    if (sr) return { k: short(k), v: Math.round(Number(sr.profit_usd) || 0), raw: k };
     const shared = profitIn(k, k), own = ownProfitIn(k, k);
     const m = {};
     [...Object.keys(shared), ...Object.keys(own)].forEach((c) => (m[c] = (shared[c] || 0) + (own[c] || 0)));
@@ -9079,6 +9334,8 @@ function Insights({ data, calc, cur, usr, profitIn, ownProfitIn, sumUsd, ratesRe
 
   /* ── قەبارەی مامەڵەکان ── */
   const dayVol = days.map((k) => {
+    const sr = serverDailyMap.get(k);
+    if (sr) return { k: short(k), v: Number(sr.tx_count) || 0 };
     const t = data.txs.filter((x) => !x.deleted && dOnly(x.date) === k);
     return { k: short(k), v: t.length };
   });
@@ -9087,9 +9344,11 @@ function Insights({ data, calc, cur, usr, profitIn, ownProfitIn, sumUsd, ratesRe
   /* ── کڕین بەرامبەر فرۆشتن ── */
   const from = days[0];
   const inRange = data.txs.filter((t) => !t.deleted && dOnly(t.date) >= from);
+  const serverBuy = (serverDaily || []).reduce((s,x) => s + (Number(x.buy_count) || 0),0);
+  const serverSell = (serverDaily || []).reduce((s,x) => s + (Number(x.sell_count) || 0),0);
   const buySell = [
-    { k: "کڕین", v: inRange.filter((t) => t.type === "buy").length, color: "var(--pos)" },
-    { k: "فرۆشتن", v: inRange.filter((t) => t.type === "sell").length, color: "var(--neg)" },
+    { k: "کڕین", v: serverDaily ? serverBuy : inRange.filter((t) => t.type === "buy").length, color: "var(--pos)" },
+    { k: "فرۆشتن", v: serverDaily ? serverSell : inRange.filter((t) => t.type === "sell").length, color: "var(--neg)" },
   ].filter((r) => r.v);
 
   /* ── دابەشکردنی قاسە ── */

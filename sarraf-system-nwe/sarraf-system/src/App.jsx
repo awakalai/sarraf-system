@@ -7054,22 +7054,45 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
 
 /* ─────────── ناوەندی فیشەکان (ئەدمین) ─────────── */
 function ReceiptsHub({ data, usr, batches, reloadBatches, flash, onMakeTx, profile, calc, cur }) {
-  const [tab, setTab] = useState("inbox");
+  const initialReceiptQuery = useMemo(() => new URLSearchParams(window.location.search), []);
+  const [tab, setTab] = useState(initialReceiptQuery.get("receiptTab") || "control");
   const [sel, setSel] = useState(null);
   const [loc, setLoc] = useState("me");
   const [addFor, setAddFor] = useState("");
   const [addDir, setAddDir] = useState("in");
+  const [batchSearch, setBatchSearch] = useState(initialReceiptQuery.get("receiptSearch") || "");
+  const [stageFilter, setStageFilter] = useState(initialReceiptQuery.get("receiptStage") || "all");
+  const [batchSort, setBatchSort] = useState(initialReceiptQuery.get("receiptSort") || "newest");
+  const [batchPage, setBatchPage] = useState(1);
   const customers = data.users.filter((u) => u.role === "customer" && !u.deleted);
   const partners = data.users.filter((u) => u.role === "partner" && !u.deleted);
   const u = usdConv(data);
-
-  if (sel) return <BatchDetail id={sel} back={() => { setSel(null); reloadBatches(); }} usr={usr} data={data} onMakeTx={onMakeTx} flash={flash} reloadBatches={reloadBatches} />;
 
   const newN = (batches || []).filter((b) => b.status === "new").length;
   const inbox = (batches || []).filter((b) => (tab === "inbox" ? b.status === "new" : b.status !== "new"));
 
   const waN = (batches || []).filter((b) => b.status === "new" && b.source === "whatsapp").length;
-  const TABS = [["inbox", `ئینباکس (${newN})`], ["done", tr("بەستراوەکان")], ["loc", tr("لای کێ")], ["add", tr("ناردنی فیش")], ["wa", tr("واتساپ")]];
+  const TABS = [["control", "Control Room"], ["inbox", `ئینباکس (${newN})`], ["done", tr("بەستراوەکان")], ["loc", tr("لای کێ")], ["add", tr("ناردنی فیش")], ["wa", tr("واتساپ")]];
+  const lifecycleOf = (b) => b.receipt_stage || (b.tx_id ? "matched" : b.status === "new" ? "needs_review" : "verified");
+  const summary = (batches || []).reduce((out, b) => {
+    const stage = lifecycleOf(b); out.total += Number(b.n) || 0; out[stage] = (out[stage] || 0) + (Number(b.n) || 0);
+    out.duplicates += Number(b.dup_n) || 0; out.failed += Number(b.rejected_n) || 0; return out;
+  }, { total: 0, reading: 0, needs_review: 0, verified: 0, matched: 0, archived: 0, duplicates: 0, failed: 0 });
+  const filteredBatches = (batches || []).filter((b) => {
+    const query = normalizeSearchText(batchSearch);
+    const haystack = normalizeSearchText([b.id, b.customer_name, b.partner_id && usr(b.partner_id).name, b.source, b.currency].filter(Boolean).join(" "));
+    return (!query || haystack.includes(query)) && (stageFilter === "all" || lifecycleOf(b) === stageFilter);
+  }).sort((a, b) => batchSort === "oldest" ? new Date(a.created_at) - new Date(b.created_at)
+    : batchSort === "amount" ? Number(b.total_net || 0) - Number(a.total_net || 0)
+      : batchSort === "status" ? lifecycleOf(a).localeCompare(lifecycleOf(b)) : new Date(b.created_at) - new Date(a.created_at));
+  const pageSize = 20, pageBatches = filteredBatches.slice(0, batchPage * pageSize);
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    [["receiptTab", tab], ["receiptSearch", batchSearch], ["receiptStage", stageFilter], ["receiptSort", batchSort]].forEach(([key, value]) => value && value !== "all" && value !== "newest" ? q.set(key, value) : q.delete(key));
+    window.history.replaceState(null, "", `${window.location.pathname}${q.size ? `?${q}` : ""}${window.location.hash}`);
+  }, [tab, batchSearch, stageFilter, batchSort]);
+
+  if (sel) return <BatchDetail id={sel} back={() => { setSel(null); reloadBatches(); }} usr={usr} data={data} onMakeTx={onMakeTx} flash={flash} reloadBatches={reloadBatches} />;
 
   return (
     <div className="space-y-4">
@@ -7082,6 +7105,22 @@ function ReceiptsHub({ data, usr, batches, reloadBatches, flash, onMakeTx, profi
             className={`flex-1 whitespace-nowrap px-3 py-2.5 rounded-[var(--r-sm)] text-sm transition-all tap ${tab === k ? "font-bold" : "font-medium hover:bg-[var(--line)]"}`}>{t}</button>
         ))}
       </div>
+
+      {tab === "control" && <>
+        <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-2" role="status" aria-label="Persisted receipt summary">
+          {[["Total / کۆ", summary.total], ["Reading / خوێندنەوە", summary.reading], ["Needs review / پشکنین", summary.needs_review], ["Verified / پشتڕاست", summary.verified], ["Duplicates / دووبارە", summary.duplicates], ["Matched / بەستراو", summary.matched], ["Archived / ئەرشیف", summary.archived], ["Failed / هەڵە", summary.failed]].map(([label, value]) => <Card key={label} className="p-3"><div className="text-[10px] text-[var(--txt-3)]">{label}</div><div className="text-xl font-bold mt-1" style={num}>{value}</div></Card>)}
+        </div>
+        <Card className="p-4 space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-[minmax(240px,1fr)_180px_160px] gap-2">
+            <label className="relative"><span className="sr-only">Search receipt batches</span><Search className="absolute start-3 top-3 w-4 h-4 text-[var(--txt-3)]"/><Inp className="ps-9" value={batchSearch} onChange={(e) => { setBatchSearch(e.target.value); setBatchPage(1); }} placeholder="Batch ID, customer, partner, platform, currency…" /></label>
+            <Sel aria-label="Lifecycle filter" value={stageFilter} onChange={(e) => { setStageFilter(e.target.value); setBatchPage(1); }}><option value="all">All lifecycle states</option>{["received","reading","needs_review","verified","matched","archived"].map((x) => <option value={x} key={x}>{x.replace("_", " ")}</option>)}</Sel>
+            <Sel aria-label="Sort batches" value={batchSort} onChange={(e) => setBatchSort(e.target.value)}><option value="newest">Newest</option><option value="oldest">Oldest</option><option value="amount">Amount</option><option value="status">Status</option></Sel>
+          </div>
+          {!pageBatches.length ? <StatePanel type="empty" title="No receipt batches match / هیچ کۆمەڵەیەک نەدۆزرایەوە" compact /> : <div className="space-y-2">{pageBatches.map((b) => <button type="button" key={b.id} onClick={() => setSel(b.id)} className="w-full min-h-14 text-start rounded-xl p-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--ac)]" style={{ background: "var(--surf-2)", border: "1px solid var(--line)" }} aria-label={`Open batch ${b.id}`}><div className="flex justify-between gap-3"><div className="min-w-0"><div className="font-bold truncate">{b.customer_name || (b.partner_id ? usr(b.partner_id).name : b.id)}</div><div className="text-[10px] text-[var(--txt-3)] mt-1" dir="ltr">{b.id} · {new Date(b.created_at).toLocaleString("en-GB")}</div></div><div className="text-end shrink-0"><Pill tone={lifecycleOf(b) === "matched" ? "green" : lifecycleOf(b) === "archived" ? "slate" : "amber"}>{lifecycleOf(b).replace("_", " ")}</Pill><div className="text-xs font-bold mt-1" style={num}>{fmtMoney(data, b.total_net, b.currency)} {b.currency}</div></div></div></button>)}</div>}
+          {pageBatches.length < filteredBatches.length && <Btn kind="ghost" className="w-full" onClick={() => setBatchPage((p) => p + 1)}>Load {Math.min(pageSize, filteredBatches.length - pageBatches.length)} more / زیاتر</Btn>}
+          <div className="text-[10px] text-[var(--txt-3)]" aria-live="polite">Showing {pageBatches.length} of {filteredBatches.length}; server load is bounded to 200 visible batches.</div>
+        </Card>
+      </>}
 
       {(tab === "inbox" || tab === "done") && (
         inbox.length === 0 ? <Card><Empty t={tab === "inbox" ? "هیچ کۆمەڵەیەکی نوێ نییە" : "هیچ نییە"} /></Card> :

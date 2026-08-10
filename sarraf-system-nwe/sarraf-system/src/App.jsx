@@ -2,6 +2,9 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "./lib/supabase";
 import { ReceiptLifecycle, ReceiptSmartInspector } from "./components/receipts/ReceiptCommandCenter";
 import { createReceiptIngestionCommand, ingestReceiptBatch } from "./services/receiptIngestion";
+import { PortalDataStatus, PortalFrame, PortalPagedList, usePortalRoute } from "./components/portal/PortalFoundation";
+import { separatedCurrencySummary } from "./components/portal/portalModel";
+import "./components/portal/portal.css";
 import {
   LayoutDashboard, Vault, ArrowLeftRight, ListOrdered, Users, Handshake,
   TrendingUp, Building2, UserCog, PieChart, History, Plus, Trash2, Pencil,
@@ -1542,6 +1545,9 @@ export default function App() {
   }, [lang]);
 
   const [stale, setStale] = useState(null);
+  const [refreshedAt, setRefreshedAt] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const loadSequence = useRef(0);
   const [online, setOnline] = useState(() => (typeof navigator === "undefined" ? true : navigator.onLine));
   useEffect(() => {
     const on = () => setOnline(true), off = () => setOnline(false);
@@ -1647,6 +1653,8 @@ export default function App() {
   };
 
   const loadAll = async (activeProfile = profile) => {
+    const sequence = ++loadSequence.current;
+    setRefreshing(true);
     try {
       reloadBatches();
       const adminMode = activeProfile?.role === "admin";
@@ -1724,14 +1732,20 @@ export default function App() {
         readModel: !rm?.error && rm?.data && typeof rm.data === "object" ? rm.data : null,
         runtime: rt?.data && typeof rt.data === "object" ? rt.data : null,
       };
+      if (sequence !== loadSequence.current) return;
       setData(d);
+      setRefreshedAt(new Date());
       // Financial data is intentionally kept in memory only. Do not persist
       // ledger/transactions/users to browser storage on a production finance system.
       try { localStorage.removeItem("cache"); } catch {}
       if (session) setProfile(d.users.find((x) => x.authId === session.user.id) || null);
     } catch (err) {
+      if (sequence !== loadSequence.current) return;
       console.error(err);
       flash("هەڵە لە بارکردنی داتا — پەیوەندی بپشکنە و دووبارە هەوڵ بدەوە");
+      setStale(Date.now());
+    } finally {
+      if (sequence === loadSequence.current) setRefreshing(false);
     }
   };
 
@@ -1741,6 +1755,7 @@ export default function App() {
 
     const boot = async () => {
       if (!session) {
+        loadSequence.current += 1;
         setData(null);
         setProfile(null);
         setAccessError("");
@@ -3034,6 +3049,10 @@ export default function App() {
   const unseen = notes.filter((n) => !n.seen).length;
 
   const signOut = () => {
+    loadSequence.current += 1;
+    setData(null);
+    setBatches([]);
+    setRefreshedAt(null);
     try { localStorage.removeItem("cache"); localStorage.removeItem("bio"); } catch {}
     return supabase.auth.signOut();
   };
@@ -3246,7 +3265,7 @@ export default function App() {
       </header>
 
       {portalUser ? (
-        <main className="px-4 pt-5 pb-28 md:px-8 md:pb-10 max-w-[700px] mx-auto"><Portal user={portalUser} {...shared} officePay={officePay} settle={settle} flash={flash} reloadBatches={reloadBatches} accountMove={accountMove} accountTransfer={accountTransfer} /></main>
+        <main className="px-4 pt-5 pb-28 md:px-8 md:pb-10 max-w-[920px] mx-auto"><Portal user={portalUser} {...shared} officePay={officePay} settle={settle} flash={flash} reloadBatches={reloadBatches} accountMove={accountMove} accountTransfer={accountTransfer} online={online} stale={stale} refreshing={refreshing} refreshedAt={refreshedAt} refresh={() => loadAll(profile)} /></main>
       ) : (
         <div className="flex flex-col md:flex-row">
           {/* لیستی لاتەنیشت — تەنها لە شاشەی گەورە */}
@@ -10465,37 +10484,49 @@ function Audit({ data }) {
 }
 
 /* پۆرتاڵی کڕیار */
-function CustomerPortal({ user, c, base, data, calc, cur, usr, flash, reloadBatches }) {
+function CustomerPortal({ user, c, base, data, calc, cur, usr, flash, reloadBatches, online, stale, refreshing, refreshedAt, refresh }) {
   const [list, f, setF] = useTxFilter(base, cur, usr);
-  const [tab, setTab] = useState("account");
+  const customerRoutes = useMemo(() => ["home", "activity", "documents", "account", "upload"], []);
+  const [tab, setTab] = usePortalRoute("customer", customerRoutes, "home");
   const owe = Object.entries(c.owe).filter(([, v]) => v);
   const due = Object.entries(c.due).filter(([, v]) => v);
-  const net = owe.reduce((s, [, v]) => s + v, 0) - due.reduce((s, [, v]) => s + v, 0);
-  const mainCur = (owe[0] || due[0] || [])[0];
+  const summary = separatedCurrencySummary(c.owe, c.due);
+  const currencyIds = summary.currencyIds;
+  const singleCurrency = summary.currencyId;
+  const singleNet = summary.amount || 0;
+  const nav = useMemo(() => [
+    { id: "home", label: tr("داشبۆرد"), icon: LayoutDashboard },
+    { id: "activity", label: tr("چالاکی"), icon: History },
+    { id: "documents", label: tr("فیشەکانم"), icon: ScanLine },
+    { id: "account", label: tr("ئەکاونتم"), icon: Vault },
+  ], []);
+  const status = <PortalDataStatus online={online} stale={stale} refreshing={refreshing} updatedAt={refreshedAt}
+    onRefresh={refresh} labels={{ live: tr("داتا نوێیە"), refreshing: tr("نوێکردنەوە"), stale: tr("داتا کۆنە"), offline: tr("ئینتەرنێت نییە"), updated: tr("دوا نوێکردنەوە"), refresh: tr("نوێکردنەوە") }} />;
 
   return (
+    <PortalFrame nav={nav} active={tab === "upload" ? "documents" : tab} onNavigate={setTab} navLabel={tr("بەشەکانی پۆرتاڵ")} status={status}>
     <div className="space-y-4 md:space-y-5 portal-shell">
-      {tab === "account" && (
+      {tab === "home" && (
         <>
           <PortalHeader user={user} role={tr("کڕیار")} icon={Users}
-            subtitle={mainCur ? `${tr("باڵانس")} · ${cur(mainCur).code}` : tr("حیساب پاکە ✅")} />
+            subtitle={singleCurrency ? `${tr("باڵانس")} · ${cur(singleCurrency).code}` : currencyIds.length ? `${currencyIds.length} ${tr("دراو")}` : tr("حیساب پاکە ✅")} />
 
           {/* ژمارەی سەرەکی */}
           <div className="portal-hero-card">
             <Hero
-              label={net >= 0 ? tr("پارەی من لای ئەوان") : tr("قەرزی من")}
-              value={mainCur ? fmt(Math.abs(net), 0) : "0"}
-              unit={mainCur ? cur(mainCur).code : ""}
-              tone={net > 0 ? "pos" : net < 0 ? "neg" : "txt"}
-              sub={!mainCur ? tr("حیساب پاکە ✅") : null} />
+              label={singleCurrency ? (singleNet >= 0 ? tr("پارەی من لای ئەوان") : tr("قەرزی من")) : tr("باڵانس بەپێی دراو")}
+              value={singleCurrency ? fmt(Math.abs(singleNet), cur(singleCurrency).dec ?? 0) : currencyIds.length || "0"}
+              unit={singleCurrency ? cur(singleCurrency).code : currencyIds.length ? tr("دراو") : ""}
+              tone={singleCurrency && singleNet > 0 ? "pos" : singleCurrency && singleNet < 0 ? "neg" : "txt"}
+              sub={!currencyIds.length ? tr("حیساب پاکە ✅") : !singleCurrency ? tr("دراوەکان تێکەڵ ناکرێن") : null} />
           </div>
 
           {/* کرداری خێرا */}
           <div className="portal-actions-grid">
-            <PortalAction icon={Upload} label={tr("ناردنی فیش")} hint={tr("فیشەکان")} onClick={() => setTab("send")} primary />
-            <PortalAction icon={Vault} label={tr("قاسەم")} hint={tr("باڵانس")} onClick={() => setTab("safe")} />
-            <PortalAction icon={ScanLine} label={tr("فیشەکانم")} hint={tr("ئەرشیفی فیشەکان")} onClick={() => setTab("archive")} />
-            <PortalAction icon={History} label={tr("مامەڵەکانم")} hint={tr("مێژوو")} onClick={() => setTab("history")} />
+            <PortalAction icon={Upload} label={tr("ناردنی فیش")} hint={tr("فیشەکان")} onClick={() => setTab("upload")} primary />
+            <PortalAction icon={Vault} label={tr("قاسەم")} hint={tr("باڵانس")} onClick={() => setTab("account")} />
+            <PortalAction icon={ScanLine} label={tr("فیشەکانم")} hint={tr("ئەرشیفی فیشەکان")} onClick={() => setTab("documents")} />
+            <PortalAction icon={History} label={tr("مامەڵەکانم")} hint={tr("مێژوو")} onClick={() => setTab("activity")} />
           </div>
 
           <MarketWatch compact />
@@ -10528,7 +10559,7 @@ function CustomerPortal({ user, c, base, data, calc, cur, usr, flash, reloadBatc
           <Card className="px-1 py-1 portal-list-card">
             <div className="flex items-center justify-between px-3 pt-3 pb-1">
               <SecLbl>{tr("دوا مامەڵەکان")}</SecLbl>
-              <button onClick={() => setTab("history")} className="text-[12px] font-semibold tap" style={{ color: "var(--ac)" }}>
+              <button onClick={() => setTab("activity")} className="text-[12px] font-semibold tap" style={{ color: "var(--ac)" }}>
                 {tr("هەمووی")}
               </button>
             </div>
@@ -10542,81 +10573,89 @@ function CustomerPortal({ user, c, base, data, calc, cur, usr, flash, reloadBatc
         </>
       )}
 
-      {tab === "send" && (
+      {tab === "upload" && (
         <>
-          <Back onClick={() => setTab("account")} t={tr("گەڕانەوە")} />
+          <Back onClick={() => setTab("documents")} t={tr("گەڕانەوە")} />
           <Card className="p-4">
             <div className="text-[13px] leading-relaxed" style={{ color: "var(--txt-2)" }}>
               {tr("سکرینشۆتی ئەو فیشانە هەڵبژێرە کە پارەت پێ ناردووە. سیستەمەکە خۆی دەیانخوێنێتەوە، کۆیان دەکاتەوە، و دووبارەکان دەدۆزێتەوە.")}
             </div>
           </Card>
           <ReceiptUploader customerId={user.id} customerName={user.name} uploaderId={user.id} data={data}
-            flash={flash} onDone={() => { reloadBatches && reloadBatches(); setTab("archive"); }} />
+            flash={flash} onDone={() => { reloadBatches && reloadBatches(); setTab("documents"); }} />
         </>
       )}
 
-      {tab === "safe" && (
+      {tab === "account" && (
         <>
-          <Back onClick={() => setTab("account")} t={tr("گەڕانەوە")} />
           <AccountSafe userId={user.id} data={data} calc={calc} cur={cur} usr={usr} flash={flash} readOnly />
         </>
       )}
 
-      {tab === "archive" && (
+      {tab === "documents" && (
         <>
-          <Back onClick={() => setTab("account")} t={tr("گەڕانەوە")} />
+          <PortalAction icon={Upload} label={tr("ناردنی فیش")} hint={tr("فیشەکان")} onClick={() => setTab("upload")} primary />
           <ReceiptArchive customerId={user.id} data={data} flash={flash} />
         </>
       )}
 
-      {tab === "history" && (
+      {tab === "activity" && (
         <>
-          <Back onClick={() => setTab("account")} t={tr("گەڕانەوە")} />
           <TxFilterBar data={data} f={f} setF={setF} count={list.length} />
           {list.length === 0 ? <Card className="p-2"><Empty t={tr("هیچ مامەڵەیەک نەدۆزرایەوە")} /></Card> :
             <Card className="px-1 py-1 portal-list-card">
-              {list.map((t, i) => (
+              <PortalPagedList items={list} moreLabel={tr("زیاتر")}>{(visible) => visible.map((t, i) => (
                 <div key={t.id} style={i ? { borderTop: "1px solid var(--line)" } : {}}>
                   <TxRow t={t} cur={cur} usr={usr} flip lite />
                 </div>
-              ))}
+              ))}</PortalPagedList>
             </Card>}
         </>
       )}
-    </div>
+    </div></PortalFrame>
   );
 }
 
 /* پۆرتاڵی هاوبەش */
-function PartnerPortal({ user, data, calc, cur, usr, flash, reloadBatches, accountMove, accountTransfer }) {
-  const [tab, setTab] = useState("balance");
+function PartnerPortal({ user, data, calc, cur, usr, flash, reloadBatches, online, stale, refreshing, refreshedAt, refresh }) {
+  const partnerRoutes = useMemo(() => ["home", "activity", "documents", "account", "upload"], []);
+  const [tab, setTab] = usePortalRoute("partner", partnerRoutes, "home");
   const bal = calc.partner[user.id] || {};
   const hist = data.ledger.filter((e) => e.partnerId === user.id).slice().reverse();
   const fees = {};
   data.ledger.forEach((e) => { if (e.partnerId === user.id && e.type === "partner_fee") fees[e.curId] = (fees[e.curId] || 0) + Math.abs(e.amount); });
   const rows = data.currencies.map((c) => ({ c, v: bal[c.id] || 0 })).filter((r) => r.v);
   const main = rows[0];
+  const nav = useMemo(() => [
+    { id: "home", label: tr("داشبۆرد"), icon: LayoutDashboard },
+    { id: "activity", label: tr("چالاکی"), icon: History },
+    { id: "documents", label: tr("فیشەکان"), icon: ScanLine },
+    { id: "account", label: tr("ئەکاونتم"), icon: Vault },
+  ], []);
+  const status = <PortalDataStatus online={online} stale={stale} refreshing={refreshing} updatedAt={refreshedAt}
+    onRefresh={refresh} labels={{ live: tr("داتا نوێیە"), refreshing: tr("نوێکردنەوە"), stale: tr("داتا کۆنە"), offline: tr("ئینتەرنێت نییە"), updated: tr("دوا نوێکردنەوە"), refresh: tr("نوێکردنەوە") }} />;
 
   return (
+    <PortalFrame nav={nav} active={tab === "upload" ? "documents" : tab} onNavigate={setTab} navLabel={tr("بەشەکانی پۆرتاڵ")} status={status}>
     <div className="space-y-4 md:space-y-5 portal-shell">
-      {tab === "balance" && (
+      {tab === "home" && (
         <>
           <PortalHeader user={user} role={tr("هاوبەش")} icon={Handshake}
             subtitle={main ? `${tr("باڵانسی لای من")} · ${cur(main.c.id).code}` : tr("هیچ نییە")} />
 
           <div className="portal-hero-card">
             <Hero label={tr("باڵانسی لای من")}
-              value={main ? fmt(main.v, 0) : "0"}
-              unit={main ? cur(main.c.id).code : ""}
-              tone={main && main.v < 0 ? "neg" : "txt"}
-              sub={main && main.v < 0 ? tr("· قەرز") : null} />
+              value={rows.length === 1 ? fmt(main.v, main.c.dec ?? 0) : rows.length || "0"}
+              unit={rows.length === 1 ? cur(main.c.id).code : rows.length ? tr("دراو") : ""}
+              tone={rows.length === 1 && main.v < 0 ? "neg" : "txt"}
+              sub={rows.length > 1 ? tr("دراوەکان تێکەڵ ناکرێن") : main && main.v < 0 ? tr("· قەرز") : null} />
           </div>
 
           <div className="portal-actions-grid">
-            <PortalAction icon={Upload} label={tr("ناردنی فیش")} hint={tr("فیشەکان")} onClick={() => setTab("send")} primary />
-            <PortalAction icon={ScanLine} label={tr("فیشەکان")} hint={tr("ئەرشیفی فیشەکان")} onClick={() => setTab("receipts")} />
-            <PortalAction icon={Vault} label={tr("قاسە")} hint={tr("باڵانس")} onClick={() => setTab("safe")} />
-            <PortalAction icon={History} label={tr("مێژوو")} hint={tr("مێژووی ئاڵووگۆر")} onClick={() => setTab("history")} />
+            <PortalAction icon={Upload} label={tr("ناردنی فیش")} hint={tr("فیشەکان")} onClick={() => setTab("upload")} primary />
+            <PortalAction icon={ScanLine} label={tr("فیشەکان")} hint={tr("ئەرشیفی فیشەکان")} onClick={() => setTab("documents")} />
+            <PortalAction icon={Vault} label={tr("قاسە")} hint={tr("باڵانس")} onClick={() => setTab("account")} />
+            <PortalAction icon={History} label={tr("مێژوو")} hint={tr("مێژووی ئاڵووگۆر")} onClick={() => setTab("activity")} />
           </div>
 
           <MarketWatch compact />
@@ -10642,24 +10681,24 @@ function PartnerPortal({ user, data, calc, cur, usr, flash, reloadBatches, accou
         </>
       )}
 
-      {tab !== "balance" && <Back onClick={() => setTab("balance")} t={tr("گەڕانەوە")} />}
-      {tab === "safe" && <AccountSafe userId={user.id} data={data} calc={calc} cur={cur} usr={usr} flash={flash} readOnly />}
-      {tab === "receipts" && <PartnerReceipts partnerId={user.id} data={data} flash={flash} />}
-      {tab === "send" && (
+      {tab === "account" && <AccountSafe userId={user.id} data={data} calc={calc} cur={cur} usr={usr} flash={flash} readOnly />}
+      {tab === "documents" && <><PortalAction icon={Upload} label={tr("ناردنی فیش")} hint={tr("فیشەکان")} onClick={() => setTab("upload")} primary /><PartnerReceipts partnerId={user.id} data={data} flash={flash} /></>}
+      {tab === "upload" && (
         <>
+          <Back onClick={() => setTab("documents")} t={tr("گەڕانەوە")} />
           <Card className="p-4">
             <div className="text-[13px] leading-relaxed" style={{ color: "var(--txt-2)" }}>
               {tr("فیشی ئەو پارەیە بنێرە کە لە ئەکاونتی تۆوە نێردراوە یان بۆ تۆ هاتووە.")}
             </div>
           </Card>
           <ReceiptUploader partnerId={user.id} uploaderId={user.id} data={data} direction="out" allowDirection
-            flash={flash} onDone={() => { reloadBatches && reloadBatches(); setTab("receipts"); }} />
+            flash={flash} onDone={() => { reloadBatches && reloadBatches(); setTab("documents"); }} />
         </>
       )}
-      {tab === "history" && (
+      {tab === "activity" && (
         hist.length === 0 ? <Card className="p-2"><Empty t={tr("هیچ نییە")} /></Card> :
           <Card className="px-4 py-2 portal-list-card">
-            {hist.map((e) => (
+            <PortalPagedList items={hist} moreLabel={tr("زیاتر")}>{(visible) => visible.map((e) => (
               <Row key={e.id}
                 icon={<span className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
                   style={{ background: e.amount >= 0 ? "var(--pos-bg)" : "var(--neg-bg)" }}>
@@ -10671,24 +10710,24 @@ function PartnerPortal({ user, data, calc, cur, usr, flash, reloadBatches, accou
                 right={`${e.amount >= 0 ? "+" : ""}${fmt(e.amount, 0)}`}
                 rightSub={cur(e.curId).code}
                 tone={e.amount >= 0 ? "pos" : "neg"} />
-            ))}
+            ))}</PortalPagedList>
           </Card>
       )}
-    </div>
+    </div></PortalFrame>
   );
 }
 
 /* ══════════════════ پۆرتاڵی ڕۆڵەکانی تر ══════════════════ */
-function Portal({ user, data, calc, cur, usr, officePay, settle, invUnpaid, flash, reloadBatches, accountMove, accountTransfer }) {
+function Portal({ user, data, calc, cur, usr, officePay, settle, invUnpaid, flash, reloadBatches, accountMove, accountTransfer, ...portalState }) {
   if (user.role === "office") return <Office data={data} cur={cur} usr={usr} officePay={officePay} calc={calc} officeId={user.id} flash={flash} readOnlyUser />;
 
   if (user.role === "customer") {
     const c = calc.cust[user.id] || { owe: {}, due: {} };
     const base = data.txs.filter((t) => !t.deleted && t.cpId === user.id).reverse();
-    return <CustomerPortal user={user} c={c} base={base} data={data} calc={calc} cur={cur} usr={usr} flash={flash} reloadBatches={reloadBatches} />;
+    return <CustomerPortal user={user} c={c} base={base} data={data} calc={calc} cur={cur} usr={usr} flash={flash} reloadBatches={reloadBatches} {...portalState} />;
   }
 
-  if (user.role === "partner") return <PartnerPortal user={user} data={data} calc={calc} cur={cur} usr={usr} flash={flash} reloadBatches={reloadBatches} accountMove={accountMove} accountTransfer={accountTransfer} />;
+  if (user.role === "partner") return <PartnerPortal user={user} data={data} calc={calc} cur={cur} usr={usr} flash={flash} reloadBatches={reloadBatches} {...portalState} />;
 
   if (user.role === "__never__") {
     const bal = calc.partner[user.id] || {};

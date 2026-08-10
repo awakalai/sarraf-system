@@ -9,6 +9,7 @@
     "test": "node --test",
     "verify:brand": "node scripts/verify-brand-assets.mjs",
     "verify:share": "node scripts/verify-share.mjs",
+    "verify:search": "node scripts/verify-global-search.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -83,7 +83,7 @@ try {
   psqlFile(prereq);
 
   // The migration under test must apply to an empty database.
-  for (const m of ["202608120001_double_entry_core.sql", "202608120002_cashbox_and_debt.sql", "202608120003_accounting_commands.sql"]) {
+  for (const m of ["202608120001_double_entry_core.sql", "202608120002_cashbox_and_debt.sql", "202608120003_accounting_commands.sql", "202608120004_partner_and_office.sql"]) {
     psqlFile(path.join(root, "supabase/migrations", m));
   }
   psql("insert into public.app_users(id,name,role) values ('u-a','A','admin') on conflict do nothing");
@@ -334,6 +334,87 @@ try {
     psql(`create or replace function auth.uid() returns uuid language sql stable
           as $fn$ select '11111111-1111-1111-1111-111111111111'::uuid $fn$`);
     if (!denied) throw new Error("a customer was allowed to move the cashbox");
+  });
+
+
+  // ── §13D: the worked example, executed through the real commands ──
+  psql(`insert into public.app_users(id,name,role,auth_id) values
+        ('p-x','Partner X','partner','33333333-3333-3333-3333-333333333333'),
+        ('off-1','Office One','office','44444444-4444-4444-4444-444444444444')
+        on conflict do nothing`);
+
+  check("13D.5 balance 1000, sold 1300: 1000 consumed and 300 becomes debt", () => {
+    psql(`insert into public.partner_accounts(id,partner_id,currency,available)
+          values ('pa-x-cny','p-x','CNY',1000)
+          on conflict (partner_id,currency) do update set available=1000`);
+    const out = psql(`select public.sarraf_partner_disburse('p-x','CNY',1300,7.2,null,'sale to partner','cmd-disb-1')::text`);
+    const avail = Number(psql("select available from partner_accounts where id='pa-x-cny'").trim());
+    const debt = Number(psql(`select coalesce(sum(outstanding_principal),0) from debts
+      where debtor_type='partner' and debtor_id='p-x' and currency='CNY'
+        and status in ('open','partially_settled')`).trim());
+    if (avail !== 0) throw new Error(`available should be 0, got ${avail}`);
+    if (debt !== 300) throw new Error(`debt should be 300, got ${debt}`);
+    if (!out.replace(/\s/g,"").includes('"excess_as_debt":300')) throw new Error(`unexpected: ${out}`);
+  });
+
+  check("13D.5 later credit 500: debt cleared and 200 left available", () => {
+    const out = psql(`select public.sarraf_partner_credit('p-x','CNY',500,7.2,'new credit','cmd-cred-1')::text`);
+    const avail = Number(psql("select available from partner_accounts where id='pa-x-cny'").trim());
+    const debt = Number(psql(`select coalesce(sum(outstanding_principal),0) from debts
+      where debtor_type='partner' and debtor_id='p-x' and currency='CNY'
+        and status in ('open','partially_settled')`).trim());
+    if (debt !== 0) throw new Error(`debt should be 0, got ${debt}`);
+    if (avail !== 200) throw new Error(`available should be 200, got ${avail}`);
+    if (!out.replace(/\s/g,"").includes('"debt_applied":300')) throw new Error(`breakdown missing: ${out}`);
+  });
+
+  mustFail("a partner account can never go negative",
+    `insert into public.partner_account_events(account_id,partner_id,currency,kind,available_delta,actor_id)
+     values ('pa-x-cny','p-x','CNY','debit',-99999,'u-a')`);
+
+  check("replaying a disbursement does not create the debt twice", () => {
+    const before = Number(psql("select count(*) from debts where debtor_id='p-x'").trim());
+    psql(`select public.sarraf_partner_disburse('p-x','CNY',1300,7.2,null,'replay','cmd-disb-1')`);
+    const after = Number(psql("select count(*) from debts where debtor_id='p-x'").trim());
+    if (after !== before) throw new Error(`debts went from ${before} to ${after} on replay`);
+  });
+
+  check("an office assignment carries the transaction amount and currency", () => {
+    psql(`insert into public.office_payment_assignments(id,office_id,amount,currency,assigned_by)
+          values ('opa-1','off-1',5000,'CNY','u-a')`);
+    const row = psql("select amount||'|'||currency||'|'||status from office_payment_assignments where id='opa-1'").trim();
+    if (row !== "5000.0000000000|CNY|assigned") throw new Error(`assignment is ${row}`);
+  });
+
+  check("a partial payment report leaves the remainder outstanding", () => {
+    psql(`create or replace function auth.uid() returns uuid language sql stable
+          as $fn$ select '44444444-4444-4444-4444-444444444444'::uuid $fn$`);
+    const out = psql(`select public.sarraf_office_payment_report('opa-1','paid_reported',2000,'REF-1','partial','cmd-op-1')::text`);
+    if (!out.replace(/\s/g,"").includes('"outstanding":3000')) throw new Error(`expected 3000 outstanding: ${out}`);
+  });
+
+  mustFail("an office cannot report more than the assignment",
+    `select public.sarraf_office_payment_report('opa-1','paid_reported',999999,'X','over','cmd-op-2')`);
+
+  mustFail("an office cannot confirm its own payment",
+    `select public.sarraf_office_payment_report('opa-1','confirmed',null,null,null,'cmd-op-3')`);
+
+  check("another office cannot touch an assignment that is not theirs", () => {
+    psql(`insert into public.app_users(id,name,role,auth_id) values
+          ('off-2','Office Two','office','55555555-5555-5555-5555-555555555555') on conflict do nothing`);
+    psql(`create or replace function auth.uid() returns uuid language sql stable
+          as $fn$ select '55555555-5555-5555-5555-555555555555'::uuid $fn$`);
+    let denied = false;
+    try { psql(`select public.sarraf_office_payment_report('opa-1','acknowledged',null,null,null,'cmd-op-4')`); }
+    catch { denied = true; }
+    psql(`create or replace function auth.uid() returns uuid language sql stable
+          as $fn$ select '11111111-1111-1111-1111-111111111111'::uuid $fn$`);
+    if (!denied) throw new Error("a different office was allowed to report");
+  });
+
+  check("the trial balance still reconciles after partner and office activity", () => {
+    const out = psql("select (public.sarraf_trial_balance_check()->>'balanced')::text").trim();
+    if (out !== "true") throw new Error(psql("select public.sarraf_trial_balance_check()::text"));
   });
 
   let failed = 0;

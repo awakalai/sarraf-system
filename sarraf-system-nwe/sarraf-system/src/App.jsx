@@ -9,6 +9,7 @@ import { createReceiptReviewCommand, finalizeReceiptBatch, loadReceiptPolicy, re
 import { assignReceiptCustody, convertReceiptBatchToTransaction, loadPortalReceiptSummary } from "./services/receiptOperations";
 import { dayCloseMessage, validateDayClose } from "./services/dayClose";
 import { rehearseRestore, sealBackup, verdictText } from "./services/backupIntegrity";
+import { CommandKeyBook, runIdempotentCommand } from "./services/commandRetry";
 import { userFacingServiceError } from "./services/userFacingError";
 import { claimSharedReceiptHandoff, finishSharedReceiptHandoff, releaseSharedReceiptHandoff, sharedReceiptMessage, validateClaimedSharedFiles } from "./services/sharedReceiptHandoff";
 import { PortalDataStatus, PortalFrame, PortalPagedList, usePortalRoute } from "./components/portal/PortalFoundation";
@@ -2024,10 +2025,13 @@ export default function App() {
     pair_id: t.pairId ?? null, direct_role: t.directRole ?? null, own_money: !!t.ownMoney,
     buy_rate: t.buyRate ?? null, buy_total: t.buyTotal ?? null, cp_id: t.cpId, cp_name: t.cpName, cur_id: t.curId, amount: t.amount, rate: t.rate, against_id: t.againstId, total: t.total, partner_id: t.partnerId, status: t.status, paid_at: t.paidAt, profit: t.profit, profit_cur_id: t.profitCurId, note: t.note || null, date: t.date, edited: !!t.edited, deleted: !!t.deleted });
 
-  const commandKey = (kind = "cmd") => {
-    const id = globalThis.crypto?.randomUUID?.() || uid();
-    return `${kind}:${profile?.id || "user"}:${id}`;
-  };
+  // One key per intent, kept until the outcome is actually known. A key minted fresh on each
+  // attempt would make every retry a second real command — which is exactly what the server's
+  // idempotency exists to prevent.
+  const keyBook = useRef(new CommandKeyBook());
+  const intentRef = useRef(null);
+  const commandKey = (kind = "cmd") =>
+    keyBook.current.keyFor(intentRef.current || kind, kind, profile?.id || "user");
 
   const approvalQueued = (result, label = "کردار") => {
     if (!result?.approval_required) return false;
@@ -2036,7 +2040,7 @@ export default function App() {
     setPage("approvals");
     return true;
   };
-  const rpcStrict = async (name, args) => {
+  const rpcOnce = async (name, args) => {
     const { data: out, error } = await supabase.rpc(name, args);
     if (error) {
       const msg = String(error?.message || "");
@@ -2051,22 +2055,55 @@ export default function App() {
     return out;
   };
 
+  /**
+   * A lost response is not a failure. If the connection drops after the server has committed,
+   * the browser cannot tell the difference — so the call is retried under the same command key,
+   * which the server replays rather than re-executing. Only if it still cannot be reached does
+   * the operator hear that the outcome is unknown, and the key is kept so their own retry is
+   * a replay too.
+   */
+  const rpcStrict = async (name, args) =>
+    runIdempotentCommand({
+      commandKey: args?.p_command_key || commandKey(name),
+      invoke: () => rpcOnce(name, args),
+      attempts: args?.p_command_key ? 3 : 1,
+      onRetry: ({ attempt }) => flash(`پەیوەندی لاوازە — هەوڵی ${attempt + 1}...`),
+    });
+
   const lockRef = useRef(false);
-  const run = async (fn) => {
+  /**
+   * `intent` names what the operator is trying to do. Two attempts at the same intent share a
+   * command key, so pressing save again after an unclear failure replays rather than posting
+   * a second time. Passing nothing keeps the old per-call behaviour for reads.
+   */
+  const run = async (fn, intent = null) => {
     if (lockRef.current) return false;
     if (!navigator.onLine) { flash("ئینتەرنێت نییە — ناتوانرێت تۆمار بکرێت"); return false; }                  // قوفڵی هاوکات — خێراتر لە state
     lockRef.current = true; setBusy(true);
+    intentRef.current = intent;
     try {
       const result = await fn();
+      // The outcome is known and good; the intent is finished and its key can be retired.
+      if (intent) keyBook.current.release(intent);
       await loadAll();
       return result === undefined ? true : result;
     }
     catch (err) {
       console.error(err);
+      if (err?.outcomeUnknown) {
+        // Deliberately NOT released: the operator's own retry must reuse this key, or the
+        // command they were never told the result of could run a second time for real.
+        flash(err.message);
+        // Reload anyway — if it did commit, the screen should show it rather than deny it.
+        try { await loadAll(); } catch (e) { console.error("reload after unknown outcome", e); }
+        return false;
+      }
+      // The server answered. The command did not run, so the key is spent on nothing.
+      if (intent) keyBook.current.release(intent);
       flash(err?.message || "هەڵەیەک ڕوویدا — دووبارە هەوڵ بدەوە");
       return false;
     }
-    finally { lockRef.current = false; setBusy(false); }
+    finally { lockRef.current = false; setBusy(false); intentRef.current = null; }
   };
 
   /* ───────── حیسابەکان ───────── */
@@ -2433,10 +2470,13 @@ export default function App() {
   };
 
   /* ───────── کردارەکان ───────── */
-  const addDeposit = (f) => run(async () => {
+  const addDeposit = (f) => {
+    // Fixed before the first attempt, so a retry records the same movement once, not twice.
+    const entryId = uid();
+    return run(async () => {
     if (!(Math.abs(+f.amount) > 0)) { flash("بڕ پێویستە"); return; }
     const amount = roundMoney(data, f.dir === "in" ? Math.abs(+f.amount) : -Math.abs(+f.amount), f.curId);
-    const e = { id: uid(), type: f.dir === "in" ? "deposit" : "withdraw", owner: f.owner === "self" ? "self" : "investor", investorId: f.owner === "self" ? null : f.owner, curId: f.curId, amount, partnerId: null, txId: null, note: f.note, date: now() };
+    const e = { id: entryId, type: f.dir === "in" ? "deposit" : "withdraw", owner: f.owner === "self" ? "self" : "investor", investorId: f.owner === "self" ? null : f.owner, curId: f.curId, amount, partnerId: null, txId: null, note: f.note, date: now() };
     const result = await rpcStrict("sarraf_post_ledger_command", {
       p_ledger: [LR(e)],
       p_command_key: commandKey("cash"),
@@ -2445,7 +2485,8 @@ export default function App() {
     });
     if (approvalQueued(result, f.dir === "in" ? "پارە داخڵکردن" : "پارە دەرهێنان")) return result;
     flash("تۆمار کرا ✓");
-  });
+    }, `cash:${entryId}`);
+  };
 
     /* دروستکردنی تۆمارەکانی دەفتەر بۆ مامەڵەیەک */
   const buildEntries = (t) => {
@@ -2561,6 +2602,10 @@ export default function App() {
     // دراوی دەرەوە: دەبێت لای تەرەفێک بێت
     if (cur(f.curId).external && !f.partnerId) { flash(`${cur(f.curId).name} دەبێت لای تەرەفێک دابنرێت`); return false; }
 
+    // The transaction's identity is fixed before the first attempt, so a retry after a lost
+    // response saves the same transaction rather than a second one.
+    const txId = existing ? existing.id : uid();
+
     return await run(async () => {
       const txDate = existing ? existing.date : now();
       let profit = null, profitCurId = null, bookBuyRate = null, bookBuyTotal = null;
@@ -2586,7 +2631,7 @@ export default function App() {
       }
 
       const t = {
-        id: existing ? existing.id : uid(), code: existing ? existing.code : null, type: f.type,
+        id: txId, code: existing ? existing.code : null, type: f.type,
         cpId: f.cpId || null, cpName: f.cpId ? null : f.cpName,
         curId: f.curId, amount, rate, againstId: f.againstId, total,
         buyRate: bookBuyRate, buyTotal: bookBuyTotal,
@@ -2647,7 +2692,7 @@ export default function App() {
         }
       }
       flash(existing ? "دەستکاری پاشەکەوت کرا ✓" : `مامەڵە تۆمار کرا ✓${t.code ? ` — #${t.code}` : ""}`);
-    });
+    }, `${existing ? "edit" : "tx"}:${txId}`);
   };
 
   const delTx = (t) => {
@@ -2666,7 +2711,7 @@ export default function App() {
       reloadBatches();
       if (approvalQueued(result, "هەڵوەشاندنەوەی مامەڵە")) return result;
       flash("مامەڵەکە هەڵوەشێندرایەوە ✓");
-    });
+    }, `void:${t.id}`);
   };
 
   const settle = (t, byOffice) => {
@@ -2697,7 +2742,7 @@ export default function App() {
       if (byOffice) await notify(null, "payment", tr("نووسینگە پارەی دا"),
         `#${t.code || "—"} · ${fmt(t.total, cur(t.againstId).dec ?? 0)} ${cur(t.againstId).code}`, "txs", t.id);
       flash(isBuy ? "پارەدان تۆمار کرا ✓" : "وەرگرتن تۆمار کرا ✓");
-    });
+    }, `settle:${t.id}:${byOffice ? "office" : "self"}`);
   };
   const officePay = (t) => settle(t, true);
 
@@ -2705,10 +2750,12 @@ export default function App() {
     const amt = roundMoney(data, Math.abs(+f.amount), f.curId);
     if (!(amt > 0)) return flash("بڕی خەرجی پێویستە");
     if (f.category === "خێری وەبەرهێنەر" && !f.investorId) return flash("وەبەرهێنەر هەڵبژێرە");
+    // Minted once per submission, not once per attempt: a retry must be the same expense.
+    const entryId = uid();
     run(async () => {
       const isPayout = f.category === "خێری وەبەرهێنەر";
       const e = {
-        id: uid(), type: isPayout ? "investor_payout" : "expense",
+        id: entryId, type: isPayout ? "investor_payout" : "expense",
         owner: null, investorId: isPayout ? f.investorId : null,
         curId: f.curId, amount: -amt, partnerId: null, txId: null,
         note: `${f.category}${f.note ? " — " + f.note : ""}`, date: now(),
@@ -2721,19 +2768,21 @@ export default function App() {
       });
       if (approvalQueued(result, isPayout ? "پارەدانی خێری وەبەرهێنەر" : "خەرجی")) return result;
       flash("تۆمار کرا ✓");
-    });
+    }, `expense:${entryId}`);
   };
 
     const transfer = (f) => {
     const amt = roundMoney(data, Math.abs(+f.amount), f.curId);
     if (!amt || !f.partnerId) return flash("بڕ و هاوبەش دیاری بکە");
+    // Minted once per submission, not once per attempt: a retry must be the same transfer.
+    const [outId, inId] = [uid(), uid()];
     run(async () => {
       const base = { curId: f.curId, txId: null, date: now() };
       const es = f.dir === "to"
-        ? [{ ...base, id: uid(), type: "transfer", amount: -amt, partnerId: null },
-           { ...base, id: uid(), type: "transfer", amount: +amt, partnerId: f.partnerId }]
-        : [{ ...base, id: uid(), type: "transfer", amount: +amt, partnerId: null },
-           { ...base, id: uid(), type: "transfer", amount: -amt, partnerId: f.partnerId }];
+        ? [{ ...base, id: outId, type: "transfer", amount: -amt, partnerId: null },
+           { ...base, id: inId, type: "transfer", amount: +amt, partnerId: f.partnerId }]
+        : [{ ...base, id: outId, type: "transfer", amount: +amt, partnerId: null },
+           { ...base, id: inId, type: "transfer", amount: -amt, partnerId: f.partnerId }];
       // Partner commission is calculated and frozen by Phase 13C on the server.
       const result = await rpcStrict("sarraf_post_ledger_command", {
         p_ledger: es.map(LR),
@@ -2743,7 +2792,7 @@ export default function App() {
       });
       if (approvalQueued(result, "گواستنەوەی هاوبەش")) return result;
       flash("گواستنەوە تۆمار کرا ✓");
-    });
+    }, `partner-transfer:${outId}`);
   };
 
     const saveRates = (rows) => run(async () => {
@@ -2854,7 +2903,10 @@ export default function App() {
 
   /* ── پارە دانان/دەرهێنان لە حسابی هەر کەسێک ── */
   //  دوو لای هەیە: قاسەی گشتی + قاسەی خودی ئەو کەسە
-  const accountMove = (f) => run(async () => {
+  const accountMove = (f) => {
+    // Fixed before the first attempt, so a retry moves the same money once, not twice.
+    const moveId = uid();
+    return run(async () => {
     const amt = roundMoney(data, Math.abs(+f.amount), f.curId);
     if (!(amt > 0)) { flash("بڕ پێویستە"); return; }
     if (!f.userId) { flash("کەسەکە دیاری بکە"); return; }
@@ -2863,7 +2915,7 @@ export default function App() {
     const at = now();
 
     const ae = {
-      id: uid(), user_id: f.userId, kind: "cash", cur_id: f.curId, amount: sign * amt,
+      id: moveId, user_id: f.userId, kind: "cash", cur_id: f.curId, amount: sign * amt,
       type: f.dir === "in" ? "deposit" : "withdraw", note: f.note || null,
       created_by: profile?.id || null,
     };
@@ -2890,23 +2942,27 @@ export default function App() {
       f.dir === "in" ? tr("پارە خرایە حسابەکەت") : tr("پارە لە حسابەکەت دەرهێنرا"),
       `${fmt(amt, cur(f.curId).dec ?? 0)} ${cur(f.curId).code}`);
     flash("تۆمار کرا ✓");
-  });
+    }, `account-move:${moveId}`);
+  };
 
     /* ── گواستنەوەی پارە: حساب بۆ حساب ── */
   //  لای یەکێک کەم، لای ئەوی تر زیاد — قاسەی گشتی نەگۆڕ دەمێنێتەوە
-  const accountTransfer = (f) => run(async () => {
+  const accountTransfer = (f) => {
+    // Fixed before the first attempt, so a retry moves the same money once, not twice.
+    const ref = uid();
+    const [fromRowId, toRowId] = [uid(), uid()];
+    return run(async () => {
     const amt = roundMoney(data, Math.abs(+f.amount), f.curId);
     if (!(amt > 0)) { flash("بڕ پێویستە"); return; }
     if (!f.fromId || !f.toId) { flash("هەردوو لایەن دیاری بکە"); return; }
     if (f.fromId === f.toId) { flash("ناکرێت بۆ هەمان کەس بگوازرێتەوە"); return; }
     const a = usr(f.fromId), b = usr(f.toId);
-    const ref = uid();
     const at = now();
 
     const rows = [
-      { id: uid(), user_id: f.fromId, kind: "cash", cur_id: f.curId, amount: -amt, type: "transfer_out",
+      { id: fromRowId, user_id: f.fromId, kind: "cash", cur_id: f.curId, amount: -amt, type: "transfer_out",
         ref_id: ref, note: `بۆ ${b.name}${f.note ? " — " + f.note : ""}`, created_by: profile?.id || null },
-      { id: uid(), user_id: f.toId, kind: "cash", cur_id: f.curId, amount: +amt, type: "transfer_in",
+      { id: toRowId, user_id: f.toId, kind: "cash", cur_id: f.curId, amount: +amt, type: "transfer_in",
         ref_id: ref, note: `لە ${a.name}${f.note ? " — " + f.note : ""}`, created_by: profile?.id || null },
     ];
     const transferRow = {
@@ -2931,11 +2987,15 @@ export default function App() {
     await notify(f.fromId, "transfer", tr("پارە لە حسابەکەت دەرچوو"), `${fmt(amt, cur(f.curId).dec ?? 0)} ${cur(f.curId).code} → ${b.name}`);
     await notify(f.toId, "transfer", tr("پارە هاتە حسابەکەت"), `${fmt(amt, cur(f.curId).dec ?? 0)} ${cur(f.curId).code} ← ${a.name}`);
     flash("گواستنەوە تۆمار کرا ✓");
-  });
+    }, `account-transfer:${ref}`);
+  };
 
     /* ── بەستنی ڕۆژ ── */
   /* ── بەستنی ڕۆژ ── */
-  const closeDay = (lines, note, adjust) => run(async () => {
+  const closeDay = (lines, note, adjust) => {
+    // Fixed before the first attempt, so a retry closes the same day once, not twice.
+    const closeId = uid();
+    return run(async () => {
     // The database refuses an unexplained difference; saying so here means the operator is
     // stopped at the button with the reason, not at the server with an error.
     const verdict = validateDayClose({ lines, note });
@@ -2943,7 +3003,7 @@ export default function App() {
     const hasDiff = lines.some((l) => Math.abs(Number(l.diff) || 0) > 1e-9);
     const totalDiffUsd = sumUsd(Object.fromEntries(lines.map((l) => [l.cur, Number(l.diff) || 0])));
     const closePayload = {
-      id: uid(), close_date: new Date().toISOString().slice(0, 10),
+      id: closeId, close_date: new Date().toISOString().slice(0, 10),
       lines, total_diff: totalDiffUsd, has_diff: hasDiff, note: note || null,
       adjust: !!adjust, closed_by: profile?.id || null,
     };
@@ -2963,7 +3023,8 @@ export default function App() {
     });
     if (approvalQueued(result, "بەستنی ڕۆژ")) return result;
     flash(!hasDiff ? "ڕۆژ بەسترا — هیچ جیاوازییەک نییە ✓" : "ڕۆژ بەسترا ✓");
-  });
+    }, `day-close:${closeId}`);
+  };
 
     /* ── هەڵوەشاندنەوەی پارەدان ── */
   const unsettle = (t) => {
@@ -2977,7 +3038,7 @@ export default function App() {
       });
       if (approvalQueued(result, "هەڵوەشاندنەوەی پارەدان")) return result;
       flash("پارەدان بە تۆماری پێچەوانە هەڵوەشێندرایەوە ✓");
-    });
+    }, `unsettle:${t.id}`);
   };
 
   /* ── دروستکەر / پشکنەر + یەکسانکردنەوە ── */

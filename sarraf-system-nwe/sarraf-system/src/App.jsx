@@ -134,6 +134,18 @@ const now = () => new Date().toISOString();
 
 const ROLE_KU = { admin: "ئەدمین", customer: "کڕیار-فرۆشیار", partner: "هاوبەشی سین", investor: "وەبەرهێنەر", office: "نووسینگە" };
 
+const ADMIN_CENTER_PAGE_IDS = new Set([
+  "admin-center",
+  "action-inbox",
+  "approvals",
+  "close",
+  "insights",
+  "integrity",
+  "audit",
+  "export-audit",
+  "backup",
+]);
+
 const fmt = (n, d=0) => {
   const value = Number(n);
   if (!Number.isFinite(value)) return "—";
@@ -620,6 +632,66 @@ const Back = ({ onClick, t }) => (
     {t}
   </button>
 );
+
+function AdminCenterHub({ lang = "ku", onNavigate }) {
+  const label = (ku, en, ar) => lang === "en" ? en : lang === "ar" ? ar : ku;
+  const sections = [
+    {
+      title: label("کاری ڕۆژانە", "Daily operations", "العمليات اليومية"),
+      items: [
+        ["action-inbox", label("ئینباکسی کارەکان", "Action Inbox", "صندوق الإجراءات"), label("کار و فیش و بڕیارە چاوەڕوانەکان", "Pending work, receipts, and decisions", "الأعمال والإيصالات والقرارات المعلّقة"), Inbox],
+        ["approvals", label("کۆنترۆڵ و پەسەندکردن", "Controls & Approvals", "التحكم والموافقات"), label("پەسەندکردنی دوو-ئەدمین و کۆنترۆڵی مەترسی", "Two-admin approval and risk controls", "موافقات إدارية مزدوجة وضوابط المخاطر"), ShieldCheck],
+        ["close", label("بەستنی ڕۆژ", "Day Close", "إغلاق اليوم"), label("ژماردن، جیاوازی و تۆماری کۆتایی ڕۆژ", "Counts, differences, and end-of-day records", "الجرد والفروقات وسجل نهاية اليوم"), ClipboardCheck],
+      ],
+    },
+    {
+      title: label("شیکاری و دڵنیایی", "Analysis & assurance", "التحليل والضمان"),
+      items: [
+        ["insights", label("ڕەوت و شیکاری", "Trends & Insights", "الاتجاهات والتحليلات"), label("ڕەوتی قازانج، مامەڵە و دۆخی دارایی", "Profit, transaction, and financial trends", "اتجاهات الربح والمعاملات والوضع المالي"), TrendingUp],
+        ["integrity", label("ناوەندی یەکپارچەیی", "Integrity Center", "مركز سلامة البيانات"), label("پشکنینی ناکۆکی، دووبارە و پەیوەندیی شکێنراو", "Checks for inconsistencies, duplicates, and broken links", "فحص التعارض والتكرار والروابط المقطوعة"), ShieldAlert],
+        ["audit", label("تۆماری گۆڕانکاری", "Change Log", "سجل التغييرات"), label("مێژووی کردار و گۆڕانکارییەکانی سیستەم", "History of system actions and changes", "سجل إجراءات النظام وتغييراته"), History],
+        ["export-audit", label("هەناردە و وردبینی", "Export & Audit", "التصدير والتدقيق"), label("هەناردەی سنووردار، timeline و checksum", "Bounded exports, timeline, and checksum", "تصدير محدود وخط زمني وبصمة تحقق"), FileCheck2],
+      ],
+    },
+    {
+      title: label("پاراستن", "Protection", "الحماية"),
+      items: [
+        ["backup", label("پاراستنی داتا", "Data Protection", "حماية البيانات"), label("backup، health check و کۆنترۆڵی maintenance", "Backup, health checks, and maintenance controls", "النسخ الاحتياطي وفحوصات الصحة وضوابط الصيانة"), Database],
+      ],
+    },
+  ];
+
+  return (
+    <div className="space-y-6">
+      <H sub={label("هەموو ئامرازەکانی ئەدمین لە یەک شوێن؛ هیچ بەشێک لابراو نییە.", "Every admin tool in one place; no feature is removed.", "جميع أدوات الإدارة في مكان واحد؛ لم تتم إزالة أي قسم.")}>
+        {label("ناوەندی بەڕێوەبردن", "Admin Center", "مركز الإدارة")}
+      </H>
+      {sections.map((section) => (
+        <section key={section.title} aria-labelledby={`admin-center-${section.items[0][0]}`}>
+          <h3 id={`admin-center-${section.items[0][0]}`} className="text-[12px] font-semibold mb-3" style={{ color: "var(--txt-2)" }}>
+            {section.title}
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+            {section.items.map(([id, title, description, Icon]) => (
+              <button key={id} type="button" onClick={() => onNavigate(id)}
+                className="card tap hov min-h-[118px] p-4 text-start flex items-start gap-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ac)]">
+                <span className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
+                  style={{ background: "var(--surf-2)", color: "var(--ac)", border: "1px solid var(--line)" }}>
+                  <Icon className="w-5 h-5" aria-hidden="true" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[13px] font-bold" style={{ color: "var(--txt)" }}>{title}</span>
+                  <span className="block text-[11px] leading-relaxed mt-1.5" style={{ color: "var(--txt-3)" }}>{description}</span>
+                </span>
+                <ChevronLeft className="w-4 h-4 shrink-0 mt-1" style={{ color: "var(--txt-3)", transform: lang === "en" ? "rotate(180deg)" : undefined }} aria-hidden="true" />
+              </button>
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
 
 const Pill = ({ tone = "slate", children }) => {
   const t = {
@@ -3195,12 +3267,12 @@ export default function App() {
     {
       label: navSectionLabel("سیستەم", "System", "النظام"),
       items: [
-        ["close", tr("بەستنی ڕۆژ"), ClipboardCheck],
-        ["backup", tr("پاراستنی داتا"), Database],
+        ["admin-center", navSectionLabel("ناوەندی بەڕێوەبردن", "Admin Center", "مركز الإدارة"), SlidersHorizontal],
       ],
     },
   ];
   const NAV = NAV_GROUPS.flatMap((g) => g.items);
+  const isNavActive = (id) => id === "admin-center" ? ADMIN_CENTER_PAGE_IDS.has(page) : page === id;
 
 
   const shared = { data, calc, cur, usr, mySafe, profitAll, profitIn, ownProfitIn, ownProfitAll,
@@ -3390,7 +3462,7 @@ export default function App() {
                   <div className="sidebar-section-title px-3 pb-1.5">{group.label}</div>
                   <div className="space-y-1">
                     {group.items.map(([id, t, Ic]) => {
-                      const on = page === id;
+                      const on = isNavActive(id);
                       return (
                         <button key={id} onClick={() => { setPage(id); setDetailId(null); setEditTx(null); }}
                           style={on ? { color: "#07130D" } : { color: "#A9B0B8" }}
@@ -3426,6 +3498,10 @@ export default function App() {
               onMakeTx={(b) => { setPendingBatch(b); setPage("newtx"); }} />}
             {page === "people" && <PeopleHub {...shared} accountMove={accountMove} accountTransfer={accountTransfer} profile={profile} detailId={detailId} setDetailId={setDetailId} onSave={saveTx} transfer={transfer} officePay={officePay} settle={settle} createUser={createUser} deleteUser={deleteUser} setUserRate={setUserRate} flash={flash} />}
             {page === "report" && <Report {...shared} />}
+            {page === "admin-center" && <AdminCenterHub lang={lang} onNavigate={setPage} />}
+            {ADMIN_CENTER_PAGE_IDS.has(page) && page !== "admin-center" && (
+              <Back onClick={() => setPage("admin-center")} t={navSectionLabel("گەڕانەوە بۆ ناوەندی بەڕێوەبردن", "Back to Admin Center", "العودة إلى مركز الإدارة")} />
+            )}
             {page === "action-inbox" && <DeferredPanel><ActionInbox client={supabase} lang={lang} onNavigate={(path) => setPage(path.slice(2))} /></DeferredPanel>}
             {page === "integrity" && <DeferredPanel><IntegrityCenter client={supabase} lang={lang} onNavigate={(path) => setPage(path.slice(2))} /></DeferredPanel>}
             {page === "export-audit" && <DeferredPanel><ExportAuditCenter client={supabase} lang={lang} /></DeferredPanel>}
@@ -3446,7 +3522,7 @@ export default function App() {
             <div className="flex glass rounded-full p-1.5 pointer-events-auto mx-auto max-w-md"
               style={{ boxShadow: "var(--sh-3)" }}>
               {NAV.slice(0, 4).map(([id, t, Ic]) => {
-                const on = page === id;
+                const on = isNavActive(id);
                 return (
                   <button key={id} onClick={() => { setPage(id); setDetailId(null); setEditTx(null); setMore(false); }}
                     className="flex-1 flex flex-col items-center gap-1 py-2 rounded-full tap"
@@ -3458,9 +3534,9 @@ export default function App() {
               })}
               <button onClick={() => setMore(!more)}
                 className="flex-1 flex flex-col items-center gap-1 py-2 rounded-full tap"
-                style={NAV.slice(4).some(([id]) => id === page) ? { background: "var(--surf-3)" } : {}}>
+                style={NAV.slice(4).some(([id]) => isNavActive(id)) ? { background: "var(--surf-3)" } : {}}>
                 <MoreHorizontal className="w-[19px] h-[19px]"
-                  style={{ color: NAV.slice(4).some(([id]) => id === page) ? "var(--ac)" : "var(--txt-3)" }} />
+                  style={{ color: NAV.slice(4).some(([id]) => isNavActive(id)) ? "var(--ac)" : "var(--txt-3)" }} />
                 <span className="text-[9.5px] font-semibold" style={{ color: "var(--txt-3)" }}>{tr("زیاتر")}</span>
               </button>
             </div>
@@ -3477,7 +3553,7 @@ export default function App() {
                 </div>
                 {NAV.slice(4).map(([id, t, Ic]) => (
                   <button key={id} onClick={() => { setPage(id); setDetailId(null); setEditTx(null); setMore(false); }}
-                    className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-[var(--r-sm)] text-sm mb-1 ${page === id ? "bg-[var(--pos)] text-white font-semibold" : "text-[var(--txt)] hover:bg-[var(--line)]"}`}>
+                    className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-[var(--r-sm)] text-sm mb-1 ${isNavActive(id) ? "bg-[var(--pos)] text-white font-semibold" : "text-[var(--txt)] hover:bg-[var(--line)]"}`}>
                     <Ic className="w-5 h-5" /> {t}
                   </button>
                 ))}

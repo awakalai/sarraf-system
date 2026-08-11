@@ -83,7 +83,7 @@ try {
   psqlFile(prereq);
 
   // The migration under test must apply to an empty database.
-  for (const m of ["202608120001_double_entry_core.sql", "202608120002_cashbox_and_debt.sql", "202608120003_accounting_commands.sql", "202608120004_partner_and_office.sql"]) {
+  for (const m of ["202608120001_double_entry_core.sql", "202608120002_cashbox_and_debt.sql", "202608120003_accounting_commands.sql", "202608120004_partner_and_office.sql", "202608120005_receipt_state_machine.sql"]) {
     psqlFile(path.join(root, "supabase/migrations", m));
   }
   psql("insert into public.app_users(id,name,role) values ('u-a','A','admin') on conflict do nothing");
@@ -415,6 +415,117 @@ try {
   check("the trial balance still reconciles after partner and office activity", () => {
     const out = psql("select (public.sarraf_trial_balance_check()->>'balanced')::text").trim();
     if (out !== "true") throw new Error(psql("select public.sarraf_trial_balance_check()::text"));
+  });
+
+
+  // ── Phase 4: receipt state machine, custody, forwarding ──
+  psql(`insert into public.app_users(id,name,role) values
+        ('cust-r','Receipt Customer','customer'),('part-r','Receipt Partner','partner'),
+        ('inv-r','Investor','investor') on conflict do nothing`);
+
+  const doc = (id, flow, uploader, extra = "") => `
+    insert into public.receipt_documents(id,flow,uploader_id,storage_path${extra ? "," + extra.split("=")[0] : ""})
+    values ('${id}','${flow}','${uploader}','ingest/${id}.jpg'${extra ? ",'" + extra.split("=")[1] + "'" : ""})`;
+
+  check("a document starts at created and records that transition", () => {
+    psql(`insert into public.receipt_documents(id,flow,uploader_id,customer_id,storage_path)
+          values ('doc-1','customer_sells_to_zeman','cust-r','cust-r','ingest/doc-1.jpg')`);
+    const st = psql("select state from receipt_documents where id='doc-1'").trim();
+    const tr = psql("select count(*) from receipt_state_transitions where document_id='doc-1'").trim();
+    if (st !== "created" || tr !== "1") throw new Error(`state ${st}, transitions ${tr}`);
+  });
+
+  mustFail("a customer cannot upload a purchase receipt",
+    `insert into public.receipt_documents(id,flow,uploader_id,customer_id,storage_path)
+     values ('doc-bad','customer_buys_from_zeman','cust-r','cust-r','ingest/doc-bad.jpg')`);
+
+  mustFail("an unassigned partner cannot upload for another partner",
+    `insert into public.receipt_documents(id,flow,uploader_id,partner_id,storage_path)
+     values ('doc-bad2','customer_buys_from_zeman','part-r','someone-else','ingest/doc-bad2.jpg')`);
+
+  mustFail("an investor cannot upload receipts at all",
+    `insert into public.receipt_documents(id,flow,uploader_id,customer_id,storage_path)
+     values ('doc-bad3','customer_sells_to_zeman','inv-r','inv-r','ingest/doc-bad3.jpg')`);
+
+  mustFail("a document cannot be created already accepted",
+    `insert into public.receipt_documents(id,flow,uploader_id,customer_id,storage_path,state)
+     values ('doc-bad4','customer_sells_to_zeman','cust-r','cust-r','ingest/x.jpg','accepted')`);
+
+  mustFail("a document cannot jump from created straight to accepted",
+    `update public.receipt_documents set state='accepted' where id='doc-1'`);
+
+  check("the documented happy path walks through every state", () => {
+    const path = ["uploading","uploaded","ocr_pending","ocr_processing","parsed","validated",
+                  "submitted","matched","accepted","finalized","forwarded","delivered"];
+    for (const s of path) psql(`update public.receipt_documents set state='${s}' where id='doc-1'`);
+    const st = psql("select state from receipt_documents where id='doc-1'").trim();
+    if (st !== "delivered") throw new Error(`ended at ${st}`);
+    const n = Number(psql("select count(*) from receipt_state_transitions where document_id='doc-1'").trim());
+    if (n !== path.length + 1) throw new Error(`expected ${path.length + 1} transitions, got ${n}`);
+  });
+
+  check("a delivered document may only be marked seen", () => {
+    let bad = false;
+    try { psql(`update public.receipt_documents set state='rejected' where id='doc-1'`); } catch { bad = true; }
+    if (!bad) throw new Error("a delivered document was moved to rejected");
+    psql(`update public.receipt_documents set state='seen' where id='doc-1'`);
+  });
+
+  mustFail("a seen document is terminal and accepts nothing further",
+    `update public.receipt_documents set state='rejected' where id='doc-1'`);
+
+  mustFail("stored evidence cannot be re-pointed",
+    `update public.receipt_documents set storage_path='ingest/other.jpg' where id='doc-1'`);
+
+  check("an OCR failure keeps the image and stays recoverable", () => {
+    psql(`insert into public.receipt_documents(id,flow,uploader_id,customer_id,storage_path)
+          values ('doc-2','customer_sells_to_zeman','cust-r','cust-r','ingest/doc-2.jpg')`);
+    for (const s of ["uploading","uploaded","ocr_pending","ocr_failed_retryable","ocr_pending"])
+      psql(`update public.receipt_documents set state='${s}' where id='doc-2'`);
+    const st = psql("select state||'|'||storage_path from receipt_documents where id='doc-2'").trim();
+    if (st !== "ocr_pending|ingest/doc-2.jpg") throw new Error(`document is ${st}`);
+  });
+
+  check("the original extraction is immutable and a correction is a new version", () => {
+    psql(`insert into public.receipt_extractions(document_id,version,is_original,gross_amount,currency)
+          values ('doc-2',1,true,2520.41,'CNY')`);
+    psql(`insert into public.receipt_extractions(document_id,version,is_original,gross_amount,currency,
+            corrected_by,correction_reason,corrected_at)
+          values ('doc-2',2,false,2447.00,'CNY','u-a','admin corrected the gross figure',now())`);
+    const v1 = psql("select gross_amount from receipt_extractions where document_id='doc-2' and version=1").trim();
+    if (Number(v1) !== 2520.41) throw new Error(`original changed to ${v1}`);
+  });
+
+  mustFail("an extraction cannot be edited in place",
+    `update public.receipt_extractions set gross_amount=1 where document_id='doc-2' and version=1`);
+
+  mustFail("a correction without a reason is refused",
+    `insert into public.receipt_extractions(document_id,version,is_original,gross_amount,corrected_by)
+     values ('doc-2',3,false,10,'u-a')`);
+
+  mustFail("a pending document cannot be forwarded",
+    `insert into public.receipt_forwardings(id,document_id,from_actor_type,to_actor_type,to_actor_id,forwarded_by)
+     values ('fwd-bad','doc-2','zeman','customer','cust-r','u-a')`);
+
+  check("an accepted document can be forwarded exactly once per recipient", () => {
+    psql(`insert into public.receipt_forwardings(id,document_id,from_actor_type,to_actor_type,to_actor_id,forwarded_by)
+          values ('fwd-1','doc-1','zeman','customer','cust-r','u-a')`);
+    let threw = false;
+    try {
+      psql(`insert into public.receipt_forwardings(id,document_id,from_actor_type,to_actor_type,to_actor_id,forwarded_by)
+            values ('fwd-2','doc-1','zeman','customer','cust-r','u-a')`);
+    } catch { threw = true; }
+    if (!threw) throw new Error("the same document was forwarded twice to one recipient");
+  });
+
+  check("a counted document cannot share an image hash with another", () => {
+    psql(`update public.receipt_documents set image_sha256=repeat('a',64), counted=true where id='doc-1'`);
+    let threw = false;
+    try {
+      psql(`insert into public.receipt_documents(id,flow,uploader_id,customer_id,storage_path,image_sha256,counted)
+            values ('doc-dup','customer_sells_to_zeman','cust-r','cust-r','ingest/dup.jpg',repeat('a',64),true)`);
+    } catch { threw = true; }
+    if (!threw) throw new Error("a duplicate counted image was accepted");
   });
 
   let failed = 0;

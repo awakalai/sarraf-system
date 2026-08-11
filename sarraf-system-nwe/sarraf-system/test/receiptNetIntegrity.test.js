@@ -66,3 +66,12 @@ test("ingestion integrity is enforced in SQL, not only in the browser", () => {
   assert.match(sql, /abs\(net_amount - \(amount - coalesce\(fee, 0\)\)\) <= 0\.01/);
   assert.match(sql, /not valid/i);
 });
+
+// The translation table is ~47 kB of pure data. Keeping it in its own module is what holds
+// the application chunk inside the 500 kB budget verify-production-readiness.mjs enforces,
+// so an accidental re-inlining should fail here rather than at deploy time.
+test("the translation table stays out of the application module", () => {
+  const app = fs.readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
+  assert.match(app, /import \{ DICT \} from "\.\/i18n\/dictionary"/);
+  assert.doesNotMatch(app, /^const DICT = \{/m);
+});

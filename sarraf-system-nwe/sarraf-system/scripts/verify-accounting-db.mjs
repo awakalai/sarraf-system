@@ -79,11 +79,27 @@ try {
       select role from public.app_users where auth_id = auth.uid() and not deleted $fn$;
     create or replace function public.is_admin() returns boolean language sql stable as $fn$
       select coalesce((select role='admin' from public.app_users where auth_id=auth.uid() and not deleted), false) $fn$;
+    create table if not exists public.currencies (
+      id text primary key, code text unique not null, name text not null, symbol text,
+      dec int default 2, buy_rate numeric, sell_rate numeric, rate_updated timestamptz);
+    create table if not exists public.txs (
+      id text primary key, code int unique, type text not null, cp_id text, cp_name text,
+      cur_id text not null references public.currencies(id), amount numeric(20,6) not null,
+      rate numeric(20,8) not null, against_id text not null references public.currencies(id),
+      total numeric(20,6) not null, partner_id text, status text not null default 'completed',
+      paid_at timestamptz, profit numeric(20,6), profit_cur_id text, note text,
+      date timestamptz not null default now(), edited boolean default false,
+      deleted boolean default false);
+    insert into public.currencies(id,code,name,buy_rate,sell_rate) values
+      ('usd','USD','Dollar',1,1),
+      ('cny','CNY','Yuan',7.10,7.30),
+      ('iqd','IQD','Dinar',1400,1420)
+    on conflict do nothing;
   `);
   psqlFile(prereq);
 
   // The migration under test must apply to an empty database.
-  for (const m of ["202608120001_double_entry_core.sql", "202608120002_cashbox_and_debt.sql", "202608120003_accounting_commands.sql", "202608120004_partner_and_office.sql", "202608120005_receipt_state_machine.sql"]) {
+  for (const m of ["202608120001_double_entry_core.sql", "202608120002_cashbox_and_debt.sql", "202608120003_accounting_commands.sql", "202608120004_partner_and_office.sql", "202608120005_receipt_state_machine.sql", "202608120006_transaction_journal.sql"]) {
     psqlFile(path.join(root, "supabase/migrations", m));
   }
   psql("insert into public.app_users(id,name,role) values ('u-a','A','admin') on conflict do nothing");
@@ -526,6 +542,75 @@ try {
             values ('doc-dup','customer_sells_to_zeman','cust-r','cust-r','ingest/dup.jpg',repeat('a',64),true)`);
     } catch { threw = true; }
     if (!threw) throw new Error("a duplicate counted image was accepted");
+  });
+
+
+  // ── Phase 5: transactions post to the journal ──
+  check("a completed buy posts a balanced entry with the spread recognised", () => {
+    psql(`insert into public.txs(id,type,cur_id,amount,rate,against_id,total,status,date)
+          values ('tx-buy','buy','cny',7200,0.1972,'usd',1420,'completed',now())`);
+    const st = psql("select status from journal_entries where source_id='tx-buy'").trim();
+    if (st !== "posted") throw new Error(`entry status is '${st}'`);
+    const lines = Number(psql("select count(*) from journal_lines where entry_id='je-tx-tx-buy'").trim());
+    if (lines < 2) throw new Error(`only ${lines} lines posted`);
+    const bal = psql(`select abs(sum(case when side='debit' then base_amount else -base_amount end))
+                      from journal_lines where entry_id='je-tx-tx-buy'`).trim();
+    if (Number(bal) > 0.01) throw new Error(`entry is unbalanced by ${bal}`);
+  });
+
+  check("a pending buy books a payable rather than moving cash", () => {
+    psql(`insert into public.txs(id,type,cur_id,amount,rate,against_id,total,status,date)
+          values ('tx-pend','buy','cny',720,0.1972,'usd',142,'pending',now())`);
+    const acct = psql(`select account_id from journal_lines
+                       where entry_id='je-tx-tx-pend' and side='credit' order by line_no limit 1`).trim();
+    if (acct !== "acc-2300") throw new Error(`pending buy credited ${acct}, expected the payable`);
+  });
+
+  check("a sell credits inventory and debits what came in", () => {
+    psql(`insert into public.txs(id,type,cur_id,amount,rate,against_id,total,status,date)
+          values ('tx-sell','sell','cny',7200,0.2,'usd',1440,'completed',now())`);
+    const inv = psql(`select side from journal_lines
+                      where entry_id='je-tx-tx-sell' and account_id='acc-1400'`).trim();
+    if (inv !== "credit") throw new Error(`inventory side on a sell is ${inv}`);
+  });
+
+  check("a transaction in a currency with no rate becomes a draft, never a guess", () => {
+    psql(`insert into public.currencies(id,code,name) values ('try','TRY','Lira') on conflict do nothing`);
+    psql(`insert into public.txs(id,type,cur_id,amount,rate,against_id,total,status,date)
+          values ('tx-norate','buy','try',100,1,'usd',10,'completed',now())`);
+    const st = psql("select status from journal_entries where source_id='tx-norate'").trim();
+    if (st !== "draft") throw new Error(`expected a draft, got '${st}'`);
+    const n = psql("select count(*) from journal_lines where entry_id='je-tx-tx-norate'").trim();
+    if (n !== "0") throw new Error("a draft must post no lines");
+    const listed = psql("select count(*) from v_journal_drafts where source_id='tx-norate'").trim();
+    if (listed !== "1") throw new Error("the draft is not surfaced for an operator");
+  });
+
+  check("drafts are excluded from the trial balance, which still reconciles", () => {
+    const out = psql("select (public.sarraf_trial_balance_check()->>'balanced')::text").trim();
+    if (out !== "true") throw new Error(psql("select public.sarraf_trial_balance_check()::text"));
+  });
+
+  check("a transaction posts only once, however often it is updated", () => {
+    psql(`update public.txs set status='completed' where id='tx-pend'`);
+    const n = psql("select count(*) from journal_entries where source_id='tx-pend'").trim();
+    if (n !== "1") throw new Error(`${n} entries exist for one transaction`);
+  });
+
+  check("reversing a transaction entry mirrors every line and keeps the original", () => {
+    const before = psql("select count(*) from journal_lines where entry_id='je-tx-tx-buy'").trim();
+    psql(`select public.sarraf_reverse_transaction_entry('tx-buy','mistaken rate on this trade','cmd-rev-1')`);
+    const src = psql("select status from journal_entries where id='je-tx-tx-buy'").trim();
+    if (src !== "reversed") throw new Error(`original is '${src}'`);
+    const after = psql("select count(*) from journal_lines where entry_id='je-tx-tx-buy'").trim();
+    if (after !== before) throw new Error("the original lines were altered");
+    const rev = psql(`select count(*) from journal_entries where reversal_of='je-tx-tx-buy'`).trim();
+    if (rev !== "1") throw new Error("no reversal entry was created");
+  });
+
+  check("the trial balance still reconciles after a reversal", () => {
+    const out = psql("select (public.sarraf_trial_balance_check()->>'balanced')::text").trim();
+    if (out !== "true") throw new Error(psql("select public.sarraf_trial_balance_check()::text"));
   });
 
   let failed = 0;

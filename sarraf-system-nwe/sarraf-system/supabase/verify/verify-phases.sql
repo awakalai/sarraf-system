@@ -1,5 +1,5 @@
 -- ═══════════════════════════════════════════════════════════════════════════════
--- ZEMAN — پشکنینی فەیسی ١ تا ٤ لەسەر داتابەیسی خۆت
+-- ZEMAN — پشکنینی فەیسی ١ تا ٥ لەسەر داتابەیسی خۆت
 -- Paste this whole file into the Supabase SQL Editor and press Run.
 --
 -- It proves two different things:
@@ -43,7 +43,8 @@ begin
       'sarraf_base_amount','sarraf_post_simple_entry',
       'sarraf_customer_vault_move','sarraf_apply_vault_to_debt','sarraf_zeman_debt_to_vault',
       'sarraf_partner_disburse','sarraf_partner_credit','sarraf_office_payment_report',
-      'receipt_transition_allowed','receipt_upload_allowed'])
+      'receipt_transition_allowed','receipt_upload_allowed',
+      'sarraf_usd_value','post_transaction_journal','sarraf_reverse_transaction_entry'])
   loop
     select count(*) into n from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace
      where ns.nspname = 'public' and p.proname = detail;
@@ -76,6 +77,13 @@ begin
     insert into _zeman_verify(area, check_name, status, detail)
     values ('STRUCTURE', 'هێڵکاری هەژمارەکان', 'FAIL', 'خشتەکە نییە — migration جێبەجێ نەکراوە');
   end;
+
+  -- ── STRUCTURE: the transaction journal trigger is attached ───────────────────
+  ok := exists (select 1 from pg_trigger t join pg_class c on c.oid=t.tgrelid
+                 where c.relname='txs' and t.tgname='txs_post_journal' and not t.tgisinternal);
+  insert into _zeman_verify(area, check_name, status, detail)
+  values ('STRUCTURE', 'مامەڵەکان دەچنە ناو دەفتەرەوە', case when ok then 'PASS' else 'FAIL' end,
+          case when ok then 'trigger چالاکە' else 'trigger نییە — فەیسی ٥ جێبەجێ نەکراوە' end);
 
   -- ── STRUCTURE: RLS is on ─────────────────────────────────────────────────────
   select count(*) into n from pg_class c join pg_namespace ns on ns.oid=c.relnamespace
@@ -226,7 +234,7 @@ select
   count(*) filter (where status='FAIL') as "شکستخواردوو",
   count(*) filter (where status in ('SKIP','WARN')) as "تێپەڕێنراو",
   case when count(*) filter (where status='FAIL') = 0
-       then '✅ هەر چوار فەیسەکە لە سیستەمەکەدان و کاردەکەن'
+       then '✅ هەموو فەیسەکان لە سیستەمەکەدان و کاردەکەن'
        else '❌ هەندێک شت کەمە — کۆڵۆمی وردەکاری ببینە'
   end as "کۆتا بڕیار"
 from _zeman_verify;

@@ -12,7 +12,10 @@ test("ordinary customer and partner portals use the simplified receipt intake", 
 });
 
 test("global operational search is rendered only for the real admin shell", () => {
-  assert.match(app, /!portalUser && isAdmin && <OperationalPalette/);
+  // OperationalPalette is lazy-loaded, so the admin gate and the element are separated by a
+  // Suspense boundary. Assert the gate still guards it rather than one exact source shape.
+  assert.match(app, /!portalUser && isAdmin &&[\s\S]{0,160}<OperationalPalette/);
+  assert.doesNotMatch(app, /(?<!!portalUser && isAdmin &&[\s\S]{0,160})<OperationalPalette/);
 });
 
 test("healthy portal data status stays quiet while offline and stale states remain visible", () => {

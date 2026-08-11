@@ -69,15 +69,23 @@ try {
     end $$;
     create schema if not exists auth;
     create or replace function auth.uid() returns uuid language sql stable as $fn$ select null::uuid $fn$;
+    -- Supabase grants these to authenticated; without them an RLS probe fails on the helper
+    -- functions rather than on the policy being tested.
+    grant usage on schema auth to authenticated, anon, service_role;
     create table if not exists public.app_users (
       id text primary key, auth_id uuid, name text, role text, admin_level text,
       rate numeric, scope_curs text[], phone text, address text, note text,
       deleted boolean not null default false);
-    create or replace function public.my_app_id() returns text language sql stable as $fn$
+    -- SECURITY DEFINER, as in production: the helpers read app_users on the caller's behalf
+    -- without the caller needing direct access to that table.
+    create or replace function public.my_app_id() returns text language sql stable
+      security definer set search_path = public, auth as $fn$
       select id from public.app_users where auth_id = auth.uid() and not deleted $fn$;
-    create or replace function public.my_role() returns text language sql stable as $fn$
+    create or replace function public.my_role() returns text language sql stable
+      security definer set search_path = public, auth as $fn$
       select role from public.app_users where auth_id = auth.uid() and not deleted $fn$;
-    create or replace function public.is_admin() returns boolean language sql stable as $fn$
+    create or replace function public.is_admin() returns boolean language sql stable
+      security definer set search_path = public, auth as $fn$
       select coalesce((select role='admin' from public.app_users where auth_id=auth.uid() and not deleted), false) $fn$;
     create table if not exists public.currencies (
       id text primary key, code text unique not null, name text not null, symbol text,
@@ -612,6 +620,88 @@ try {
     const out = psql("select (public.sarraf_trial_balance_check()->>'balanced')::text").trim();
     if (out !== "true") throw new Error(psql("select public.sarraf_trial_balance_check()::text"));
   });
+
+
+  // ── §14: RLS matrix. Isolation is proven by querying AS each role, not by reading policies. ──
+  // Policies are enforced only for non-superusers, so the checks run as a dedicated role that
+  // inherits `authenticated`; running them as postgres would pass vacuously.
+  psql(`do $$ begin
+          if not exists (select 1 from pg_roles where rolname='zeman_rls_probe') then
+            create role zeman_rls_probe login;
+          end if;
+        end $$`);
+  psql(`grant authenticated to zeman_rls_probe`);
+  psql(`grant usage on schema public to zeman_rls_probe`);
+
+  // Two customers, two partners, one office — each with a distinct auth id.
+  psql(`insert into public.app_users(id,name,role,auth_id) values
+        ('rls-c1','C1','customer','aaaaaaa1-0000-0000-0000-000000000001'),
+        ('rls-c2','C2','customer','aaaaaaa2-0000-0000-0000-000000000002'),
+        ('rls-p1','P1','partner', 'aaaaaaa3-0000-0000-0000-000000000003'),
+        ('rls-o1','O1','office',  'aaaaaaa4-0000-0000-0000-000000000004')
+        on conflict (id) do nothing`);
+  psql(`insert into public.customer_vaults(id,customer_id,currency,available) values
+        ('rls-v1','rls-c1','CNY',100),('rls-v2','rls-c2','CNY',200)
+        on conflict (customer_id,currency) do nothing`);
+  psql(`insert into public.debts(id,debtor_type,debtor_id,creditor_type,creditor_id,currency,
+          original_principal,outstanding_principal,source_type,reason,created_by) values
+        ('rls-d1','customer','rls-c1','zeman',null,'CNY',50,50,'t','c1 debt','u-a'),
+        ('rls-d2','customer','rls-c2','zeman',null,'CNY',60,60,'t','c2 debt','u-a')
+        on conflict (id) do nothing`);
+  psql(`insert into public.office_payment_assignments(id,office_id,amount,currency,assigned_by)
+        values ('rls-opa','rls-o1',10,'CNY','u-a') on conflict (id) do nothing`);
+  psql(`insert into public.partner_accounts(id,partner_id,currency,available)
+        values ('rls-pa','rls-p1','CNY',5) on conflict (partner_id,currency) do nothing`);
+
+  // Count rows visible to a given auth.uid(), with RLS actually applied.
+  // Both statements must share one transaction: set_config with is_local=true is discarded at
+  // commit, and psql runs each -c in its own transaction, so the identity would be gone by the
+  // time the query ran.
+  const asUser = (uid, sql) => run(path.join(PGBIN, "psql"),
+    ["-h", sock, "-p", PORT, "-U", "zeman_rls_probe", "-d", "zeman_verify",
+     "-v", "ON_ERROR_STOP=1", "-tAq",
+     "-c", `begin; select set_config('request.jwt.claim.sub','${uid}',true); ${sql}; commit;`])
+    .trim().split("\n").filter(Boolean).pop().trim();
+
+  // auth.uid() in the fixture reads a session setting so each probe can act as a different user.
+  psql(`create or replace function auth.uid() returns uuid language sql stable
+        as $fn$ select nullif(current_setting('request.jwt.claim.sub', true),'')::uuid $fn$`);
+
+  const rlsCheck = (name, uid, sql, expected) => {
+    try {
+      const got = asUser(uid, sql);
+      checks.push([got === String(expected), `${name} (expected ${expected}, saw ${got})`]);
+    } catch (e) {
+      checks.push([false, `${name} — ${String(e.message || e).split("\n").find((l) => l.includes("ERROR")) || e}`]);
+    }
+  };
+
+  rlsCheck("a customer sees only their own cashbox", 'aaaaaaa1-0000-0000-0000-000000000001',
+    "select count(*) from public.customer_vaults", 1);
+  rlsCheck("a customer sees only debts they are party to", 'aaaaaaa1-0000-0000-0000-000000000001',
+    "select count(*) from public.debts where id like 'rls-d%'", 1);
+  rlsCheck("a customer sees no journal entries", 'aaaaaaa1-0000-0000-0000-000000000001',
+    "select count(*) from public.journal_entries", 0);
+  rlsCheck("a customer sees no office assignments", 'aaaaaaa1-0000-0000-0000-000000000001',
+    "select count(*) from public.office_payment_assignments", 0);
+  rlsCheck("a customer sees no partner accounts", 'aaaaaaa1-0000-0000-0000-000000000001',
+    "select count(*) from public.partner_accounts", 0);
+  rlsCheck("a partner sees only their own account", 'aaaaaaa3-0000-0000-0000-000000000003',
+    "select count(*) from public.partner_accounts where id='rls-pa'", 1);
+  rlsCheck("a partner sees no customer cashboxes", 'aaaaaaa3-0000-0000-0000-000000000003',
+    "select count(*) from public.customer_vaults", 0);
+  rlsCheck("an office sees only its own assignment", 'aaaaaaa4-0000-0000-0000-000000000004',
+    "select count(*) from public.office_payment_assignments where id='rls-opa'", 1);
+  rlsCheck("an unknown session sees nothing", '99999999-9999-9999-9999-999999999999',
+    "select count(*) from public.customer_vaults", 0);
+  rlsCheck("a customer cannot write to the ledger", 'aaaaaaa1-0000-0000-0000-000000000001',
+    `select count(*) from (select 1 where not exists (
+       select 1 from information_schema.role_table_grants
+       where grantee='authenticated' and table_name='journal_lines'
+         and privilege_type in ('INSERT','UPDATE','DELETE'))) t`, 1);
+
+  psql(`create or replace function auth.uid() returns uuid language sql stable
+        as $fn$ select '11111111-1111-1111-1111-111111111111'::uuid $fn$`);
 
   let failed = 0;
   for (const [ok, name] of checks) { console.log(`${ok ? "PASS" : "FAIL"}  ${name}`); if (!ok) failed++; }

@@ -32,6 +32,7 @@ const IntegrityCenter = lazyNamed(() => import("./components/operations/Operatio
 const ExportAuditCenter = lazyNamed(() => import("./components/operations/ExportAuditCenter"), "ExportAuditCenter");
 const DebtCenter = lazyNamed(() => import("./components/accounting/DebtCenter"), "DebtCenter");
 const CashboxPanel = lazyNamed(() => import("./components/accounting/CashboxPanel"), "CashboxPanel");
+const OfficePayments = lazyNamed(() => import("./components/accounting/OfficePayments"), "OfficePayments");
 
 function DeferredPanel({ children, compact = false }) {
   return <React.Suspense fallback={<section className={`animate-pulse rounded-[var(--r)] border border-[var(--line)] bg-[var(--surf)] ${compact ? "h-12" : "h-28"}`} aria-live="polite" aria-label="Loading ZEMAN module" />}>
@@ -151,6 +152,7 @@ const ADMIN_CENTER_PAGE_IDS = new Set([
   "export-audit",
   "debt-center",
   "cashbox",
+  "office-payments",
   "backup",
 ]);
 
@@ -656,6 +658,7 @@ function AdminCenterHub({ lang = "ku", onNavigate }) {
         ["insights", label("ڕەوت و شیکاری", "Trends & Insights", "الاتجاهات والتحليلات"), label("ڕەوتی قازانج، مامەڵە و دۆخی دارایی", "Profit, transaction, and financial trends", "اتجاهات الربح والمعاملات والوضع المالي"), TrendingUp],
         ["integrity", label("ناوەندی یەکپارچەیی", "Integrity Center", "مركز سلامة البيانات"), label("پشکنینی ناکۆکی، دووبارە و پەیوەندیی شکێنراو", "Checks for inconsistencies, duplicates, and broken links", "فحص التعارض والتكرار والروابط المقطوعة"), ShieldAlert],
         ["audit", label("تۆماری گۆڕانکاری", "Change Log", "سجل التغييرات"), label("مێژووی کردار و گۆڕانکارییەکانی سیستەم", "History of system actions and changes", "سجل إجراءات النظام وتغييراته"), History],
+        ["office-payments", label("پارەدانی نووسینگە", "Office Payments", "مدفوعات المكتب"), label("ئەرکی پارەدان و بەڵگە", "Payment assignments and evidence", "مهام الدفع والإثباتات"), Building2],
         ["cashbox", label("قاسەی کڕیاران", "Customer Cashbox", "خزنة الزبائن"), label("دانان، دەرهێنان و تسویەی قەرز لە قاسە", "Deposit, withdraw, and settle debt from the cashbox", "إيداع وسحب وتسوية الديون"), Wallet],
         ["debt-center", label("قەرز و قاسە", "Debt & Cashbox", "الديون والخزنة"), label("قەرز بە ئاڕاستەی ڕوون، تەمەن و قاسەی کڕیاران", "Debts by explicit direction, aging, and customer cashboxes", "الديون باتجاه واضح والأعمار وخزائن الزبائن"), Scale],
         ["export-audit", label("هەناردە و وردبینی", "Export & Audit", "التصدير والتدقيق"), label("هەناردەی سنووردار، timeline و checksum", "Bounded exports, timeline, and checksum", "تصدير محدود وخط زمني وبصمة تحقق"), FileCheck2],
@@ -3488,6 +3491,7 @@ export default function App() {
             {page === "integrity" && <DeferredPanel><IntegrityCenter client={supabase} lang={lang} onNavigate={(path) => setPage(path.slice(2))} /></DeferredPanel>}
             {page === "export-audit" && <DeferredPanel><ExportAuditCenter client={supabase} lang={lang} /></DeferredPanel>}
             {page === "debt-center" && <DeferredPanel><DebtCenter client={supabase} lang={lang} nameOf={(id) => usr(id).name} /></DeferredPanel>}
+            {page === "office-payments" && <DeferredPanel><OfficePayments client={supabase} lang={lang} flash={flash} /></DeferredPanel>}
             {page === "cashbox" && <DeferredPanel><CashboxPanel client={supabase} lang={lang} flash={flash}
               customers={(data?.users || []).filter((u) => u.role === "customer" && !u.deleted)}
               rateFor={(code) => { const c = (data?.currencies || []).find((x) => x.code === code);

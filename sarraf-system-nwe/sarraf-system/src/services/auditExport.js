@@ -1,3 +1,5 @@
+import { csvCell } from "./csvSafe.js";
+
 export const AUDIT_DATASET_LABELS = Object.freeze({
   transactions: "Transactions",
   audit: "Change log",
@@ -35,15 +37,6 @@ export async function loadAuditExportSnapshot(client, { from, to, limit = 1000 }
     datasets: Object.fromEntries(Object.keys(AUDIT_DATASET_LABELS).map((key) => [key, Array.isArray(datasets[key]) ? datasets[key].slice(0, bounded) : []])),
   };
 }
-
-const spreadsheetSafe = (value) => {
-  if (value === null || value === undefined) return "";
-  if (typeof value === "number" || typeof value === "bigint" || typeof value === "boolean") return String(value);
-  const text = typeof value === "object" ? JSON.stringify(value) : String(value);
-  return /^[\s]*[=+\-@]/.test(text) || /^[\t\r]/.test(text) ? `'${text}` : text;
-};
-
-const csvCell = (value) => `"${spreadsheetSafe(value).replaceAll('"', '""')}"`;
 
 export function buildSafeCsv(rows) {
   const list = Array.isArray(rows) ? rows : [];

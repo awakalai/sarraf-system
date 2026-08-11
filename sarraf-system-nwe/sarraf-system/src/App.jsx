@@ -10,6 +10,8 @@ import { assignReceiptCustody, convertReceiptBatchToTransaction, loadPortalRecei
 import { dayCloseMessage, validateDayClose } from "./services/dayClose";
 import { rehearseRestore, sealBackup, verdictText } from "./services/backupIntegrity";
 import { CommandKeyBook, runIdempotentCommand } from "./services/commandRetry";
+import { toCsv } from "./services/csvSafe";
+import { revokeAllUrls, revokeDroppedUrls } from "./services/objectUrls";
 import { userFacingServiceError } from "./services/userFacingError";
 import { claimSharedReceiptHandoff, finishSharedReceiptHandoff, releaseSharedReceiptHandoff, sharedReceiptMessage, validateClaimedSharedFiles } from "./services/sharedReceiptHandoff";
 import { PortalDataStatus, PortalFrame, PortalPagedList, usePortalRoute } from "./components/portal/PortalFoundation";
@@ -6415,6 +6417,18 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
   };
   useEffect(() => { rowsRef.current = rows; }, [rows]);
 
+  // An object URL pins its whole image blob until it is revoked, so a removed or replaced
+  // receipt must release its picture rather than leaving every full-size image the session
+  // ever decoded resident. Done here, after the render commits, rather than inside the state
+  // updater — an updater may be invoked more than once, and revoking is not a pure operation.
+  const seenRowsRef = useRef([]);
+  useEffect(() => {
+    revokeDroppedUrls(seenRowsRef.current, rows, (url) => URL.revokeObjectURL(url));
+    seenRowsRef.current = rows;
+  }, [rows]);
+  // Nothing survives unmount, so nothing should still be held.
+  useEffect(() => () => revokeAllUrls(seenRowsRef.current, (url) => URL.revokeObjectURL(url)), []);
+
   const patchRow = (id, patch) => {
     commitRows((xs) => xs.map((r) => r.id === id ? { ...r, ...(typeof patch === "function" ? patch(r) : patch) } : r));
   };
@@ -9627,10 +9641,15 @@ function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare, s
       (() => { const b = preferredRateBaseId(t.curId, t.againstId); const r = storedRateToDisplay(t.rate, t.curId, t.againstId, b); return r ? +r.toFixed(6) : ""; })(),
       cur(t.againstId).code, t.total,
       t.partnerId ? "لای " + usr(t.partnerId).name : "قاسەی گشتی", t.status === "pending" ? "چاوەڕوان" : "تەواو", t.profit ?? ""]);
-    const csv = "\uFEFF" + [head, ...rows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+    // Counterparty names and notes are text a customer supplied. Quoting alone does not stop a
+    // spreadsheet evaluating a cell that begins with = + - or @, so every cell is neutralised.
+    const csv = toCsv([head, ...rows]);
     const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-    a.download = `report_${from}_${to}.csv`; a.click();
+    const href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    a.href = href;
+    a.download = `report_${from}_${to}.csv`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(href), 1000);
   };
 
   const PL = ({ label, m, tone = "auto", bold }) => (

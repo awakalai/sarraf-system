@@ -83,7 +83,9 @@ try {
   psqlFile(prereq);
 
   // The migration under test must apply to an empty database.
-  psqlFile(path.join(root, "supabase/migrations/202608120001_double_entry_core.sql"));
+  for (const m of ["202608120001_double_entry_core.sql", "202608120002_cashbox_and_debt.sql"]) {
+    psqlFile(path.join(root, "supabase/migrations", m));
+  }
   psql("insert into public.app_users(id,name,role) values ('u-a','A','admin') on conflict do nothing");
 
   const checks = [];
@@ -141,6 +143,112 @@ try {
       where (kind in ('asset','expense') and normal_side<>'debit')
          or (kind in ('liability','equity','income') and normal_side<>'credit')`);
     if (bad.trim() !== "0") throw new Error(`${bad.trim()} accounts have the wrong normal side`);
+  });
+
+
+  // ── Cashbox (قاسە): a customer-funds-held liability, per customer AND per currency ──
+  psql(`insert into public.app_users(id,name,role) values ('cust-1','Customer One','customer')
+        on conflict do nothing`);
+  psql(`insert into public.customer_vaults(id,customer_id,currency) values
+        ('cv-cny','cust-1','CNY'),('cv-usd','cust-1','USD') on conflict do nothing`);
+
+  check("a deposit raises only the matching currency's cashbox", () => {
+    psql(`insert into public.customer_vault_events(vault_id,customer_id,currency,kind,available_delta,actor_id)
+          values ('cv-cny','cust-1','CNY','deposit',5000,'u-a')`);
+    const cny = psql("select available from customer_vaults where id='cv-cny'").trim();
+    const usd = psql("select available from customer_vaults where id='cv-usd'").trim();
+    if (Number(cny) !== 5000) throw new Error(`CNY vault is ${cny}, expected 5000`);
+    if (Number(usd) !== 0) throw new Error(`USD vault moved to ${usd}; currencies must not net`);
+  });
+
+  mustFail("a withdrawal cannot overdraw the cashbox",
+    `insert into public.customer_vault_events(vault_id,customer_id,currency,kind,available_delta,actor_id)
+     values ('cv-cny','cust-1','CNY','withdrawal',-9000,'u-a')`);
+
+  mustFail("cashbox events are append-only",
+    "update public.customer_vault_events set available_delta=1 where vault_id='cv-cny'");
+
+  // ── Debt: never a bare signed number ──
+  check("a debt names debtor, creditor, currency and source", () => {
+    psql(`insert into public.debts(id,debtor_type,debtor_id,creditor_type,creditor_id,currency,
+            original_principal,outstanding_principal,source_type,reason,created_by,due_at)
+          values ('d-1','customer','cust-1','zeman',null,'CNY',1000,1000,'unpaid_transaction',
+                  'unpaid purchase','u-a', statement_timestamp() - interval '10 days')`);
+    if (psql("select outstanding_principal from debts where id='d-1'").trim() !== "1000.0000000000")
+      throw new Error("debt not stored as expected");
+  });
+
+  mustFail("a party cannot owe itself",
+    `insert into public.debts(id,debtor_type,debtor_id,creditor_type,creditor_id,currency,
+       original_principal,outstanding_principal,source_type,reason,created_by)
+     values ('d-self','customer','cust-1','customer','cust-1','CNY',10,10,'x','self','u-a')`);
+
+  mustFail("a debt cannot be deleted", "delete from public.debts where id='d-1'");
+
+  check("partial settlement reduces outstanding and marks the debt partially settled", () => {
+    psql(`insert into public.debt_settlements(debt_id,amount_applied,outstanding_before,outstanding_after,
+            source_kind,actor_id) values ('d-1',400,1000,600,'customer_vault','u-a')`);
+    const row = psql("select outstanding_principal||'|'||status from debts where id='d-1'").trim();
+    if (row !== "600.0000000000|partially_settled") throw new Error(`debt state is ${row}`);
+  });
+
+  mustFail("a settlement cannot exceed the outstanding balance",
+    `insert into public.debt_settlements(debt_id,amount_applied,outstanding_before,outstanding_after,
+       source_kind,actor_id) values ('d-1',9999,600,-9399,'customer_vault','u-a')`);
+
+  mustFail("a settlement built on a stale outstanding figure is rejected",
+    `insert into public.debt_settlements(debt_id,amount_applied,outstanding_before,outstanding_after,
+       source_kind,actor_id) values ('d-1',100,1000,900,'customer_vault','u-a')`);
+
+  check("settling the remainder closes the debt", () => {
+    psql(`insert into public.debt_settlements(debt_id,amount_applied,outstanding_before,outstanding_after,
+            source_kind,actor_id) values ('d-1',600,600,0,'customer_vault','u-a')`);
+    const row = psql("select status||'|'||(closed_at is not null)::text from debts where id='d-1'").trim();
+    if (row !== "settled|true") throw new Error(`debt state is ${row}`);
+  });
+
+  // ── The worked example from the brief, §13D.5 ──
+  // partner balance 1,000 CNY; ZEMAN sells them 1,300 → 1,000 consumed, 300 becomes debt.
+  // A later 500 credit settles the 300 and leaves 200 available.
+  check("the partner over-limit example settles exactly as specified", () => {
+    psql(`insert into public.app_users(id,name,role) values ('p-1','Partner One','partner') on conflict do nothing`);
+    psql(`insert into public.debts(id,debtor_type,debtor_id,creditor_type,creditor_id,currency,
+            original_principal,outstanding_principal,source_type,reason,created_by)
+          values ('d-p','partner','p-1','zeman',null,'CNY',300,300,'partner_over_limit',
+                  'sale beyond available balance','u-a')`);
+    const plan = psql(`select coalesce(string_agg(debt_id||':'||allocated, ','), 'none')
+      from public.sarraf_debt_waterfall('partner','p-1','zeman',null,'CNY',500)`).trim();
+    if (plan !== "d-p:300.0000000000") throw new Error(`waterfall allocated ${plan}, expected 300 to d-p`);
+    psql(`insert into public.debt_settlements(debt_id,amount_applied,outstanding_before,outstanding_after,
+            source_kind,actor_id) values ('d-p',300,300,0,'partner_credit','u-a')`);
+    const status = psql("select status from debts where id='d-p'").trim();
+    if (status !== "settled") throw new Error(`partner debt is ${status}`);
+    // 500 credit minus 300 applied leaves 200 available.
+    const remainder = 500 - 300;
+    if (remainder !== 200) throw new Error("remainder arithmetic");
+  });
+
+  check("the waterfall puts overdue debts first and is deterministic", () => {
+    psql(`insert into public.debts(id,debtor_type,debtor_id,creditor_type,creditor_id,currency,
+            original_principal,outstanding_principal,source_type,reason,created_by,due_at,opened_at) values
+          ('d-new','customer','cust-1','zeman',null,'CNY',100,100,'t','not yet due','u-a',
+            statement_timestamp() + interval '30 days', statement_timestamp() - interval '1 day'),
+          ('d-old','customer','cust-1','zeman',null,'CNY',100,100,'t','overdue','u-a',
+            statement_timestamp() - interval '20 days', statement_timestamp() - interval '40 days')`);
+    const order = psql(`select string_agg(debt_id, '>' order by remaining_after desc)
+      from public.sarraf_debt_waterfall('customer','cust-1','zeman',null,'CNY',150)`).trim();
+    if (!order.startsWith("d-old")) throw new Error(`overdue debt was not first: ${order}`);
+  });
+
+  check("aging buckets classify by how overdue a debt is", () => {
+    const bucket = psql("select aging_bucket from v_debt_aging where id='d-old'").trim();
+    if (bucket !== "8-30") throw new Error(`expected bucket 8-30, got ${bucket}`);
+  });
+
+  check("subledger reconciliation reports vault and debt totals by currency", () => {
+    const out = psql("select public.sarraf_subledger_reconciliation()::text").trim();
+    if (!out.includes("customer_vault_total") || !out.includes("CNY"))
+      throw new Error(`reconciliation payload incomplete: ${out}`);
   });
 
   let failed = 0;

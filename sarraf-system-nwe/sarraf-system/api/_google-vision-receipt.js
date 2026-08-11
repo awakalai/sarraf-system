@@ -1,3 +1,5 @@
+import { resolveReceiptCurrency } from "../src/services/receiptCurrency.js";
+
 const VISION_ENDPOINT = "https://vision.googleapis.com/v1/images:annotate";
 
 const latinDigits = (value) => String(value || "")
@@ -37,9 +39,6 @@ export function parseGoogleVisionReceipt(text) {
   const status = valueNear(lines, ["current status", "transaction status", "status", "الحالة"]);
   const amount = numberFrom(amountRaw);
   const fee = numberFrom(feeRaw);
-  const upper = rawText.toUpperCase();
-  const currency = ["IQD", "USD", "CNY", "EUR", "TRY", "AED", "SAR"].find((code) => upper.includes(code)) ||
-    (rawText.includes("¥") || rawText.includes("元") ? "CNY" : rawText.includes("$") ? "USD" : null);
   const platform = /alipay|支付宝/i.test(rawText) ? "Alipay"
     : /wechat|微信/i.test(rawText) ? "WeChat"
       : /\bFIB\b/i.test(rawText) ? "FIB"
@@ -47,6 +46,10 @@ export function parseGoogleVisionReceipt(text) {
           : /zaincash/i.test(rawText) ? "ZainCash"
             : /nasswallet/i.test(rawText) ? "NassWallet"
               : /qi\s*card/i.test(rawText) ? "QiCard" : null;
+  // Currency is resolved from explicit evidence only. A loose substring scan previously let
+  // the letters "IQD" anywhere in a Chinese receipt define the whole document's currency.
+  const resolved = resolveReceiptCurrency(rawText, { platform });
+  const currency = resolved.currency;
   const detected = [amount != null, currency, refNo, status, platform].filter(Boolean).length;
   const score = Math.min(0.72, 0.28 + detected * 0.08);
   const fieldConfidence = confidenceFields(0.18);

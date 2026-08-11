@@ -3,13 +3,13 @@ import { supabase } from "./lib/supabase";
 import { createReceiptIngestionCommand, ingestReceiptBatch } from "./services/receiptIngestion";
 import { validateReceiptArithmetic } from "./services/receiptValidation";
 import { createReceiptReviewCommand, finalizeReceiptBatch, loadReceiptPolicy, reviewReceiptBatch } from "./services/receiptReview";
+import { assignReceiptCustody, convertReceiptBatchToTransaction, loadPortalReceiptSummary } from "./services/receiptOperations";
 import { userFacingServiceError } from "./services/userFacingError";
 import { claimSharedReceiptHandoff, finishSharedReceiptHandoff, releaseSharedReceiptHandoff, sharedReceiptMessage, validateClaimedSharedFiles } from "./services/sharedReceiptHandoff";
 import { PortalDataStatus, PortalFrame, PortalPagedList, usePortalRoute } from "./components/portal/PortalFoundation";
 import { separatedCurrencySummary } from "./components/portal/portalModel";
 import { BRAND } from "./brand/brand";
 import { BrandLogo } from "./brand/BrandLogo";
-import { OperationalPalette } from "./components/operations/OperationalPalette";
 import "./components/portal/portal.css";
 import {
   LayoutDashboard, Vault, ArrowLeftRight, ListOrdered, Users, Handshake,
@@ -23,6 +23,8 @@ const MarketPulse = React.lazy(() => import("./components/market/MarketPulse"));
 const ReceiptLifecycle = lazyNamed(() => import("./components/receipts/ReceiptCommandCenter"), "ReceiptLifecycle");
 const ReceiptSmartInspector = lazyNamed(() => import("./components/receipts/ReceiptCommandCenter"), "ReceiptSmartInspector");
 const ReceiptPolicyPanel = lazyNamed(() => import("./components/receipts/ReceiptPolicyPanel"), "ReceiptPolicyPanel");
+const PortalReceiptSummary = lazyNamed(() => import("./components/portal/PortalReceiptSummary"), "PortalReceiptSummary");
+const OperationalPalette = lazyNamed(() => import("./components/operations/OperationalPalette"), "OperationalPalette");
 const ActionInbox = lazyNamed(() => import("./components/operations/OperationalCenters"), "ActionInbox");
 const IntegrityCenter = lazyNamed(() => import("./components/operations/OperationalCenters"), "IntegrityCenter");
 const ExportAuditCenter = lazyNamed(() => import("./components/operations/ExportAuditCenter"), "ExportAuditCenter");
@@ -1750,6 +1752,12 @@ export default function App() {
   const reloadBatches = async () => {
     try {
       setBatchLoadError("");
+      if (profile?.role === "admin") {
+        const reconciled = await supabase.rpc("sarraf_reconcile_receipt_conversions");
+        if (reconciled.error && !/could not find the function|schema cache/i.test(String(reconciled.error.message || ""))) {
+          console.warn("receipt conversion reconciliation", reconciled.error);
+        }
+      }
       const { data: b, error } = await supabase.from("receipt_batches").select("*").order("created_at", { ascending: false }).limit(200);
       if (error) throw error;
       setBatches(b || []);
@@ -2608,6 +2616,13 @@ export default function App() {
           p_action: "دەستکاری مامەڵە",
           p_detail: detail,
         });
+      } else if (f.batchId) {
+        result = await convertReceiptBatchToTransaction(supabase, {
+          batchId: f.batchId,
+          receiptIds: f.receiptIds,
+          transaction: TR(t),
+          reason: String(f.note || "").trim() || "پشتڕاستکردنەوە و گۆڕینی فیشە پەسەندکراوەکان بۆ مامەڵە",
+        });
       } else {
         result = await rpcStrict("sarraf_commit_transactions", {
           p_txs: [TR(t)],
@@ -2971,7 +2986,7 @@ export default function App() {
     });
   };
 
-  /* ── Maker / Checker + reconciliation ── */
+  /* ── دروستکەر / پشکنەر + یەکسانکردنەوە ── */
   const approveApproval = (r, note = "") => run(async () => {
     const result = await rpcStrict("sarraf_approve_request", {
       p_approval_id: r.id,
@@ -3011,15 +3026,15 @@ export default function App() {
 
   const ownerOverrideApproval = (r, reason) => run(async () => {
     const why = String(reason || "").trim();
-    if (why.length < 12) { flash("هۆکاری Owner Override لانیکەم ١٢ پیت بێت"); return false; }
+    if (why.length < 12) { flash("هۆکاری دەسەڵاتی فریاکەوتنی خاوەن لانیکەم ١٢ پیت بێت"); return false; }
     const result = await rpcStrict("sarraf_owner_override_approval", {
       p_approval_id: r.id,
       p_command_key: commandKey("owner-override"),
       p_reason: why,
     });
-    if (result?.ok === false) flash(result?.error || "Owner Override سەرکەوتوو نەبوو");
+    if (result?.ok === false) flash(result?.error || "دەسەڵاتی فریاکەوتنی خاوەن سەرکەوتوو نەبوو");
     else {
-      flash("Owner Override جێبەجێ کرا ✓");
+      flash("دەسەڵاتی فریاکەوتنی خاوەن جێبەجێ کرا ✓");
       reloadBatches();
     }
     return result;
@@ -3342,7 +3357,7 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
-            {!portalUser && isAdmin && <OperationalPalette client={supabase} lang={lang} onNavigate={(path) => setPage(path.slice(2))} />}
+            {!portalUser && isAdmin && <React.Suspense fallback={null}><OperationalPalette client={supabase} lang={lang} onNavigate={(path) => setPage(path.slice(2))} /></React.Suspense>}
             {isAdmin && va && (
               <button onClick={() => setViewAs(null)}
                 className="flex items-center gap-1.5 text-[12px] font-semibold px-3 py-2 rounded-full tap"
@@ -5004,7 +5019,7 @@ function TxForm({ data, cur, calc, usr, avgRate, inventoryPosition, usdValueAt, 
     if (!f.curId || !f.againstId || f.curId === f.againstId) return;
     setSending(true);
     try {
-      const ok = await onSave({ ...f, rate, batchId: batch?.id }, e);
+      const ok = await onSave({ ...f, rate, batchId: batch?.id, receiptIds: batch?.receipt_ids || [] }, e);
       if (ok !== false && !e) setF(blank);
     } finally {
       setTimeout(() => setSending(false), 400);
@@ -5022,7 +5037,7 @@ function TxForm({ data, cur, calc, usr, avgRate, inventoryPosition, usdValueAt, 
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="text-[13px] font-semibold" style={{ color: "var(--ac)" }}>
-                {tr("لە فیشەکانی")} {batch.customer_name}
+                {tr("لە فیشە پەسەندکراوەکانی")} {batch.customer_name || (batch.partner_id ? usr(batch.partner_id).name : tr("نەزانراو"))}
               </div>
               <div className="text-[11.5px] mt-1" style={{ ...num, color: "var(--txt-2)" }}>
                 {batch.n} {tr("فیش")} · {fmtMoney(data, batch.total_net, batch.currency)} {batch.currency}
@@ -5096,7 +5111,7 @@ function TxForm({ data, cur, calc, usr, avgRate, inventoryPosition, usdValueAt, 
         <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-2.5">
           <div>
             <Lbl>دراوی مامەڵە</Lbl>
-            <Sel value={f.curId} onChange={(ev) => setPair(ev.target.value, f.againstId)}>
+            <Sel value={f.curId} disabled={!!batch} onChange={(ev) => setPair(ev.target.value, f.againstId)}>
               {data.currencies.map((c) => <option key={c.id} value={c.id}>{c.code} — {c.name}</option>)}
             </Sel>
           </div>
@@ -5128,10 +5143,11 @@ function TxForm({ data, cur, calc, usr, avgRate, inventoryPosition, usdValueAt, 
           <div className="text-[12px] mb-2" style={{ color: "var(--txt-3)" }}>
             {tr("بڕ")} · {cur(f.curId).code}
           </div>
-          <input type="number" inputMode="decimal" min="0" step="any" value={f.amount}
+          <input type="number" inputMode="decimal" min="0" step="any" value={f.amount} readOnly={!!batch}
             onChange={(ev) => setF({ ...f, amount: ev.target.value })} placeholder="0"
             className="w-full text-center bg-transparent outline-none"
-            style={{ ...num, fontSize: 40, fontWeight: 600, letterSpacing: "-.03em", color: "var(--txt)", border: 0 }} />
+            aria-label={batch ? tr("کۆی پەسەندکراوی فیشەکان؛ گۆڕانکاری ناکرێت") : tr("بڕی مامەڵە")}
+            style={{ ...num, fontSize: 40, fontWeight: 600, letterSpacing: "-.03em", color: "var(--txt)", border: 0, opacity: batch ? .88 : 1 }} />
         </div>
       </Card>
 
@@ -5837,10 +5853,6 @@ const canvasToJpeg = (canvas, quality) =>
   new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
 
 async function prepImage(file) {
-  const originalBuf = await file.arrayBuffer();
-  const hb = await crypto.subtle.digest("SHA-256", originalBuf);
-  const hash = [...new Uint8Array(hb)].map((x) => x.toString(16).padStart(2, "0")).join("");
-
   let bmp;
   try { bmp = await createImageBitmap(file, { imageOrientation: "from-image" }); }
   catch { bmp = await createImageBitmap(file); }
@@ -5897,6 +5909,10 @@ async function prepImage(file) {
   }
 
   const buf = await blob.arrayBuffer();
+  // Fingerprint the exact normalized bytes that are read by OCR and persisted.
+  // This lets the server bind its signed OCR evidence to the stored object.
+  const hb = await crypto.subtle.digest("SHA-256", buf.slice(0));
+  const hash = [...new Uint8Array(hb)].map((x) => x.toString(16).padStart(2, "0")).join("");
   const b64 = bytesToBase64(new Uint8Array(buf));
   if (b64.length > OCR_MAX_BASE64_CHARS) {
     throw new Error("قەبارەی وێنەکە زۆر گەورەیە — تکایە وێنەکە crop بکە یان دووبارە وێنەی بگرە");
@@ -6273,7 +6289,7 @@ function ReceiptList({ rows, showFrom }) {
 }
 
 /* ─────────── ئەپلۆدکەری فیش ─────────── */
-function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, direction = "in", onDone, flash, data, allowDirection, simple = false }) {
+function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, direction = "in", onDone, flash, data, allowDirection, simple = false, staffReview = false }) {
   const [rows, setRows] = useState([]);
   const rowsRef = useRef([]);
   const [dir, setDir] = useState(direction);
@@ -6659,6 +6675,17 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
     }
     const arithmetic = validateReceiptArithmetic({ amount: r.amount, fee: r.fee, orderAmount: r.orderAmount, netAmount: r.net });
     if (!arithmetic.valid) return flash("ژمارەکانی فیشەکە یەک ناگرنەوە؛ بڕ، فی، بڕی بنەڕەتی و نەت بپشکنە");
+    if (!staffReview && (r.manualEdited || r.status === "suspect")) {
+      patchRow(id, {
+        status: "error", counted: false, reviewRequired: false,
+        rejectCode: "manual_review_required",
+        rejectReason: "زانیاریی فیشەکە دەستکاری کراوە یان دڵنیایی خوێندنەوە نزمە؛ بۆ پشکنینی ئەدمین تۆمار دەکرێت",
+        note: "بۆ پشکنینی ئەدمین تۆمار دەکرێت",
+        reviewedManually: true,
+      });
+      setEditingId(null);
+      return flash("فیشەکە بۆ پشکنینی ئەدمین ئامادە کرا");
+    }
     patchRow(id, {
       status: "ok", counted: true, reviewRequired: false,
       rejectCode: null, rejectReason: null,
@@ -6838,11 +6865,11 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
     if (working || processing.length) return flash("هێشتا هەندێک فیش دەخوێندرێنەوە");
     if (review.length) return flash(`${review.length} فیش پێویستیان بە پشکنینی دەستی هەیە`);
     if (retrying.length) return flash(`${retrying.length} فیش بەهۆی کێشەی کاتی خوێندنەوە چاوەڕوانن — ڕەت نەکراونەتەوە`);
-    const persistableBad = bad.filter((r) => r.status !== "dup" && Number(r.amount) > 0 && String(r.currency || "").trim());
-    const skippedBad = bad.length - persistableBad.length;
-    const sendRows = [...good, ...persistableBad];
+    // Rejected and unreadable items are evidence too: their image, raw OCR,
+    // reason, and server verdict must be retained even when no amount exists.
+    const sendRows = [...good, ...bad];
     if (!sendRows.length) return flash("هیچ فیشێکی گونجاو بۆ ناردن نییە");
-    const currencies = new Set(sendRows.map((row) => String(row.currency || "").trim().toUpperCase()).filter(Boolean));
+    const currencies = new Set(good.map((row) => String(row.currency || "").trim().toUpperCase()).filter(Boolean));
     if (currencies.size > 1) {
       setSendError({ code: "mixed_currency", message: "فیشەکانی هەر دراوێک بە جیا بنێرە؛ بۆ نموونە CNY و USD لە یەک ناردندا تێکەڵ مەکە." });
       return;
@@ -6852,6 +6879,8 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
     setSendError(null);
     receiptCommandRef.current ||= createReceiptIngestionCommand();
     const command = receiptCommandRef.current;
+    const fallbackCurrencies = new Set(bad.map((row) => String(row.currency || "").trim().toUpperCase()).filter((value) => /^[A-Z]{3,8}$/.test(value)));
+    const batchCurrency = mainCur || (fallbackCurrencies.size === 1 ? [...fallbackCurrencies][0] : "UNKNOWN");
     const a = mainCur ? agg[mainCur] : { g: 0, f: 0, n: 0 };
     try {
       await ingestReceiptBatch({
@@ -6859,7 +6888,7 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
         onPath: (id, stagedPath) => patchRow(id, { stagedPath }),
         makeBatch: () => ({
           id: command.batchId, customer_id: customerId || null, customer_name: customerName || null,
-          partner_id: partnerId || null, direction: dir, currency: mainCur,
+          partner_id: partnerId || null, direction: dir, currency: batchCurrency,
           total_gross: a.g, total_fee: a.f, total_net: a.n, dup_n: dupN,
           rejected_n: bad.length, source: intakeSource,
         }),
@@ -6869,10 +6898,10 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
           fee_discount: r.feeDiscount || 0, platform: r.platform || null, net_amount: r.net ?? null,
           currency: r.currency, sender: r.sender || null, receiver: r.receiver || null, ref_no: r.refNo || null,
           tx_time: r.txTime || null, tx_date: r.txDate || null, bank: r.bank || null, note: r.note || null,
-          image_hash: r.hash, image_path: path, status: r.status, counted: r.counted !== false,
+          image_hash: r.hash, image_path: path, status: r.status === "dup" ? "rejected" : r.status, counted: r.counted !== false,
           reject_code: r.rejectCode || null, reject_reason: r.rejectReason || null, dup_of: r.dupOf || null,
           dup_of_date: r.dupOfDate || null, dup_of_who: r.dupOfWho || null,
-          raw: { ...(r.raw || {}), ocr_v: 5, confidence: r.confidence ?? r.raw?.confidence ?? null,
+          raw: { ...(r.raw || {}), ocr_v: 6, confidence: r.confidence ?? r.raw?.confidence ?? null,
             fieldConfidence: r.fieldConfidence || r.raw?.fieldConfidence || null,
             merchantOrderNo: r.merchantOrderNo || r.raw?.merchantOrderNo || null,
             orderAmount: r.orderAmount ?? r.raw?.orderAmount ?? null, paymentMethod: r.paymentMethod || r.raw?.paymentMethod || null,
@@ -6883,7 +6912,7 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
             validation: r.validation || r.raw?.validation || null, reviewedManually: !!r.reviewedManually, manualEdited: !!r.manualEdited },
         }),
       });
-      flash(`${good.length} ${tr("فیش نێردرا")} ✓${persistableBad.length ? ` — ${persistableBad.length} ${tr("ڕەتکراو تۆمار کران")}` : ""}${skippedBad ? ` — ${skippedBad} ڕەتکراوی بێ زانیاری تۆمار نەکرا` : ""}`);
+      flash(`${good.length} ${tr("فیش نێردرا")} ✓${bad.length ? ` — ${bad.length} ${tr("ڕەتکراو بە وێنە و هۆکارەوە تۆمار کران")}` : ""}`);
       commitRows([]); receiptCommandRef.current = null; setEditingId(null); setInspectorId(null);
       setSelectedRows([]); setReviewTab("all"); setReviewSearch(""); setReviewPlatform("all");
       setIntakeSource("app"); onDone?.();
@@ -6985,15 +7014,15 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
             className="p-4 rounded-2xl text-start disabled:opacity-50 transition hover:-translate-y-0.5"
             style={{ background: "var(--surf-2)", border: "1px solid var(--line)" }}>
             <Upload className="w-5 h-5 mb-2" style={{ color: "var(--pos)" }} />
-            <div className="text-[12px] font-bold text-[var(--txt)]">Gallery / Files</div>
+            <div className="text-[12px] font-bold text-[var(--txt)]">گەلەری / فایلەکان</div>
             <div className="text-[10px] text-[var(--txt-3)] mt-1">یەک یان چەند فیش هەڵبژێرە</div>
           </button>
           <button type="button" disabled={working} onClick={() => shareInputRef.current?.click()}
             className="p-4 rounded-2xl text-start disabled:opacity-50 transition hover:-translate-y-0.5"
             style={{ background: "color-mix(in srgb, var(--pos) 7%, var(--surf))", border: "1px solid color-mix(in srgb, var(--pos) 18%, var(--line))" }}>
             <MessageCircle className="w-5 h-5 mb-2" style={{ color: "var(--pos)" }} />
-            <div className="text-[12px] font-bold text-[var(--txt)]">WhatsApp / Share</div>
-            <div className="text-[10px] text-[var(--txt-3)] mt-1">فیشی save/share کراو هەڵبژێرە</div>
+            <div className="text-[12px] font-bold text-[var(--txt)]">واتساپ / هاوبەشکردن</div>
+            <div className="text-[10px] text-[var(--txt-3)] mt-1">فیشێکی پاشەکەوتکراو یان هاوبەشکراو هەڵبژێرە</div>
           </button>
         </div>
 
@@ -7379,9 +7408,9 @@ function ReceiptsHub({ data, usr, batches, batchLoadError, reloadBatches, flash,
             <Sel aria-label={l10n("فلتەری ڕێڕەو", "Lifecycle filter", "تصفية دورة الإيصال")} value={stageFilter} onChange={(e) => { setStageFilter(e.target.value); setBatchPage(1); }}><option value="all">{l10n("هەموو دۆخەکان", "All lifecycle states", "جميع الحالات")}</option>{["received","reading","needs_review","verified","matched","rejected","finalized","archived"].map((x) => <option value={x} key={x}>{lifecycleLabel(x)}</option>)}</Sel>
             <Sel aria-label={l10n("ڕیزکردنی کۆمەڵەکان", "Sort batches", "ترتيب الدُفعات")} value={batchSort} onChange={(e) => setBatchSort(e.target.value)}><option value="newest">{l10n("نوێترین", "Newest", "الأحدث")}</option><option value="oldest">{l10n("کۆنترین", "Oldest", "الأقدم")}</option><option value="amount">{l10n("بڕ", "Amount", "المبلغ")}</option><option value="status">{l10n("دۆخ", "Status", "الحالة")}</option></Sel>
           </div>
-          {!pageBatches.length ? <StatePanel type="empty" title="No receipt batches match / هیچ کۆمەڵەیەک نەدۆزرایەوە" compact /> : <div className="space-y-2">{pageBatches.map((b) => <button type="button" key={b.id} onClick={() => setSel(b.id)} className="w-full min-h-14 text-start rounded-xl p-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--ac)]" style={{ background: "var(--surf-2)", border: "1px solid var(--line)" }} aria-label={`Open batch ${b.id}`}><div className="flex justify-between gap-3"><div className="min-w-0"><div className="font-bold truncate">{b.customer_name || (b.partner_id ? usr(b.partner_id).name : b.id)}</div><div className="text-[10px] text-[var(--txt-3)] mt-1" dir="ltr">{b.id} · {new Date(b.created_at).toLocaleString("en-GB")}</div></div><div className="text-end shrink-0"><Pill tone={lifecycleTone(lifecycleOf(b))}>{lifecycleOf(b).replace("_", " ")}</Pill><div className="text-xs font-bold mt-1" style={num}>{fmtMoney(data, b.total_net, b.currency)} {b.currency}</div></div></div></button>)}</div>}
-          {pageBatches.length < filteredBatches.length && <Btn kind="ghost" className="w-full" onClick={() => setBatchPage((p) => p + 1)}>Load {Math.min(pageSize, filteredBatches.length - pageBatches.length)} more / زیاتر</Btn>}
-          <div className="text-[10px] text-[var(--txt-3)]" aria-live="polite">Showing {pageBatches.length} of {filteredBatches.length}; server load is bounded to 200 visible batches.</div>
+          {!pageBatches.length ? <StatePanel type="empty" title={l10n("هیچ کۆمەڵەیەک نەدۆزرایەوە", "No receipt batches match", "لم يتم العثور على دفعات مطابقة")} compact /> : <div className="space-y-2">{pageBatches.map((b) => <button type="button" key={b.id} onClick={() => setSel(b.id)} className="w-full min-h-14 text-start rounded-xl p-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--ac)]" style={{ background: "var(--surf-2)", border: "1px solid var(--line)" }} aria-label={l10n(`کردنەوەی کۆمەڵەی ${b.id}`, `Open batch ${b.id}`, `فتح الدفعة ${b.id}`)}><div className="flex justify-between gap-3"><div className="min-w-0"><div className="font-bold truncate">{b.customer_name || (b.partner_id ? usr(b.partner_id).name : b.id)}</div><div className="text-[10px] text-[var(--txt-3)] mt-1" dir="ltr">{b.id} · {new Date(b.created_at).toLocaleString("en-GB")}</div></div><div className="text-end shrink-0"><Pill tone={lifecycleTone(lifecycleOf(b))}>{lifecycleLabel(lifecycleOf(b))}</Pill><div className="text-xs font-bold mt-1" style={num}>{fmtMoney(data, b.total_net, b.currency)} {b.currency}</div></div></div></button>)}</div>}
+          {pageBatches.length < filteredBatches.length && <Btn kind="ghost" className="w-full" onClick={() => setBatchPage((p) => p + 1)}>{l10n(`${Math.min(pageSize, filteredBatches.length - pageBatches.length)} دانەی تر`, `Load ${Math.min(pageSize, filteredBatches.length - pageBatches.length)} more`, `تحميل ${Math.min(pageSize, filteredBatches.length - pageBatches.length)} إضافية`)}</Btn>}
+          <div className="text-[10px] text-[var(--txt-3)]" aria-live="polite">{l10n(`${pageBatches.length} لە ${filteredBatches.length} کۆمەڵە نیشان دەدرێت؛ بارکردنی سێرڤەر سنووردارە بە ٢٠٠ کۆمەڵە.`, `Showing ${pageBatches.length} of ${filteredBatches.length}; server load is bounded to 200 batches.`, `يتم عرض ${pageBatches.length} من ${filteredBatches.length}؛ تحميل الخادم محدود بـ200 دفعة.`)}</div>
         </Card>
       </>}
 
@@ -7400,7 +7429,7 @@ function ReceiptsHub({ data, usr, batches, batchLoadError, reloadBatches, flash,
                       </span>
                     )}
                     <Pill tone={b.direction === "out" ? "amber" : "green"}>{DIR_KU[b.direction || "in"]}</Pill>
-                    <Pill tone={lifecycleTone(lifecycleOf(b))}>{lifecycleOf(b).replace("_", " ")}</Pill>
+                    <Pill tone={lifecycleTone(lifecycleOf(b))}>{lifecycleLabel(lifecycleOf(b))}</Pill>
                     {(b.rejected_n || b.dup_n) > 0 && <Pill tone="red">{b.rejected_n || b.dup_n} ڕەتکراو</Pill>}
                     {b.partner_id && <Pill tone="amber">لای {usr(b.partner_id).name}</Pill>}
                   </div>
@@ -7447,7 +7476,7 @@ function ReceiptsHub({ data, usr, batches, batchLoadError, reloadBatches, flash,
           </div>
           {addFor && (
             <ReceiptUploader customerId={addFor} customerName={usr(addFor).name} uploaderId={profile?.id}
-              data={data} direction={addDir} allowDirection flash={flash}
+              data={data} direction={addDir} allowDirection flash={flash} staffReview
               onDone={() => { setAddFor(""); reloadBatches(); setTab("inbox"); }} />
           )}
         </Card>
@@ -7891,6 +7920,7 @@ function LocationReceipts({ partnerId, data, title, flash }) {
 function BatchDetail({ id, back, usr, data, profile, onMakeTx, flash, reloadBatches }) {
   const [b, setB] = useState(null);
   const [recs, setRecs] = useState(null);
+  const [intakeItems, setIntakeItems] = useState([]);
   const [events, setEvents] = useState([]);
   const [candidates, setCandidates] = useState([]);
   const [receiptPolicy, setReceiptPolicy] = useState(null);
@@ -7903,21 +7933,23 @@ function BatchDetail({ id, back, usr, data, profile, onMakeTx, flash, reloadBatc
   const [share, setShare] = useState(false);
   const [pick, setPick] = useState({});        // {receiptId: partnerId|""}
   const [saving, setSaving] = useState(false);
+  const [allocationReason, setAllocationReason] = useState("دابەشکردنی فیش بەپێی شوێنی پارە");
   const matchCommandRef = useRef(null);
   const decisionCommandRef = useRef(null);
   const finalizationCommandRef = useRef(null);
   const partners = data.users.filter((u) => u.role === "partner" && !u.deleted);
 
   const load = async () => {
-    const [bb, rr, ee, aa, cc, pp] = await Promise.all([
+    const [bb, rr, ii, ee, aa, cc, pp] = await Promise.all([
       supabase.from("receipt_batches").select("*").eq("id", id).single(),
       supabase.from("receipts").select("*").eq("batch_id", id).order("created_at"),
+      supabase.from("receipt_intake_items").select("*").eq("batch_id", id).order("created_at"),
       supabase.from("receipt_events").select("*").eq("batch_id", id).order("created_at", { ascending: true }),
       supabase.from("receipt_audit_events").select("*").eq("batch_id", id).order("created_at", { ascending: true }),
       supabase.rpc("sarraf_receipt_match_candidates", { p_batch_id: id, p_limit: 5 }),
       loadReceiptPolicy(supabase).catch(() => null),
     ]);
-    setB(bb.data || null); setRecs(rr.data || []);
+    setB(bb.data || null); setRecs(rr.data || []); setIntakeItems(ii.error ? [] : (ii.data || []));
     const legacyEvents = ee.error ? [] : (ee.data || []);
     const auditedEvents = aa.error ? [] : (aa.data || []).map((event) => ({
       id: `audit-${event.id}`,
@@ -7935,6 +7967,24 @@ function BatchDetail({ id, back, usr, data, profile, onMakeTx, flash, reloadBatc
 
   if (!b || !recs) return <Card><Empty t={tr("بارکردن...")} /></Card>;
   const good = recs.filter((r) => r.counted !== false && r.status !== "dup" && r.status !== "error");
+  const persistedItems = intakeItems.length ? intakeItems : recs.map((receipt) => ({
+    ...receipt,
+    intake_status: receipt.counted !== false && receipt.status !== "dup" && receipt.status !== "error" ? "accepted" : "rejected",
+    rule_code: receipt.reject_code,
+    rule_reason: receipt.reject_reason,
+  }));
+  const rejectedEvidence = persistedItems.filter((item) => item.intake_status === "rejected").map((item) => ({
+    ...item,
+    status: "error",
+    counted: false,
+    reject_code: item.rule_code || item.reject_code,
+    reject_reason: item.rule_reason || item.reject_reason,
+  }));
+  const unconvertedIds = new Set(persistedItems.filter((item) => item.intake_status === "accepted" && !item.transaction_id).map((item) => item.id));
+  const hasConvertedReceipts = persistedItems.some((item) => item.intake_status === "accepted" && item.transaction_id);
+  const convertibleReceipts = good.filter((receipt) => unconvertedIds.has(receipt.id));
+  const canCreateTransaction = b.receipt_stage === "verified" && convertibleReceipts.length > 0;
+  const canManageCustody = b.receipt_stage === "verified" && convertibleReceipts.length > 0;
   const isOut = (b.direction || "in") === "out";
 
   // گروپکردن بەپێی هاوبەش
@@ -7945,30 +7995,39 @@ function BatchDetail({ id, back, usr, data, profile, onMakeTx, flash, reloadBatc
     groups[k].rows.push(r); groups[k].n++;
   });
   const groupKeys = Object.keys(groups);
+  const conversionGroups = {};
+  convertibleReceipts.forEach((receipt) => {
+    const key = pick[receipt.id] || "";
+    conversionGroups[key] = conversionGroups[key] || { rows: [], n: 0 };
+    conversionGroups[key].rows.push(receipt);
+    conversionGroups[key].n += 1;
+  });
+  const conversionGroupKeys = Object.keys(conversionGroups);
+  const remainingTotal = convertibleReceipts.reduce((sum, receipt) => sum + (Number(receipt.net_amount ?? receipt.amount) || 0), 0);
+  const remainingCurrency = convertibleReceipts[0]?.currency || b.currency;
 
   const saveSplit = async () => {
+    if (allocationReason.trim().length < 8) return flash("هۆکاری دابەشکردن لانیکەم ٨ پیت بێت");
     setSaving(true);
     try {
-      for (const r of good) {
-        const p = pick[r.id] || null;
-        if ((r.partner_id || null) !== p) {
-          const e = await supabase.from("receipts").update({ partner_id: p }).eq("id", r.id);
-          if (e.error) throw e.error;
-        }
-      }
+      await assignReceiptCustody(supabase, {
+        batchId: id,
+        allocations: convertibleReceipts.map((r) => ({ receipt_id: r.id, partner_id: pick[r.id] || null })),
+        reason: allocationReason,
+      });
       flash("دابەشکردن پاشەکەوت کرا ✓");
       setSplit(false); await load(); reloadBatches && reloadBatches();
     } catch (e) { console.error(e); flash("هەڵە لە پاشەکەوتکردن"); }
     finally { setSaving(false); }
   };
 
-  const setAll = (pid) => setPick(Object.fromEntries(good.map((r) => [r.id, pid])));
+  const setAll = (pid) => setPick((current) => ({ ...current, ...Object.fromEntries(convertibleReceipts.map((r) => [r.id, pid])) }));
 
   const confirmMatch = async (candidate) => {
     const minimum = receiptPolicy?.min_match_score ?? 80;
     const reasonBelow = receiptPolicy?.require_reason_below ?? 90;
     if (Number(candidate.score) < minimum) {
-      return flash(`ئەم پێشنیارە ژێر policy threshold ـی ${minimum}% ـە`);
+      return flash(`ئەم پێشنیارە ژێر سنووری یاسای ${minimum}% ـە`);
     }
     if (Number(candidate.score) < reasonBelow && matchReason.trim().length < 8) {
       return flash(`بۆ نمرەی کەمتر لە ${reasonBelow}%، هۆکارێکی ڕوون بنووسە`);
@@ -8002,14 +8061,14 @@ function BatchDetail({ id, back, usr, data, profile, onMakeTx, flash, reloadBatc
     try {
       await reviewReceiptBatch(supabase, { batchId: id, decision, reviewReason: matchReason,
         commandKey: decisionCommandRef.current.key });
-      flash(decision === "reject" ? "Receipt batch ڕەتکرایەوە ✓" : "Receipt batch گەڕێندرایەوە بۆ correction ✓");
+      flash(decision === "reject" ? "کۆمەڵە فیشەکە ڕەتکرایەوە ✓" : "کۆمەڵە فیشەکە بۆ ڕاستکردنەوە گەڕێندرایەوە ✓");
       decisionCommandRef.current = null;
       setMatchReason("");
       await load();
       reloadBatches && reloadBatches();
     } catch (error) {
       console.error("receipt decision", error);
-      flash(error?.message || "بڕیاری receipt جێبەجێ نەکرا");
+      flash(error?.message || "بڕیاری فیش جێبەجێ نەکرا");
     } finally {
       setDecisionBusy(null);
     }
@@ -8020,9 +8079,9 @@ function BatchDetail({ id, back, usr, data, profile, onMakeTx, flash, reloadBatc
     const ownerOverride = sameMaker && profile?.adminLevel === "owner";
     const requiredLength = ownerOverride ? 12 : 8;
     if (finalizationReason.trim().length < requiredLength) {
-      return flash(`هۆکاری finalization لانیکەم ${requiredLength} پیت بێت`);
+      return flash(`هۆکاری پشکنینی کۆتایی لانیکەم ${requiredLength} پیت بێت`);
     }
-    if (sameMaker && !ownerOverride) return flash("ئەدمینێکی جیاواز دەبێت ئەم بڕیارە finalize بکات");
+    if (sameMaker && !ownerOverride) return flash("ئەدمینێکی جیاواز دەبێت پشکنینی کۆتایی ئەم بڕیارە بکات");
     finalizationCommandRef.current ||= createReceiptReviewCommand("finalize", id);
     setFinalizationBusy(true);
     try {
@@ -8030,12 +8089,12 @@ function BatchDetail({ id, back, usr, data, profile, onMakeTx, flash, reloadBatc
         ownerOverride, commandKey: finalizationCommandRef.current });
       finalizationCommandRef.current = null;
       setFinalizationReason("");
-      flash("Receipt decision finalize و audit کرا ✓");
+      flash("بڕیاری فیش پشکنینی کۆتایی و تۆماری وردبینی بۆ کرا ✓");
       await load();
       reloadBatches && reloadBatches();
     } catch (error) {
       console.error("receipt finalization", error);
-      flash(error?.message || "Finalization سەرکەوتوو نەبوو");
+      flash(error?.message || "پشکنینی کۆتایی سەرکەوتوو نەبوو");
     } finally {
       setFinalizationBusy(false);
     }
@@ -8054,8 +8113,8 @@ function BatchDetail({ id, back, usr, data, profile, onMakeTx, flash, reloadBatc
   const eventLabels = {
     received: "کۆمەڵە وەرگیرا", ai_read: "AI خوێندییەوە", needs_review: "پشکنینی مرۆڤ پێویستە",
     verified: "پشتڕاست کرایەوە", matched: "بە مامەڵەوە بەسترا", unlinked: "بەستنەوە هەڵوەشایەوە",
-    decision_rejected: "بڕیاری ڕەتکردنەوە تۆمار کرا", correction_requested: "گەڕێندرایەوە بۆ correction",
-    finalized: "بڕیارەکە finalize کرا", policy_updated: "Receipt policy نوێ کرایەوە",
+    decision_rejected: "بڕیاری ڕەتکردنەوە تۆمار کرا", correction_requested: "گەڕێندرایەوە بۆ ڕاستکردنەوە",
+    finalized: "بڕیارەکە پشکنینی کۆتایی بۆ کرا", policy_updated: "یاسای فیش نوێ کرایەوە",
     archived: "ئەرشیف کرا", rejected_summary: "ڕەتکراوەکان تۆمار کران", split_updated: "دابەشکردن نوێکرایەوە",
   };
 
@@ -8082,6 +8141,28 @@ function BatchDetail({ id, back, usr, data, profile, onMakeTx, flash, reloadBatc
 
       <ReceiptTotals rows={recs} data={data} />
 
+      <Card className="p-4">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <div className="text-[13px] font-bold text-[var(--txt)]">دۆخی پاراستنی فیشەکان</div>
+            <div className="text-[11px] text-[var(--txt-3)] mt-1">
+              هەموو وێنە و وردەکارییەکان تۆمار کراون؛ تەنها فیشە پەسەندکراوەکان لە کۆی مامەڵەدا هەژمار دەکرێن.
+            </div>
+          </div>
+          <Pill tone={canCreateTransaction || b.tx_id ? "green" : rejectedEvidence.length ? "red" : "amber"}>
+            {canCreateTransaction ? "ئامادەی مامەڵە" : b.tx_id ? "بە مامەڵەوە بەستراوە" : "مامەڵە قوفڵە"}
+          </Pill>
+        </div>
+        <div className="grid grid-cols-3 gap-2 mt-3" role="status" aria-label="پوختەی پاراستنی فیش">
+          {[["هەموو", persistedItems.length, "var(--txt)"], ["پەسەندکراو", good.length, "var(--pos)"], ["ڕەتکراو", rejectedEvidence.length, "var(--neg)"]].map(([label, value, color]) => (
+            <div key={label} className="rounded-xl p-3 text-center" style={{ background: "var(--surf-2)", border: "1px solid var(--line)" }}>
+              <div className="text-[10px] text-[var(--txt-3)]">{label}</div>
+              <div className="text-lg font-bold mt-1" style={{ ...num, color }}>{value}</div>
+            </div>
+          ))}
+        </div>
+      </Card>
+
       <Btn kind="gold" className="w-full flex items-center justify-center gap-2" onClick={() => setShare(true)}>
         <Share2 className="w-4 h-4" /> {tr("ناردنی خشتەی وردەکاری")}
       </Btn>
@@ -8090,20 +8171,20 @@ function BatchDetail({ id, back, usr, data, profile, onMakeTx, flash, reloadBatc
           title={tr("وردەکاری فیشەکان")} flash={flash} onClose={() => setShare(false)} />
       )}
 
-      {b.status === "new" && !b.tx_id && (
+      {canCreateTransaction && !hasConvertedReceipts && (
         <Card className="p-5">
           <div className="flex items-start justify-between gap-3 flex-wrap mb-4">
             <div>
-              <SecLbl>Smart Reconciliation</SecLbl>
+              <SecLbl>{tr("بەستنەوەی زیرەک")}</SecLbl>
               <div className="text-[11px] text-[var(--txt-3)] mt-1">پێشنیارەکان تەنها یارمەتیدەرن؛ بەستنەوە تەنها دوای پشتڕاستکردنەوەی تۆ ئەنجام دەدرێت.</div>
             </div>
             <div className="flex gap-1.5 flex-wrap">
-              <Pill tone="amber">Human approval</Pill>
-              <Pill tone="slate">Policy v{receiptPolicy?.version || "—"} · min {receiptPolicy?.min_match_score ?? 80}%</Pill>
+              <Pill tone="amber">{tr("پەسەندکردنی مرۆڤ پێویستە")}</Pill>
+              <Pill tone="slate">یاسا {receiptPolicy?.version || "—"} · لانیکەم {receiptPolicy?.min_match_score ?? 80}%</Pill>
             </div>
           </div>
           <div className="space-y-3">
-            {candidates.length === 0 && <StatePanel type="empty" title="هیچ transaction candidate ـێکی پارێزراو نەدۆزرایەوە" detail="دەتوانیت batch ـەکە ڕەت بکەیتەوە یان بۆ correction بیگەڕێنیتەوە." compact />}
+            {candidates.length === 0 && <StatePanel type="empty" title="هیچ مامەڵەیەکی گونجاو بۆ بەستنەوە نەدۆزرایەوە" detail="دەتوانیت لە فیشە پەسەندکراوەکان مامەڵەیەکی نوێ دروست بکەیت، یان کۆمەڵەکە ڕەت بکەیتەوە." compact />}
             {candidates.map((candidate) => {
               const reasons = candidate.reasons || {};
               const minimum = receiptPolicy?.min_match_score ?? 80;
@@ -8125,7 +8206,7 @@ function BatchDetail({ id, back, usr, data, profile, onMakeTx, flash, reloadBatc
                       <div className="text-[10px] text-[var(--txt-3)] mt-1" style={num}>{candidate.tx_date ? new Date(candidate.tx_date).toLocaleString("en-GB") : "—"}</div>
                     </div>
                     <Btn onClick={() => confirmMatch(candidate)} disabled={!!matchBusy || !!decisionBusy || belowPolicy || (reasonRequired && matchReason.trim().length < 8)}>
-                      {matchBusy === candidate.tx_id ? "بەستنەوە..." : belowPolicy ? "ژێر Policy" : "Accept و بەستن"}
+                      {matchBusy === candidate.tx_id ? "بەستنەوە..." : belowPolicy ? "ژێر سنووری یاسا" : "پەسەندکردن و بەستنەوە"}
                     </Btn>
                   </div>
                   <div className="flex gap-1.5 flex-wrap mt-3">
@@ -8140,22 +8221,22 @@ function BatchDetail({ id, back, usr, data, profile, onMakeTx, flash, reloadBatc
             })}
           </div>
           <div className="mt-4">
-            <Lbl>هۆکاری بڕیار {candidates.some((candidate) => candidate.score < (receiptPolicy?.require_reason_below ?? 90)) ? "(بۆ accept ـی ژێر threshold، reject و correction پێویستە)" : "(بۆ reject/correction پێویستە)"}</Lbl>
+            <Lbl>هۆکاری بڕیار {candidates.some((candidate) => candidate.score < (receiptPolicy?.require_reason_below ?? 90)) ? "(بۆ نمرەی ژێر سنوور، ڕەتکردنەوە یان ڕاستکردنەوە پێویستە)" : "(بۆ ڕەتکردنەوە یان ڕاستکردنەوە پێویستە)"}</Lbl>
             <Inp value={matchReason} onChange={(e) => setMatchReason(e.target.value)} placeholder="بۆ نموونە: بڕ/دراو/کڕیار یەکناگرنەوە، یان پشکنینەکە پشتڕاستە" />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3 pt-3 border-t border-[var(--line)]">
             <Btn kind="danger" onClick={() => decideWithoutMatch("reject")} disabled={!!matchBusy || !!decisionBusy || receiptPolicy?.allow_reject === false || matchReason.trim().length < 8}>
-              {decisionBusy === "reject" ? "ڕەتکردنەوە..." : "Reject batch"}
+              {decisionBusy === "reject" ? "ڕەتکردنەوە..." : "ڕەتکردنەوەی کۆمەڵە"}
             </Btn>
             <Btn kind="ghost" onClick={() => decideWithoutMatch("correction")} disabled={!!matchBusy || !!decisionBusy || receiptPolicy?.allow_correction === false || matchReason.trim().length < 8}>
-              {decisionBusy === "correction" ? "گەڕاندنەوە..." : "Return for correction"}
+              {decisionBusy === "correction" ? "گەڕاندنەوە..." : "گەڕاندنەوە بۆ ڕاستکردنەوە"}
             </Btn>
           </div>
         </Card>
       )}
 
       <Card className="p-5">
-        <SecLbl>Audit Timeline</SecLbl>
+        <SecLbl>{tr("مێژووی وردبینی")}</SecLbl>
         <div className="mt-4 space-y-0">
           {(events.length ? events : [{ id: "created", event_type: "received", created_at: b.created_at, detail: "Legacy batch" }]).map((event, index, list) => (
             <div key={event.id} className="flex gap-3 min-h-[58px]">
@@ -8175,10 +8256,10 @@ function BatchDetail({ id, back, usr, data, profile, onMakeTx, flash, reloadBatc
         </div>
       </Card>
 
-      <RejectedReceipts rows={recs} />
+      <RejectedReceipts rows={rejectedEvidence} />
 
       {/* دابەشکردن بەسەر هاوبەشەکان */}
-      {b.status === "new" && partners.length > 0 && (
+      {canManageCustody && partners.length > 0 && (
         <Card className="p-5">
           <div className="flex items-center justify-between mb-3">
             <SecLbl>{tr("دابەشکردن بەسەر هاوبەشەکان")}</SecLbl>
@@ -8221,7 +8302,7 @@ function BatchDetail({ id, back, usr, data, profile, onMakeTx, flash, reloadBatc
                   <button key={p.id} onClick={() => setAll(p.id)} className="px-2.5 py-1 rounded-lg bg-[var(--line)] hover:bg-[var(--pos)] hover:text-white text-xs font-semibold transition">{p.name}</button>
                 ))}
               </div>
-              {good.map((r, i) => (
+              {convertibleReceipts.map((r, i) => (
                 <div key={r.id} className="flex items-center gap-2.5 p-2.5 bg-[var(--line)] rounded-[var(--r-sm)]">
                   <span className="text-xs text-[var(--txt-3)] w-5" style={num}>{i + 1}</span>
                   {r.image_path && <ReceiptImg path={r.image_path} className="w-10 h-10 object-cover rounded-lg border border-[var(--line)] shrink-0" />}
@@ -8236,27 +8317,32 @@ function BatchDetail({ id, back, usr, data, profile, onMakeTx, flash, reloadBatc
                   </select>
                 </div>
               ))}
+              <div>
+                <Lbl>{tr("هۆکاری دانانی فیشەکان لای هاوبەش")}</Lbl>
+                <Inp value={allocationReason} onChange={(event) => setAllocationReason(event.target.value)}
+                  placeholder={tr("بۆ نموونە: پارەکە لای ئەم هاوبەشە دانرا")} />
+              </div>
               <Btn className="w-full" onClick={saveSplit} disabled={saving}>{saving ? "..." : "پاشەکەوتکردنی دابەشکردن"}</Btn>
             </div>
           )}
         </Card>
       )}
 
-      {b.status === "new" && (
+      {canCreateTransaction && (
         <Card className={`p-5 ${isOut ? "border-[color-mix(in_srgb,var(--neg)_34%,transparent)] bg-[color-mix(in_srgb,var(--neg)_8%,transparent)]" : "border-[color-mix(in_srgb,var(--pos)_34%,transparent)] bg-[color-mix(in_srgb,var(--pos)_8%,transparent)]"}`}>
-          {groupKeys.length > 1 ? (
+          {conversionGroupKeys.length > 1 ? (
             <>
               <div className="text-sm text-[var(--txt)] mb-3">
-                {tr("فیشەکان بەسەر")} <b>{groupKeys.length}</b> {tr("شوێندا دابەش کراون — بۆ هەریەکەیان مامەڵەیەکی جیا درووست بکە:")}
+                {tr("فیشە ماوەکان بەسەر")} <b>{conversionGroupKeys.length}</b> {tr("شوێندا دابەش کراون — بۆ هەریەکەیان مامەڵەیەکی جیا دروست بکە:")}
               </div>
               <div className="space-y-2">
-                {groupKeys.map((k) => {
-                  const g = groups[k];
+                {conversionGroupKeys.map((k) => {
+                  const g = conversionGroups[k];
                   const cu = g.rows[0]?.currency;
                   const tot = g.rows.reduce((s2, r) => s2 + (+(r.net_amount ?? r.amount) || 0), 0);
                   return (
                     <Btn key={k || "none"} kind={isOut ? "danger" : "primary"} className="w-full flex items-center justify-between"
-                      onClick={() => onMakeTx({ ...b, total_net: tot, currency: cu, n: g.n, partner_id: k || null, _group: k || null })}>
+                      onClick={() => onMakeTx({ ...b, total_net: tot, currency: cu, n: g.n, partner_id: k || null, receipt_ids: g.rows.map((row) => row.id), _group: k || null })}>
                       <span>{k ? usr(k).name : "قاسەی گشتی"}</span>
                       <span style={num}>{fmt(tot, 0)} {cu}</span>
                     </Btn>
@@ -8268,11 +8354,12 @@ function BatchDetail({ id, back, usr, data, profile, onMakeTx, flash, reloadBatc
             <>
               <div className={`text-sm mb-3 ${isOut ? "text-[var(--neg)]" : "text-[var(--pos)]"}`}>
                 {isOut
-                  ? <>ئەم بڕە نێردراوە: <b style={num}>{fmtMoney(data, b.total_net, b.currency)} {b.currency}</b> {tr("— فرۆشتنێکی لێ درووست بکە")}</>
-                  : <>ئەم کەسە ئەم بڕەی ناردووە: <b style={num}>{fmtMoney(data, b.total_net, b.currency)} {b.currency}</b> {tr("— کڕینێکی لێ درووست بکە")}</>}
+                  ? <>ئەم بڕەی پەسەندکراوە ماوە: <b style={num}>{fmtMoney(data, remainingTotal, remainingCurrency)} {remainingCurrency}</b> {tr("— فرۆشتنێکی لێ دروست بکە")}</>
+                  : <>ئەم بڕەی پەسەندکراوە ماوە: <b style={num}>{fmtMoney(data, remainingTotal, remainingCurrency)} {remainingCurrency}</b> {tr("— کڕینێکی لێ دروست بکە")}</>}
               </div>
               <Btn kind={isOut ? "danger" : "primary"} className="w-full"
-                onClick={() => onMakeTx({ ...b, partner_id: groupKeys[0] || null })}>
+                onClick={() => onMakeTx({ ...b, total_net: remainingTotal, currency: remainingCurrency, n: convertibleReceipts.length,
+                  partner_id: conversionGroupKeys[0] || null, receipt_ids: convertibleReceipts.map((row) => row.id) })}>
                 {isOut ? "درووستکردنی فرۆشتن لەم فیشانەوە" : "درووستکردنی کڕین لەم فیشانەوە"}
               </Btn>
             </>
@@ -8285,31 +8372,31 @@ function BatchDetail({ id, back, usr, data, profile, onMakeTx, flash, reloadBatc
             <div>
               <div className="text-sm text-[var(--txt-2)]">
                 {b.decision_status === "rejected"
-                  ? "Receipt batch ڕەتکراوەتەوە"
+                  ? "کۆمەڵە فیشەکە ڕەتکراوەتەوە"
                   : <>{tr("بەستراوە بە مامەڵەی")} <b style={num}>#{(data.txs.find((t) => t.id === b.tx_id) || {}).code || "—"}</b></>}
               </div>
               <div className="flex gap-1.5 mt-2 flex-wrap">
-                {b.matched_score != null && <Pill tone={b.matched_score >= (receiptPolicy?.min_match_score ?? 80) ? "green" : "amber"}>Match {b.matched_score}%</Pill>}
+                {b.matched_score != null && <Pill tone={b.matched_score >= (receiptPolicy?.min_match_score ?? 80) ? "green" : "amber"}>گونجان {b.matched_score}%</Pill>}
                 <Pill tone={b.decision_status === "rejected" ? "red" : "green"}>{b.decision_status || (b.tx_id ? "accepted" : "—")}</Pill>
-                <Pill tone={b.receipt_stage === "finalized" || !requiresFinalization ? "green" : "amber"}>{b.receipt_stage === "finalized" ? "Finalized" : requiresFinalization ? "Waiting finalization" : "Decision complete · finalization optional"}</Pill>
-                {b.policy_version && <Pill tone="slate">Policy v{b.policy_version}</Pill>}
+                <Pill tone={b.receipt_stage === "finalized" || !requiresFinalization ? "green" : "amber"}>{b.receipt_stage === "finalized" ? "پشکنینی کۆتایی تەواوە" : requiresFinalization ? "چاوەڕوانی پشکنینی کۆتایی" : "بڕیار تەواوە · پشکنینی کۆتایی ئارەزوومەندانەیە"}</Pill>
+                {b.policy_version && <Pill tone="slate">یاسا {b.policy_version}</Pill>}
               </div>
               {(b.decision_reason || b.match_reason) && <div className="text-[10.5px] text-[var(--txt-3)] mt-2">{b.decision_reason || b.match_reason}</div>}
             </div>
           </div>
           {b.receipt_stage !== "finalized" && b.receipt_stage !== "archived" && (
             <div className="mt-4 pt-4 border-t border-[var(--line)]">
-              <Lbl>{requiresFinalization ? "هۆکاری Finalization" : "Finalization ـی ئارەزوومەندانە"} {b.decision_by === profile?.id && profile?.adminLevel === "owner" ? "(Owner override ـە؛ لانیکەم ١٢ پیت)" : "(لانیکەم ٨ پیت)"}</Lbl>
-              {b.decision_by === profile?.id && profile?.adminLevel !== "owner" && <div className="text-[10.5px] text-[var(--warn)] mb-2">Maker و finalizer دەبێت دوو ئەدمینی جیاواز بن.</div>}
+              <Lbl>{requiresFinalization ? "هۆکاری پشکنینی کۆتایی" : "پشکنینی کۆتایی ئارەزوومەندانە"} {b.decision_by === profile?.id && profile?.adminLevel === "owner" ? "(دەسەڵاتی خاوەن؛ لانیکەم ١٢ پیت)" : "(لانیکەم ٨ پیت)"}</Lbl>
+              {b.decision_by === profile?.id && profile?.adminLevel !== "owner" && <div className="text-[10.5px] text-[var(--warn)] mb-2">بڕیاردەر و پشکنەری کۆتایی دەبێت دوو ئەدمینی جیاواز بن.</div>}
               <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto] gap-2.5">
-                <Inp value={finalizationReason} onChange={(e) => setFinalizationReason(e.target.value)} placeholder="پشکنینی کۆتایی، policy و transaction/receipt پەیوەندییەکە پشتڕاستە" />
+                <Inp value={finalizationReason} onChange={(e) => setFinalizationReason(e.target.value)} placeholder="یاسا و پەیوەندیی نێوان مامەڵە و فیشەکان پشتڕاست کرایەوە" />
                 <Btn onClick={finalizeDecision} disabled={finalizationBusy || profile?.role !== "admin" || (b.decision_by === profile?.id && profile?.adminLevel !== "owner") || finalizationReason.trim().length < (b.decision_by === profile?.id && profile?.adminLevel === "owner" ? 12 : 8)}>
-                  {finalizationBusy ? "Finalizing..." : "Finalize decision"}
+                  {finalizationBusy ? "پشکنینی کۆتایی..." : "پشکنینی کۆتایی بڕیار"}
                 </Btn>
               </div>
             </div>
           )}
-          {b.receipt_stage === "finalized" && <div className="mt-4 pt-4 border-t border-[var(--line)] text-[11px] text-[var(--pos)] flex items-center gap-2"><CheckCircle2 className="w-4 h-4" /> Finalization تۆمار و audit کرا{b.finalized_at ? ` · ${new Date(b.finalized_at).toLocaleString("en-GB")}` : ""}</div>}
+          {b.receipt_stage === "finalized" && <div className="mt-4 pt-4 border-t border-[var(--line)] text-[11px] text-[var(--pos)] flex items-center gap-2"><CheckCircle2 className="w-4 h-4" /> پشکنینی کۆتایی و تۆماری وردبینی تەواوە{b.finalized_at ? ` · ${new Date(b.finalized_at).toLocaleString("en-GB")}` : ""}</div>}
         </Card>
       )}
 
@@ -8323,12 +8410,35 @@ function ReceiptArchive({ customerId, data, flash, simple = false }) {
   const [scan, setScan] = useState(false);
   const [recs, setRecs] = useState(null);
   const [share, setShare] = useState(false);
+  const [portalSummary, setPortalSummary] = useState(null);
+  const [portalSummaryError, setPortalSummaryError] = useState("");
   const [q, setQ] = useState(""); const [from, setFrom] = useState(""); const [to, setTo] = useState("");
 
   useEffect(() => {
+    let active = true;
+    if (simple) {
+      setPortalSummaryError("");
+      loadPortalReceiptSummary(supabase).then((summary) => {
+        if (active) setPortalSummary(summary);
+      }).catch((error) => {
+        if (!active) return;
+        console.error("portal receipt summary", error);
+        setPortalSummaryError(userFacingServiceError(error, _lang, "پوختەی فیشەکان بار نەبوو"));
+        setPortalSummary({ totals: [], batches: [] });
+      });
+      return () => { active = false; };
+    }
     supabase.from("receipts").select("*").eq("customer_id", customerId).order("created_at", { ascending: false }).limit(500)
-      .then(({ data: d }) => setRecs(d || []));
-  }, [customerId]);
+      .then(({ data: d }) => { if (active) setRecs(d || []); });
+    return () => { active = false; };
+  }, [customerId, simple]);
+
+  if (simple) {
+    if (portalSummary === null) return <Card><StatePanel type="loading" title={tr("بارکردن...")} compact /></Card>;
+    if (portalSummaryError) return <Card><StatePanel type="error" title={tr("پوختەی فیشەکان بار نەبوو")} detail={portalSummaryError} compact /></Card>;
+    return <DeferredPanel><PortalReceiptSummary summary={portalSummary} data={data}
+      ui={{ Card, Empty, Hero, Pill, fmtMoney, tr, num }} /></DeferredPanel>;
+  }
 
   if (!recs) return <Card><Empty t={tr("بارکردن...")} /></Card>;
   const list = simple ? recs : recs.filter((r) => {
@@ -9592,7 +9702,7 @@ function Backup({ data, calc, cur, downloadBackup, flash, sumUsd, mySafe, owners
       setRecon(result?.reconciliation || result || null);
     } catch (e) {
       setRecon(null);
-      setReconErr(e?.message || "Reconciliation failed");
+      setReconErr(e?.message || "یەکسانکردنەوە سەرکەوتوو نەبوو");
     } finally {
       setBusy(false);
     }
@@ -9607,25 +9717,25 @@ function Backup({ data, calc, cur, downloadBackup, flash, sumUsd, mySafe, owners
 
   return (
     <div className="space-y-4">
-      <H sub="پشکنینی دروستی داتا، reconciliation و ڕێنمایی گەڕاندنەوەی production">{tr("پاراستنی داتا")}</H>
+      <H sub="پشکنینی دروستی داتا، یەکسانکردنەوە و ڕێنمایی گەڕاندنەوەی بەرهەم">{tr("پاراستنی داتا")}</H>
 
       <Card className={`p-4 ${frozen ? "border-[color-mix(in_srgb,var(--neg)_40%,transparent)] bg-[color-mix(in_srgb,var(--neg)_8%,transparent)]" : "border-[color-mix(in_srgb,var(--pos)_28%,transparent)]"}`}>
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
             <div className="font-bold text-[var(--txt)] flex items-center gap-2">
               {frozen ? <AlertTriangle className="w-4 h-4 text-[var(--neg)]" /> : <CheckCircle2 className="w-4 h-4 text-[var(--pos)]" />}
-              Runtime Contract · {runtime?.contract_version || "—"}
+              پەیمانی کارکردنی سیستەم · {runtime?.contract_version || "—"}
             </div>
             <div className="text-xs mt-1" style={{ color: frozen ? "var(--neg)" : "var(--txt-3)" }}>
-              {frozen ? `Emergency Freeze چالاکە${runtime?.maintenance_reason ? ` · ${runtime.maintenance_reason}` : ""}` : "Financial write path کراوەیە"}
+              {frozen ? `ڕاگرتنی فریاکەوتن چالاکە${runtime?.maintenance_reason ? ` · ${runtime.maintenance_reason}` : ""}` : "ڕێگای تۆمارکردنی دارایی کراوەیە"}
             </div>
           </div>
-          <Pill tone={frozen ? "red" : "green"}>{frozen ? "FROZEN" : "WRITE OPEN"}</Pill>
+          <Pill tone={frozen ? "red" : "green"}>{frozen ? "ڕاگیراوە" : "تۆمارکردن کراوەیە"}</Pill>
         </div>
 
         {isOwner && (
           <div className="mt-4 pt-4 border-t border-[var(--line)]">
-            <Lbl>{frozen ? "هۆکاری کردنەوەی write path" : "هۆکاری Emergency Freeze"}</Lbl>
+            <Lbl>{frozen ? "هۆکاری کردنەوەی ڕێگای تۆمارکردن" : "هۆکاری ڕاگرتنی فریاکەوتن"}</Lbl>
             <Inp value={maintReason} onChange={(e) => setMaintReason(e.target.value)}
               placeholder="لانیکەم ١٢ پیت — هۆکاری ڕوون بنووسە" />
             <div className="mt-3 flex gap-2 flex-wrap">
@@ -9642,7 +9752,7 @@ function Backup({ data, calc, cur, downloadBackup, flash, sumUsd, mySafe, owners
                   }
                 }}
               >
-                {maintBusy ? "..." : frozen ? "کردنەوەی Financial Writes" : "چالاککردنی Emergency Freeze"}
+                {maintBusy ? "..." : frozen ? "کردنەوەی تۆمارکردنی دارایی" : "چالاککردنی ڕاگرتنی فریاکەوتن"}
               </Btn>
               <span className="text-[11px] self-center text-[var(--txt-3)]">
                 تەنها خاوەنی سیستەم · MFA/AAL2
@@ -9672,11 +9782,11 @@ function Backup({ data, calc, cur, downloadBackup, flash, sumUsd, mySafe, owners
 
         <div className="mt-3 flex items-center gap-2 flex-wrap">
           <Btn kind="ghost" onClick={runServerRecon} disabled={busy}>
-            {busy ? "..." : "پشکنینی Reconciliation لە سێرڤەر"}
+            {busy ? "..." : "پشکنینی یەکسانکردنەوە لە سێرڤەر"}
           </Btn>
           {recon && (
             <Pill tone={recon.ok ? "green" : "red"}>
-              {recon.ok ? `PASS · ${recon.warnings || 0} warning` : `${recon.failures || 0} FAIL`}
+              {recon.ok ? `سەرکەوتوو · ${recon.warnings || 0} ئاگاداری` : `${recon.failures || 0} هەڵە`}
             </Pill>
           )}
           {reconErr && <span className="text-xs text-[var(--neg)]">{reconErr}</span>}
@@ -10344,11 +10454,11 @@ function ApprovalCenter({
     try {
       const out = await reconcile();
       setRecon(out || null);
-      if (out?.ok) flash("Reconciliation پاکە ✓");
-      else flash(`${out?.failures || 0} کێشە لە Reconciliation دۆزرایەوە`);
+      if (out?.ok) flash("یەکسانکردنەوە پاکە ✓");
+      else flash(`${out?.failures || 0} کێشە لە یەکسانکردنەوە دۆزرایەوە`);
     } catch (e) {
       console.error(e);
-      flash(e?.message || "Reconciliation سەرکەوتوو نەبوو");
+      flash(e?.message || "یەکسانکردنەوە سەرکەوتوو نەبوو");
     } finally {
       setReconBusy(false);
     }
@@ -10370,7 +10480,7 @@ function ApprovalCenter({
     };
     for (const k of ["transaction_approval_usd","cash_approval_usd","transfer_approval_usd"]) {
       if (payload[k] != null && (!(payload[k] > 0) || !Number.isFinite(payload[k]))) {
-        flash("Threshold دەبێت ژمارەیەکی ئەرێنی بێت یان بەتاڵ بێت");
+        flash("سنووری بڕ دەبێت ژمارەیەکی ئەرێنی بێت یان بەتاڵ بێت");
         return;
       }
     }
@@ -10389,25 +10499,25 @@ function ApprovalCenter({
           <div className="text-2xl font-semibold mt-1" style={num}>{pendingCount}</div>
         </Card>
         <Card className="p-4">
-          <div className="text-[11px]" style={{color:"var(--txt-3)"}}>Business date</div>
+          <div className="text-[11px]" style={{color:"var(--txt-3)"}}>بەرواری کاری</div>
           <div className="text-[15px] font-semibold mt-1" style={num}>{c.business_date || "—"}</div>
         </Card>
         <Card className="p-4">
           <div className="text-[11px]" style={{color:"var(--txt-3)"}}>ئاستی ئەدمین</div>
-          <div className="text-[15px] font-semibold mt-1">{isOwner ? "System Owner" : "Operational Admin"}</div>
+          <div className="text-[15px] font-semibold mt-1">{isOwner ? "خاوەنی سیستەم" : "بەڕێوەبەری کارگێڕی"}</div>
         </Card>
         <Card className="p-4">
-          <div className="text-[11px]" style={{color:"var(--txt-3)"}}>Maker / Checker</div>
-          <div className="text-[15px] font-semibold mt-1">Active</div>
+          <div className="text-[11px]" style={{color:"var(--txt-3)"}}>دروستکەر / پشکنەر</div>
+          <div className="text-[15px] font-semibold mt-1">چالاکە</div>
         </Card>
       </div>
 
       <Card className="p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <SecLbl>Reconciliation</SecLbl>
+            <SecLbl>یەکسانکردنەوەی دارایی</SecLbl>
             <div className="text-[12px]" style={{color:"var(--txt-3)"}}>
-              Transaction، Ledger، Reversal، Cost Basis، Profit و Settlement یەکسان دەکاتەوە.
+              مامەڵە، دەفتەر، تۆماری پێچەوانە، تێچووی بنەڕەت، قازانج و پارەدان یەکسان دەکاتەوە.
             </div>
           </div>
           <Btn kind="ghost" disabled={busy || reconBusy} onClick={runRecon}>
@@ -10421,7 +10531,7 @@ function ApprovalCenter({
                 style={{background:"var(--surf-2)",border:"1px solid var(--line)"}}>
                 <span className="text-[12px]">{x.name}</span>
                 <span className="text-[11px] font-semibold" style={{color:x.status==="PASS"?"var(--pos)":x.status==="WARN"?"var(--warn)":"var(--neg)"}}>
-                  {x.status} · {x.count ?? 0}
+                  {x.status === "PASS" ? "سەرکەوتوو" : x.status === "WARN" ? "ئاگاداری" : "هەڵە"} · {x.count ?? 0}
                 </span>
               </div>
             ))}
@@ -10453,7 +10563,7 @@ function ApprovalCenter({
                       <div className="min-w-0">
                         <div className="text-[13px] font-semibold">{operationLabel[r.operation] || r.operation}</div>
                         <div className="text-[11px] mt-1" style={{color:"var(--txt-3)"}}>
-                          Maker: {r.makerName || r.makerAppId || "—"} · {new Date(r.createdAt).toLocaleString("en-GB")}
+                          دروستکەر: {r.makerName || r.makerAppId || "—"} · {new Date(r.createdAt).toLocaleString("en-GB")}
                         </div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
@@ -10468,9 +10578,9 @@ function ApprovalCenter({
                     <div className="px-4 pb-4 space-y-3" style={{borderTop:"1px solid var(--line)"}}>
                       <div className="grid md:grid-cols-2 gap-2 pt-3 text-[11px]">
                         <div><span style={{color:"var(--txt-3)"}}>ID:</span> <span style={num}>{r.id}</span></div>
-                        <div><span style={{color:"var(--txt-3)"}}>Subject:</span> <span style={num}>{r.subjectKey || "—"}</span></div>
-                        <div><span style={{color:"var(--txt-3)"}}>Expiry:</span> <span style={num}>{r.expiresAt ? new Date(r.expiresAt).toLocaleString("en-GB") : "—"}</span></div>
-                        <div><span style={{color:"var(--txt-3)"}}>Checker:</span> {r.checkerName || r.checkerAppId || "—"}</div>
+                        <div><span style={{color:"var(--txt-3)"}}>بابەت:</span> <span style={num}>{r.subjectKey || "—"}</span></div>
+                        <div><span style={{color:"var(--txt-3)"}}>بەسەرچوون:</span> <span style={num}>{r.expiresAt ? new Date(r.expiresAt).toLocaleString("en-GB") : "—"}</span></div>
+                        <div><span style={{color:"var(--txt-3)"}}>پشکنەر:</span> {r.checkerName || r.checkerAppId || "—"}</div>
                       </div>
 
                       {r.errorText && (
@@ -10482,7 +10592,7 @@ function ApprovalCenter({
                       {r.status === "pending" && (
                         <>
                           <div>
-                            <Lbl>تێبینی Checker</Lbl>
+                            <Lbl>تێبینی پشکنەر</Lbl>
                             <Inp value={notes[r.id] || ""} onChange={(e) => setNotes({...notes,[r.id]:e.target.value})} placeholder="ئارەزوومەندانە؛ بۆ ڕەتکردنەوە پێویستە" />
                           </div>
                           <div className="flex flex-wrap gap-2">
@@ -10498,20 +10608,20 @@ function ApprovalCenter({
                           </div>
                           {ownRequest && (
                             <div className="text-[11px]" style={{color:"var(--warn)"}}>
-                              Maker ناتوانێت داواکاری خۆی پەسەند یان ڕەت بکات؛ ئەدمینی دووەم پێویستە.
+                              دروستکەر ناتوانێت داواکاری خۆی پەسەند یان ڕەت بکات؛ ئەدمینی دووەم پێویستە.
                             </div>
                           )}
 
                           {isOwner && c.owner_override_enabled !== false && (
                             <div className="pt-3 mt-2" style={{borderTop:"1px dashed var(--line)"}}>
-                              <Lbl>Owner emergency override — هۆکاری ورد پێویستە</Lbl>
+                              <Lbl>دەسەڵاتی فریاکەوتنی خاوەن — هۆکاری ورد پێویستە</Lbl>
                               <div className="flex flex-col md:flex-row gap-2">
                                 <Inp value={overrideReason[r.id] || ""}
                                   onChange={(e) => setOverrideReason({...overrideReason,[r.id]:e.target.value})}
                                   placeholder="لانیکەم ١٢ پیت؛ تەنها بۆ دۆخی پێویست" />
                                 <Btn kind="gold" disabled={busy || (overrideReason[r.id] || "").trim().length < 12}
                                   onClick={() => ownerOverride(r, overrideReason[r.id] || "")}>
-                                  Owner Override
+                                  جێبەجێکردنی دەسەڵاتی فریاکەوتن
                                 </Btn>
                               </div>
                             </div>
@@ -10525,7 +10635,7 @@ function ApprovalCenter({
                           {ev.slice().reverse().map((e) => (
                             <div key={e.id} className="text-[11px] flex flex-wrap gap-2">
                               <span className="font-semibold">{e.event}</span>
-                              <span style={{color:"var(--txt-3)"}}>{e.actorName || e.actorAppId || "system"}</span>
+                              <span style={{color:"var(--txt-3)"}}>{e.actorName || e.actorAppId || "سیستەم"}</span>
                               <span style={{...num,color:"var(--txt-3)"}}>{new Date(e.createdAt).toLocaleString("en-GB")}</span>
                               {e.detail && <span style={{color:"var(--txt-2)"}}>— {e.detail}</span>}
                             </div>
@@ -10543,24 +10653,24 @@ function ApprovalCenter({
 
       {isOwner && (
         <Card className="p-5">
-          <SecLbl>ڕێکخستنەکانی Dual Approval</SecLbl>
+          <SecLbl>ڕێکخستنەکانی پەسەندکردنی دوو قۆناغی</SecLbl>
           <div className="text-[11.5px] mb-4 leading-relaxed" style={{color:"var(--txt-3)"}}>
-            Threshold ـی بەتاڵ واتە بڕی پارە بەخۆی approval ناچالاک ناکات. Edit/Void/Unsettle و جیاوازی Day Close بە هەڵبژاردنی خوارەوە جیاوازن.
+            سنووری بەتاڵ واتە بڕی پارە بەخۆی پەسەندکردنی دووەم چالاک ناکات. دەستکاری، هەڵوەشاندنەوە، پاشگەزبوونەوە لە پارەدان و جیاوازی بەستنی ڕۆژ لە خوارەوە دیاری دەکرێن.
           </div>
           <div className="grid md:grid-cols-3 gap-3">
-            <div><Lbl>Transaction threshold (USD)</Lbl><Inp type="number" min="0" value={settings.transaction_approval_usd} onChange={(e)=>setSettings({...settings,transaction_approval_usd:e.target.value})} placeholder="Disabled" /></div>
-            <div><Lbl>Cash threshold (USD)</Lbl><Inp type="number" min="0" value={settings.cash_approval_usd} onChange={(e)=>setSettings({...settings,cash_approval_usd:e.target.value})} placeholder="Disabled" /></div>
-            <div><Lbl>Transfer threshold (USD)</Lbl><Inp type="number" min="0" value={settings.transfer_approval_usd} onChange={(e)=>setSettings({...settings,transfer_approval_usd:e.target.value})} placeholder="Disabled" /></div>
-            <div><Lbl>Approval expiry (hours)</Lbl><Inp type="number" min="1" max="168" value={settings.approval_expiry_hours} onChange={(e)=>setSettings({...settings,approval_expiry_hours:e.target.value})} /></div>
-            <div className="md:col-span-2"><Lbl>Business timezone</Lbl><Inp dir="ltr" value={settings.business_timezone} onChange={(e)=>setSettings({...settings,business_timezone:e.target.value})} /></div>
+            <div><Lbl>سنووری مامەڵە (USD)</Lbl><Inp type="number" min="0" value={settings.transaction_approval_usd} onChange={(e)=>setSettings({...settings,transaction_approval_usd:e.target.value})} placeholder="ناچالاک" /></div>
+            <div><Lbl>سنووری پارەی نەقد (USD)</Lbl><Inp type="number" min="0" value={settings.cash_approval_usd} onChange={(e)=>setSettings({...settings,cash_approval_usd:e.target.value})} placeholder="ناچالاک" /></div>
+            <div><Lbl>سنووری گواستنەوە (USD)</Lbl><Inp type="number" min="0" value={settings.transfer_approval_usd} onChange={(e)=>setSettings({...settings,transfer_approval_usd:e.target.value})} placeholder="ناچالاک" /></div>
+            <div><Lbl>ماوەی پەسەندکردن (کاتژمێر)</Lbl><Inp type="number" min="1" max="168" value={settings.approval_expiry_hours} onChange={(e)=>setSettings({...settings,approval_expiry_hours:e.target.value})} /></div>
+            <div className="md:col-span-2"><Lbl>ناوچەی کاتی کار</Lbl><Inp dir="ltr" value={settings.business_timezone} onChange={(e)=>setSettings({...settings,business_timezone:e.target.value})} /></div>
           </div>
           <div className="grid md:grid-cols-2 gap-2 mt-4">
             {[
-              ["require_edit_approval","Edit هەمیشە Checker پێویست بێت"],
-              ["require_void_approval","Void هەمیشە Checker پێویست بێت"],
-              ["require_unsettle_approval","Unsettle هەمیشە Checker پێویست بێت"],
-              ["require_day_close_diff_approval","Day Close ـی جیاواز Checker پێویست بێت"],
-              ["owner_override_enabled","Owner emergency override چالاک بێت"],
+              ["require_edit_approval","دەستکاری هەمیشە پشکنەری دووەم پێویست بێت"],
+              ["require_void_approval","هەڵوەشاندنەوە هەمیشە پشکنەری دووەم پێویست بێت"],
+              ["require_unsettle_approval","پاشگەزبوونەوە لە پارەدان هەمیشە پشکنەری دووەم پێویست بێت"],
+              ["require_day_close_diff_approval","بەستنی ڕۆژی جیاواز پشکنەری دووەم پێویست بێت"],
+              ["owner_override_enabled","دەسەڵاتی فریاکەوتنی خاوەن چالاک بێت"],
             ].map(([k,t]) => (
               <label key={k} className="flex items-center gap-2 p-3 rounded-[var(--r-sm)] text-[12px] cursor-pointer"
                 style={{background:"var(--surf-2)",border:"1px solid var(--line)"}}>
@@ -10576,7 +10686,7 @@ function ApprovalCenter({
       <DeferredPanel><ReceiptPolicyPanel client={supabase} isOwner={isOwner} flash={flash} lang={_lang} /></DeferredPanel>
 
       <Card className="p-5">
-        <SecLbl>Transaction Version History</SecLbl>
+        <SecLbl>مێژووی وەشانەکانی مامەڵە</SecLbl>
         {(data.txVersions || []).length === 0 ? <Empty t="هێشتا هیچ وەشانی مامەڵە تۆمار نەکراوە" /> : (
           <div className="space-y-2">
             {(data.txVersions || []).slice(0,20).map((v) => (
@@ -10585,7 +10695,7 @@ function ApprovalCenter({
                 <span className="font-semibold" style={num}>#{v.txCode || "—"}</span>
                 <span>v{v.versionNo}</span>
                 <span>{v.action}</span>
-                {v.approvalId && <span style={{color:"var(--txt-3)"}}>Approval: {v.approvalId}</span>}
+                {v.approvalId && <span style={{color:"var(--txt-3)"}}>پەسەندکردن: {v.approvalId}</span>}
                 <span className="ms-auto" style={{...num,color:"var(--txt-3)"}}>{new Date(v.createdAt).toLocaleString("en-GB")}</span>
               </div>
             ))}
@@ -10893,11 +11003,11 @@ function CustomerPortal({ user, c, base, data, calc, cur, usr, flash, reloadBatc
           <Back onClick={() => setTab("documents")} t={tr("گەڕانەوە")} />
           <Card className="p-4">
             <div className="text-[13px] leading-relaxed" style={{ color: "var(--txt-2)" }}>
-              {tr("سکرینشۆتی ئەو فیشانە هەڵبژێرە کە پارەت پێ ناردووە. سیستەمەکە خۆی دەیانخوێنێتەوە، کۆیان دەکاتەوە، و دووبارەکان دەدۆزێتەوە.")}
+              {tr("سەرەتا دیاری بکە پارەکە نێردراوە یان هاتووە؛ پاشان وێنەی فیشەکان هەڵبژێرە. سیستەمەکە دەیانخوێنێتەوە، کۆیان دەکاتەوە و دووبارەکان دەدۆزێتەوە.")}
             </div>
           </Card>
           <ReceiptUploader customerId={user.id} customerName={user.name} uploaderId={user.id} data={data}
-            simple flash={flash} onDone={() => { reloadBatches && reloadBatches(); setTab("documents"); }} />
+            simple allowDirection flash={flash} onDone={() => { reloadBatches && reloadBatches(); setTab("documents"); }} />
         </>
       )}
 

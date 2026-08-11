@@ -98,16 +98,24 @@ try {
       paid_at timestamptz, profit numeric(20,6), profit_cur_id text, note text,
       date timestamptz not null default now(), edited boolean default false,
       deleted boolean default false);
+    -- day_closes predates these migrations and lives only in the production database, so the
+    -- fixture recreates the shape the application writes.
+    create table if not exists public.day_closes (
+      id text primary key, close_date date not null, lines jsonb not null default '[]'::jsonb,
+      total_diff numeric, has_diff boolean default false, note text,
+      adjust boolean default false, closed_by text,
+      created_at timestamptz not null default now());
     insert into public.currencies(id,code,name,buy_rate,sell_rate) values
       ('usd','USD','Dollar',1,1),
       ('cny','CNY','Yuan',7.10,7.30),
-      ('iqd','IQD','Dinar',1400,1420)
+      ('iqd','IQD','Dinar',1400,1420),
+      ('xxx','XXX','Unrated',null,null)
     on conflict do nothing;
   `);
   psqlFile(prereq);
 
   // The migration under test must apply to an empty database.
-  for (const m of ["202608120001_double_entry_core.sql", "202608120002_cashbox_and_debt.sql", "202608120003_accounting_commands.sql", "202608120004_partner_and_office.sql", "202608120005_receipt_state_machine.sql", "202608120006_transaction_journal.sql", "202608120007_receipt_intake_commands.sql", "202608120008_receipt_forwarding.sql", "202608120009_forwarding_guard_fix.sql"]) {
+  for (const m of ["202608120001_double_entry_core.sql", "202608120002_cashbox_and_debt.sql", "202608120003_accounting_commands.sql", "202608120004_partner_and_office.sql", "202608120005_receipt_state_machine.sql", "202608120006_transaction_journal.sql", "202608120007_receipt_intake_commands.sql", "202608120008_receipt_forwarding.sql", "202608120009_forwarding_guard_fix.sql", "202608130001_day_close_integrity.sql"]) {
     psqlFile(path.join(root, "supabase/migrations", m));
   }
   psql("insert into public.app_users(id,name,role) values ('u-a','A','admin') on conflict do nothing");
@@ -901,6 +909,81 @@ try {
     for (const k of ["forwarded","sent","delivered","seen","failed"]) {
       if (!out.includes(k)) throw new Error(`${k} missing from reconciliation`);
     }
+  });
+
+  // ── §12: day close ──
+  // A safe short by 400,000 could be closed in silence, and nobody could ever find out why.
+  mustFail("a counted difference cannot be closed without a reason",
+    `insert into public.day_closes(id,close_date,lines,has_diff,closed_by) values
+     ('dc-bad',current_date,'[{"cur":"iqd","code":"IQD","expected":1000000,"counted":600000,"diff":-400000}]'::jsonb,true,'u-a')`);
+
+  mustFail("a reason shorter than the minimum is refused",
+    `insert into public.day_closes(id,close_date,lines,note,closed_by) values
+     ('dc-bad2',current_date,'[{"cur":"iqd","code":"IQD","diff":-400000}]'::jsonb,'کەم','u-a')`);
+
+  // The flag is not trusted: the lines decide whether a reason is owed.
+  mustFail("a close claiming to be clean while carrying a difference is refused",
+    `insert into public.day_closes(id,close_date,lines,has_diff,closed_by) values
+     ('dc-bad3',current_date,'[{"cur":"iqd","code":"IQD","diff":-400000}]'::jsonb,false,'u-a')`);
+
+  check("a clean count closes with no reason at all", () => {
+    psql(`insert into public.day_closes(id,close_date,lines,closed_by) values
+          ('dc-clean',current_date,'[{"cur":"iqd","code":"IQD","expected":1000,"counted":1000,"diff":0}]'::jsonb,'u-a')`);
+    const n = psql("select count(*) from journal_entries where id='je-close-dc-clean'").trim();
+    if (n !== "0") throw new Error("a day with no difference posted an entry");
+  });
+
+  // §12 and §13: the difference reaches the books instead of vanishing into an adjustment.
+  check("an explained shortage posts to cash over/short and balances", () => {
+    psql(`insert into public.day_closes(id,close_date,lines,note,closed_by) values
+          ('dc-short',current_date,
+           '[{"cur":"iqd","code":"IQD","expected":1420000,"counted":1418600,"diff":-1400}]'::jsonb,
+           'خەرجی تۆمار نەکراو بۆ گواستنەوە','u-a')`);
+    const st = psql("select status from journal_entries where id='je-close-dc-short'").trim();
+    if (st !== "posted") throw new Error(`entry is ${st || "missing"}`);
+    const short = psql(`select coalesce(sum(base_amount) filter (where side='debit'),0)
+                        from journal_lines where entry_id='je-close-dc-short' and account_id='acc-5910'`).trim();
+    if (Number(short) <= 0) throw new Error("the shortage did not reach cash over/short");
+    const bal = psql(`select coalesce(sum(base_amount) filter (where side='debit'),0)
+                           - coalesce(sum(base_amount) filter (where side='credit'),0)
+                      from journal_lines where entry_id='je-close-dc-short'`).trim();
+    if (Math.abs(Number(bal)) > 1e-6) throw new Error(`entry is unbalanced by ${bal}`);
+  });
+
+  check("an overage credits cash over/short rather than debiting it", () => {
+    psql(`insert into public.day_closes(id,close_date,lines,note,closed_by) values
+          ('dc-over',current_date,
+           '[{"cur":"usd","code":"USD","expected":1000,"counted":1025,"diff":25}]'::jsonb,
+           'پارەی زیادە لە ژماردندا دۆزرایەوە','u-a')`);
+    const cr = psql(`select coalesce(sum(base_amount) filter (where side='credit'),0)
+                     from journal_lines where entry_id='je-close-dc-over' and account_id='acc-5910'`).trim();
+    if (Number(cr) <= 0) throw new Error("an overage did not credit cash over/short");
+  });
+
+  // A currency with no rate cannot be valued; the entry is a draft carrying the reason,
+  // exactly as an unvalued transaction is — never an invented number.
+  check("a difference in an unrated currency is drafted, not guessed", () => {
+    psql(`insert into public.day_closes(id,close_date,lines,note,closed_by) values
+          ('dc-unrated',current_date,'[{"cur":"xxx","code":"XXX","diff":-50}]'::jsonb,
+           'دراوێک کە نرخی دانەنراوە','u-a')`);
+    const st = psql("select status from journal_entries where id='je-close-dc-unrated'").trim();
+    if (st !== "draft") throw new Error(`expected a draft, got ${st || "nothing"}`);
+    const n = psql("select count(*) from journal_lines where entry_id='je-close-dc-unrated'").trim();
+    if (n !== "0") throw new Error("an unvalued entry posted lines anyway");
+  });
+
+  // §12: immutable close history. A correction is a new close, not an edit of the old one.
+  mustFail("a recorded close cannot be deleted", "delete from public.day_closes where id='dc-short'");
+  mustFail("the counted figures of a recorded close cannot be rewritten",
+    `update public.day_closes set lines='[{"cur":"iqd","code":"IQD","diff":0}]'::jsonb where id='dc-short'`);
+  mustFail("who closed the day cannot be rewritten",
+    "update public.day_closes set closed_by='u-b' where id='dc-short'");
+
+  check("closes carrying a difference are listed with what they cost", () => {
+    const n = Number(psql("select count(*) from public.v_day_close_differences").trim());
+    if (n < 3) throw new Error(`expected the differing closes to be listed, saw ${n}`);
+    const clean = psql("select count(*) from public.v_day_close_differences where id='dc-clean'").trim();
+    if (clean !== "0") throw new Error("a clean close was listed as a difference");
   });
 
   let failed = 0;

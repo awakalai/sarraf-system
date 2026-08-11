@@ -7,6 +7,8 @@ import { DICT } from "./i18n/dictionary";
 import { computeInventoryPosition } from "./services/inventoryAccounting";
 import { createReceiptReviewCommand, finalizeReceiptBatch, loadReceiptPolicy, reviewReceiptBatch } from "./services/receiptReview";
 import { assignReceiptCustody, convertReceiptBatchToTransaction, loadPortalReceiptSummary } from "./services/receiptOperations";
+import { dayCloseMessage, validateDayClose } from "./services/dayClose";
+import { rehearseRestore, sealBackup, verdictText } from "./services/backupIntegrity";
 import { userFacingServiceError } from "./services/userFacingError";
 import { claimSharedReceiptHandoff, finishSharedReceiptHandoff, releaseSharedReceiptHandoff, sharedReceiptMessage, validateClaimedSharedFiles } from "./services/sharedReceiptHandoff";
 import { PortalDataStatus, PortalFrame, PortalPagedList, usePortalRoute } from "./components/portal/PortalFoundation";
@@ -2934,6 +2936,10 @@ export default function App() {
     /* ── بەستنی ڕۆژ ── */
   /* ── بەستنی ڕۆژ ── */
   const closeDay = (lines, note, adjust) => run(async () => {
+    // The database refuses an unexplained difference; saying so here means the operator is
+    // stopped at the button with the reason, not at the server with an error.
+    const verdict = validateDayClose({ lines, note });
+    if (!verdict.ok) { flash(dayCloseMessage(verdict.code)); return false; }
     const hasDiff = lines.some((l) => Math.abs(Number(l.diff) || 0) > 1e-9);
     const totalDiffUsd = sumUsd(Object.fromEntries(lines.map((l) => [l.cur, Number(l.diff) || 0])));
     const closePayload = {
@@ -3134,25 +3140,22 @@ export default function App() {
       "tx_versions", "audit",
     ];
 
-    const payload = {
-      format: "sarraf-offsite-export",
-      version: 4,
-      takenAt: now(),
-      warning:
-        "Supplementary JSON export only. Auth identities, MFA secrets, Storage object bytes, database functions/policies, and WAL/PITR state are not included.",
-      tables: {},
-    };
-
+    const rows = {};
     for (const table of tables) {
       const result = await fetchAllRows(table, { orders: [{ column: "id", ascending: true }], pageSize: 500, maxAttempts: 2 });
       if (result.error) throw result.error;
-      payload.tables[table] = result.data || [];
+      rows[table] = result.data || [];
     }
 
-    const counts = Object.fromEntries(
-      Object.entries(payload.tables).map(([table, rows]) => [table, rows.length])
-    );
-    payload.counts = counts;
+    // Sealed rather than merely written: the file carries a checksum over its own contents, so
+    // it can be read back later and proved intact instead of merely existing.
+    const payload = await sealBackup({
+      tables: rows,
+      takenAt: now(),
+      takenBy: profile?.id || null,
+      warning:
+        "Supplementary JSON export only. Auth identities, MFA secrets, Storage object bytes, database functions/policies, and WAL/PITR state are not included.",
+    });
 
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const a = document.createElement("a");
@@ -3161,8 +3164,17 @@ export default function App() {
     a.download = `sarraf_offsite_export_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.json`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(href), 1000);
+    // Exporting the whole database is a privileged act and is recorded as one. A failure to
+    // record it must not silently discard the export the owner already has.
+    try {
+      await supabase.from("audit").insert({
+        id: uid(), date: now(), user_id: profile?.id || null,
+        action: "هەناردەی تەواوی داتا",
+        detail: `${Object.keys(payload.counts).length} خشتە · checksum ${String(payload.integrity?.checksum || "—").slice(0, 16)}`,
+      });
+    } catch (e) { console.error("backup audit", e); }
     flash("export ـی داتا ئامادە کرا ✓");
-    return true;
+    return payload.integrity?.checksum || true;
   });
 
   /* ── ئاگادارکردنەوەکان ── */
@@ -9740,6 +9752,7 @@ function Backup({ data, calc, cur, downloadBackup, flash, sumUsd, mySafe, owners
   const [reconErr, setReconErr] = useState("");
   const [maintReason, setMaintReason] = useState("");
   const [maintBusy, setMaintBusy] = useState(false);
+  const [rehearsal, setRehearsal] = useState(null);
   const runtime = data?.runtime || null;
   const frozen = !!runtime?.maintenance_mode;
 
@@ -9748,6 +9761,16 @@ function Backup({ data, calc, cur, downloadBackup, flash, sumUsd, mySafe, owners
     "تۆماری دەفتەر": Number(data?.readModel?.counts?.ledger_rows ?? data.ledger.length),
     بەکارهێنەر: data.users.filter((u) => !u.deleted).length,
     دراو: data.currencies.length,
+  };
+
+  // Table names as the export writes them, so a rehearsal can compare like with like. Only
+  // the tables loaded into the client are counted; the rest are simply not compared, which is
+  // honest — an uncounted table is not the same as an unchanged one.
+  const liveRowCounts = {
+    txs: data.txs.length,
+    ledger: data.ledger.length,
+    app_users: data.users.length,
+    currencies: data.currencies.length,
   };
 
   const localChecks = (() => {
@@ -9938,6 +9961,51 @@ function Backup({ data, calc, cur, downloadBackup, flash, sumUsd, mySafe, owners
         ) : (
           <div className="text-xs text-[var(--txt-3)]">
             export ـی تەواوی داتا تەنها بۆ خاوەنی سیستەمە.
+          </div>
+        )}
+      </Card>
+
+      {/* §12: a backup nobody has read back is a backup nobody has tested. This reads a saved
+          export, recomputes its checksum, and compares its counts against the live database. */}
+      <Card className="p-5">
+        <SecLbl>{tr("تاقیکردنەوەی گەڕاندنەوە")}</SecLbl>
+        <div className="text-xs text-[var(--txt-2)] mb-3 leading-relaxed">
+          {tr("فایلێکی export ـی پاشەکەوتکراو هەڵبژێرە — پشکنین دەکرێت کە تێکنەچووبێت و لەگەڵ داتابەیسی ئێستا بگونجێت.")}
+        </div>
+        <input type="file" accept="application/json,.json" className="text-xs w-full"
+          onChange={async (e) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            setRehearsal({ state: "working" });
+            try {
+              const result = await rehearseRestore(await file.text(), liveRowCounts);
+              setRehearsal({ state: "done", result, name: file.name });
+            } catch (err) {
+              console.error("restore rehearsal", err);
+              setRehearsal({ state: "done", result: { verdict: "unreadable", drift: [] }, name: file.name });
+            } finally { e.target.value = ""; }
+          }} />
+        {rehearsal?.state === "working" && <div className="text-xs text-[var(--txt-3)] mt-3">{tr("پشکنین...")}</div>}
+        {rehearsal?.state === "done" && (
+          <div className={`text-xs mt-3 p-3 rounded-[var(--r-sm)] border ${
+            rehearsal.result.verdict === "ok"
+              ? "text-[var(--pos)] border-[color-mix(in_srgb,var(--pos)_30%,transparent)] bg-[color-mix(in_srgb,var(--pos)_9%,transparent)]"
+              : rehearsal.result.verdict === "drifted"
+                ? "text-[var(--warn)] border-[color-mix(in_srgb,var(--warn)_30%,transparent)] bg-[color-mix(in_srgb,var(--warn)_9%,transparent)]"
+                : "text-[var(--neg)] border-[color-mix(in_srgb,var(--neg)_30%,transparent)] bg-[color-mix(in_srgb,var(--neg)_9%,transparent)]"}`}>
+            <div className="font-semibold">{verdictText(rehearsal.result.verdict)}</div>
+            {rehearsal.result.takenAt && (
+              <div className="mt-1 opacity-80" style={num}>
+                {tr("وەرگیراوە:")} {new Date(rehearsal.result.takenAt).toLocaleString("en-GB")}
+              </div>
+            )}
+            {rehearsal.result.drift?.length > 0 && (
+              <div className="mt-1.5">
+                {rehearsal.result.drift.map((d) => (
+                  <div key={d.table} style={num}>{d.table}: {d.inFile} → {d.inDatabase}</div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </Card>
@@ -10813,6 +10881,7 @@ function DayClose({ data, calc, cur, usr, closeDay, sumUsd }) {
 
   const today = new Date().toISOString().slice(0, 10);
   const closedToday = (hist || []).some((h) => h.close_date === today);
+  const verdict = validateDayClose({ lines: entered, note });
 
   const submit = () => {
     closeDay(entered.map((l) => ({ cur: l.cur, code: l.code, expected: l.expected, counted: l.counted, diff: l.diff })), note, adjust);
@@ -10889,7 +10958,15 @@ function DayClose({ data, calc, cur, usr, closeDay, sumUsd }) {
           )}
 
           <Card className="p-5">
-            <div><Lbl>{tr("تێبینی (بۆچی جیاوازی هەیە؟)")}</Lbl><Inp value={note} onChange={(e) => setNote(e.target.value)} placeholder={tr("نموونە: خەرجی تۆمار نەکراو...")} /></div>
+            <div>
+              <Lbl>{diffs.length ? tr("هۆکاری جیاوازی — پێویستە") : tr("تێبینی (ئارەزوومەندانە)")}</Lbl>
+              <Inp value={note} onChange={(e) => setNote(e.target.value)} placeholder={tr("نموونە: خەرجی تۆمار نەکراو...")} />
+              {/* A difference with no explanation is refused by the database too; this says so
+                  before the operator gets there. */}
+              {diffs.length > 0 && !verdict.ok && (
+                <div className="text-xs text-[var(--warn)] mt-2">{dayCloseMessage(verdict.code)}</div>
+              )}
+            </div>
             {diffs.length > 0 && (
               <label className="flex items-start gap-2.5 mt-4 cursor-pointer">
                 <input type="checkbox" checked={adjust} onChange={(e) => setAdjust(e.target.checked)} className="mt-0.5 w-4 h-4 accent-[var(--pos)]" />
@@ -10899,7 +10976,7 @@ function DayClose({ data, calc, cur, usr, closeDay, sumUsd }) {
                 </span>
               </label>
             )}
-            <Btn className="w-full mt-4" onClick={() => setStep("confirm")} disabled={!entered.length}>
+            <Btn className="w-full mt-4" onClick={() => setStep("confirm")} disabled={!verdict.ok}>
               بەستنی ڕۆژ ({entered.length} دراو)
             </Btn>
           </Card>

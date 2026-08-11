@@ -48,7 +48,9 @@ begin
       'sarraf_my_receipt_intakes',
       'sarraf_forward_receipts','sarraf_receipt_mark_delivered','sarraf_receipt_mark_seen',
       'sarraf_my_forwarded_receipts','sarraf_forwarding_reconciliation',
-      'sarraf_usd_value','post_transaction_journal','sarraf_reverse_transaction_entry'])
+      'sarraf_usd_value','post_transaction_journal','sarraf_reverse_transaction_entry',
+      'day_close_has_difference','assert_day_close_explained',
+      'prevent_day_close_rewrite','post_day_close_journal'])
   loop
     select count(*) into n from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace
      where ns.nspname = 'public' and p.proname = detail;
@@ -229,7 +231,32 @@ begin
     values ('BEHAVIOUR','ناردنی بەتاڵ ڕەت دەکرێتەوە','SKIP', sqlerrm);
   end;
 
-  -- 7. The trial balance reports itself.
+  -- 7. A day cannot be closed with an unexplained cash difference.
+  begin
+    if to_regclass('public.day_closes') is null then
+      insert into _zeman_verify(area,check_name,status,detail)
+      values ('BEHAVIOUR','بەستنی ڕۆژ بێ هۆکار ڕەت دەکرێتەوە','SKIP','خشتەی day_closes نییە');
+    else
+      begin
+        insert into public.day_closes(id,close_date,lines,closed_by)
+        values ('_vfy_close', current_date,
+                '[{"cur":"iqd","code":"IQD","expected":1000,"counted":600,"diff":-400}]'::jsonb, v_admin);
+        ok := false;
+        raise exception '_vfy_rollback';
+      exception when others then
+        ok := (sqlerrm <> '_vfy_rollback');
+      end;
+      insert into _zeman_verify(area,check_name,status,detail)
+      values ('BEHAVIOUR','بەستنی ڕۆژ بێ هۆکار ڕەت دەکرێتەوە', case when ok then 'PASS' else 'FAIL' end,
+              case when ok then 'جیاوازیی بێ هۆکار ڕەتکرایەوە ✓'
+                   else '202608130001_day_close_integrity.sql ڕەن نەکراوە' end);
+    end if;
+  exception when others then
+    insert into _zeman_verify(area,check_name,status,detail)
+    values ('BEHAVIOUR','بەستنی ڕۆژ بێ هۆکار ڕەت دەکرێتەوە','SKIP', sqlerrm);
+  end;
+
+  -- 8. The trial balance reports itself.
   begin
     ok := (public.sarraf_trial_balance_check()->>'balanced')::boolean;
     insert into _zeman_verify(area,check_name,status,detail)

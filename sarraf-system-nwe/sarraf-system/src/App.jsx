@@ -6883,7 +6883,7 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
     const batchCurrency = mainCur || (fallbackCurrencies.size === 1 ? [...fallbackCurrencies][0] : "UNKNOWN");
     const a = mainCur ? agg[mainCur] : { g: 0, f: 0, n: 0 };
     try {
-      await ingestReceiptBatch({
+      const { data: commitData } = await ingestReceiptBatch({
         supabase, command, rows: sendRows,
         onPath: (id, stagedPath) => patchRow(id, { stagedPath }),
         makeBatch: () => ({
@@ -6912,7 +6912,12 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
             validation: r.validation || r.raw?.validation || null, reviewedManually: !!r.reviewedManually, manualEdited: !!r.manualEdited },
         }),
       });
-      flash(`${good.length} ${tr("فیش نێردرا")} ✓${bad.length ? ` — ${bad.length} ${tr("ڕەتکراو بە وێنە و هۆکارەوە تۆمار کران")}` : ""}`);
+      // The atomic RPC re-checks every receipt server-side (duplicates included) and is the
+      // source of truth; the legacy recovery path does not return these counts, so fall back
+      // to the client's own tally only when the server total is unavailable.
+      const acceptedCount = Number.isFinite(Number(commitData?.accepted_count)) ? Number(commitData.accepted_count) : good.length;
+      const serverRejected = Number.isFinite(Number(commitData?.rejected_count)) ? Number(commitData.rejected_count) - bad.length : 0;
+      flash(`${acceptedCount} ${tr("فیش نێردرا")} ✓${bad.length ? ` — ${bad.length} ${tr("ڕەتکراو بە وێنە و هۆکارەوە تۆمار کران")}` : ""}${serverRejected > 0 ? ` — ⚠️ ${serverRejected} ${tr("لەوانەی وا دەرکەوت پشتڕاستکراوبن لەلایەن سێرڤەرەوە وەک دووبارە ڕەتکرانەوە؛ لیستی فیشە ڕەتکراوەکان ببینە")}` : ""}`);
       commitRows([]); receiptCommandRef.current = null; setEditingId(null); setInspectorId(null);
       setSelectedRows([]); setReviewTab("all"); setReviewSearch(""); setReviewPlatform("all");
       setIntakeSource("app"); onDone?.();

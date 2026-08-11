@@ -1,0 +1,138 @@
+# The gate §15.24 asks for: nothing merges that a verifier refuses.
+#
+# Eight checks run on every push and every pull request. They are split into separate jobs on
+# purpose — a red tick should say WHICH contract broke without anyone opening a log — and the
+# heavier ones only start once the fast ones have passed, so an obvious mistake fails in a
+# minute instead of ten.
+name: verify
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+# A new push supersedes the run it interrupted; there is no value in verifying a commit the
+# author has already replaced.
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: sarraf-system-nwe/sarraf-system
+
+jobs:
+  # Unit tests and the production build. Everything else is gated behind these two.
+  build-and-test:
+    name: tests and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: sarraf-system-nwe/sarraf-system/package-lock.json
+      - run: npm ci
+      - name: Unit tests
+        run: npm test
+      - name: Production build
+        run: npm run build
+      # The bundle budget is part of the build contract, not a nice-to-have: an oversized
+      # bundle is a real cost on the phones this is used from.
+      - name: Bundle and chunk contracts
+        run: npm run verify:production
+      - name: Upload the built bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: sarraf-system-nwe/sarraf-system/dist
+          retention-days: 5
+
+  # The static contracts. Cheap, and each one names its own failure.
+  contracts:
+    name: ${{ matrix.check }}
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
+        check: [brand, share, search]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: sarraf-system-nwe/sarraf-system/package-lock.json
+      - run: npm ci
+      - run: npm run verify:${{ matrix.check }}
+
+  # The database contracts, against a real PostgreSQL rather than a mock. The verifier
+  # provisions its own cluster, so no service container is declared here.
+  accounting:
+    name: accounting database contracts
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: sarraf-system-nwe/sarraf-system/package-lock.json
+      - name: Install PostgreSQL 16
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-16 postgresql-client-16
+          echo "/usr/lib/postgresql/16/bin" >> "$GITHUB_PATH"
+      - run: npm ci
+      # Every migration must apply to an empty database and every invariant must hold.
+      - run: npm run verify:accounting
+
+  # Each role driven through the shipped interface in a real browser.
+  roles:
+    name: per-role browser boundaries
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: sarraf-system-nwe/sarraf-system/package-lock.json
+      - run: npm ci
+      # Kept out of the project's dependency tree — it is only needed here.
+      - name: Install Playwright and Chromium
+        run: |
+          npm install --no-save playwright@1.56.1
+          npx playwright install --with-deps chromium
+      # CI=true makes a missing browser a failure rather than a silent skip.
+      - run: npm run verify:roles
+
+  # A single job to require in branch protection, so adding a check later does not mean
+  # editing the protection rule. It fails if ANY of the above failed or was skipped.
+  verified:
+    name: verified
+    runs-on: ubuntu-latest
+    needs: [build-and-test, contracts, accounting, roles]
+    if: always()
+    steps:
+      - name: Refuse anything that did not pass
+        run: |
+          results='${{ join(needs.*.result, " ") }}'
+          echo "upstream results: $results"
+          for r in $results; do
+            if [ "$r" != "success" ]; then
+              echo "::error::a required verifier did not pass ($r) — this must not merge"
+              exit 1
+            fi
+          done
+          echo "every verifier passed"

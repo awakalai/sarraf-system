@@ -13,6 +13,7 @@ import { CommandKeyBook, runIdempotentCommand } from "./services/commandRetry";
 import { toCsv } from "./services/csvSafe";
 import { revokeAllUrls, revokeDroppedUrls } from "./services/objectUrls";
 import { unrealizedPnl, unrealizedReasonText } from "./services/unrealizedPnl";
+import { capitalEventsFrom, investorShare, investorsTotalByCurrency, profitEventsFrom } from "./services/investorShare";
 import { userFacingServiceError } from "./services/userFacingError";
 import { claimSharedReceiptHandoff, finishSharedReceiptHandoff, releaseSharedReceiptHandoff, sharedReceiptMessage, validateClaimedSharedFiles } from "./services/sharedReceiptHandoff";
 import { PortalDataStatus, PortalFrame, PortalPagedList, usePortalRoute } from "./components/portal/PortalFoundation";
@@ -2281,41 +2282,39 @@ export default function App() {
   const profitAll = useMemo(() => data ? (readModelProfitMap(false) || profitIn(null, null)) : {}, [data]);
 
   /* بەشی وەبەرهێنەرێک لە خێری دراوێک */
-  // ئایا ئەم وەبەرهێنەرە لەم دراوەدا شەریکە؟ (بەتاڵ = لە هەموویان)
-  const inScope = (iid, curId) => {
-    const sc = usr(iid).scope || [];
-    return !sc.length || sc.includes(curId);
-  };
-  // کۆی سەرمایەی ئەوانەی لەم دراوەدا شەریکن
-  const scopedCap = (curId) => {
-    let s2 = calc.selfCap[curId] || 0;
-    data.users.forEach((u) => {
-      if (u.role === "investor" && !u.deleted && inScope(u.id, curId))
-        s2 += (calc.invCap[u.id] || {})[curId] || 0;
+  // Profit is attributed sale by sale, using the capital that stood on the day of that sale.
+  // Applying today's capital weight to all-time profit would hand a new investor a share of
+  // profit earned before they arrived — and would strip a departing one of profit they helped
+  // earn. See services/investorShare.js.
+  const capitalEvents = useMemo(() => capitalEventsFrom(data?.ledger), [data?.ledger]);
+  const liveInvestors = useMemo(
+    () => (data?.users || []).filter((u) => u.role === "investor" && !u.deleted)
+      .map((u) => ({ id: u.id, rate: u.rate, scope: u.scope })),
+    [data?.users],
+  );
+
+  /**
+   * One investor's share of a currency's profit over a range. Passing no range means all time,
+   * which is what the account pages ask for.
+   */
+  const invShare = (iid, curId, from = null, to = null) =>
+    investorShare({
+      investorId: iid, curId,
+      profitEvents: profitEventsFrom(data.txs, { from, to }),
+      capitalEvents, investors: liveInvestors,
     });
-    return s2;
-  };
-  const invShare = (iid, curId, totalProfit) => {
-    if (!inScope(iid, curId)) return 0;
-    const totalCap = scopedCap(curId);
-    const cap = (calc.invCap[iid] || {})[curId] || 0;
-    if (totalCap <= 0 || cap <= 0 || !totalProfit) return 0;
-    return totalProfit * (cap / totalCap) * ((usr(iid).rate || 0) / 100);
-  };
+
   // دابەشکردن تەنها لەسەر خێری هاوبەش دەکرێت (نەک ڕاستەوخۆ)
-  const investorsProfitIn = (pm) => {
-    const out = {};
-    const invs = data.users.filter((u) => u.role === "investor" && !u.deleted);
-    Object.entries(pm).forEach(([c, tot]) => {
-      out[c] = invs.reduce((s, u) => s + invShare(u.id, c, tot), 0);
+  const investorsProfitIn = (from = null, to = null) =>
+    investorsTotalByCurrency({
+      profitEvents: profitEventsFrom(data.txs, { from, to }),
+      capitalEvents, investors: liveInvestors, currencies: data.currencies,
     });
-    return out;
-  };
 
   /* قاسەی خۆم = سەرمایەی خۆم + خێری خۆم − خەرجی − عمولەی هاوبەشان */
   const mySafe = useMemo(() => {
     if (!data || !calc) return {};
-    const invP = investorsProfitIn(profitAll);
+    const invP = investorsProfitIn();
     const out = {};
     for (const c of data.currencies) {
       const shared = (profitAll[c.id] || 0) - (invP[c.id] || 0);   // بەشی من لە خێری هاوبەش
@@ -2326,7 +2325,7 @@ export default function App() {
   }, [data, calc, profitAll, ownProfitAll]);
 
   /* خێری نەدراوی وەبەرهێنەرێک */
-  const invUnpaid = (iid, curId) => invShare(iid, curId, profitAll[curId] || 0) - ((calc.invPaid[iid] || {})[curId] || 0);
+  const invUnpaid = (iid, curId) => invShare(iid, curId) - ((calc.invPaid[iid] || {})[curId] || 0);
 
   /* گۆڕینی هەر دراوێک بۆ دۆلار بەپێی نرخی ئەمڕۆ (بۆ کۆکردنەوەی گشتی) */
   const toUsd = (amount, curId) => {
@@ -3356,7 +3355,7 @@ export default function App() {
 
 
   const shared = { data, calc, cur, usr, mySafe, profitAll, profitIn, ownProfitIn, ownProfitAll,
-    inScope, scopedCap, investorsProfitIn, invShare, invUnpaid, autoRate, avgRate, inventoryPosition, usdValueAt, usdToCurrencyAt,
+    investorsProfitIn, invShare, invUnpaid, autoRate, avgRate, inventoryPosition, usdValueAt, usdToCurrencyAt,
     toUsd, sumUsd, ratesReady, owners, notify, waNotify, isOwner,
     readModel: data?.readModel || null, loadTxHistoryPage, loadRangeReport, loadInventorySnapshot };
 
@@ -4769,7 +4768,7 @@ function ProfitPage({ data, cur, profitIn, investorsProfitIn, invShare }) {
   const m = new Date(t.getFullYear(), t.getMonth(), 1);
   const from = mode === "day" ? day : mode === "week" ? iso(w) : iso(m);
   const pm = profitIn(from, day);
-  const inv = investorsProfitIn(pm);
+  const inv = investorsProfitIn(from, day);
   const investors = data.users.filter((u) => u.role === "investor" && !u.deleted);
 
   return (
@@ -4806,7 +4805,7 @@ function ProfitPage({ data, cur, profitIn, investorsProfitIn, invShare }) {
                 <div className="border-t border-[var(--line)] pt-3">
                   <div className="text-xs font-semibold text-[var(--txt-2)] mb-2">{tr("دابەشبوون بەسەر وەبەرهێنەران")}</div>
                   {investors.map((u) => {
-                    const s = invShare(u.id, cid, tot);
+                    const s = invShare(u.id, cid, from, day);
                     if (!s) return null;
                     return (
                       <div key={u.id} className="flex justify-between py-1.5 text-sm border-b border-[var(--line)] last:border-0">
@@ -9636,7 +9635,7 @@ function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare, s
   }), [data.txs, data.currencies, to, usdValueAt]);
 
   const pm = profitIn(from, to);
-  const invP = investorsProfitIn(pm);
+  const invP = investorsProfitIn(from, to);
   const net = {};
   data.currencies.forEach((c) => {
     const n = (profit[c.id] || 0) - (loss[c.id] || 0) - (exp[c.id] || 0) - (fee[c.id] || 0) - (invP[c.id] || 0);
@@ -9864,10 +9863,15 @@ function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare, s
           {investors.length === 0 || Object.keys(pm).length === 0 ? <Empty t={tr("هیچ خێرێک نییە لەم ماوەیەدا")} /> :
             investors.map((u) => {
               const rows = Object.entries(pm).map(([cid, tot]) => {
+                // The amount decides whether there is a row: an investor who held capital
+                // during the period but has withdrawn since still earned their share, and a
+                // new investor with capital today earned nothing from an earlier period.
+                const amt = invShare(u.id, cid, from, to);
                 const cap = (calc.invCap[u.id] || {})[cid] || 0;
-                if (!cap) return null;
-                const totalCap = (calc.selfCap[cid] || 0) + (calc.invTotal[cid] || 0);
-                return { cid, cap, share: totalCap ? cap / totalCap : 0, amt: invShare(u.id, cid, tot) };
+                if (!amt && !cap) return null;
+                // Their actual portion of this currency's profit — not a current-capital ratio,
+                // which would not match the amount beside it.
+                return { cid, cap, share: tot ? amt / tot : 0, amt };
               }).filter(Boolean);
               if (!rows.length) return null;
               return (
@@ -9879,7 +9883,7 @@ function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare, s
                   {rows.map((r) => (
                     <div key={r.cid} className="flex justify-between items-center py-1.5 text-sm">
                       <span className="text-[var(--txt-2)]">
-                        {cur(r.cid).name} · سەرمایە <span style={num}>{fmt(r.cap, cur(r.cid).dec ?? 0)}</span> ({(r.share * 100).toFixed(1)}٪)
+                        {cur(r.cid).name} · سەرمایەی ئێستا <span style={num}>{fmt(r.cap, cur(r.cid).dec ?? 0)}</span> · بەشی لە خێر {(r.share * 100).toFixed(1)}٪
                       </span>
                       <span className="font-bold text-[var(--pos)]" style={num}>{fmt(r.amt, 0)}</span>
                     </div>

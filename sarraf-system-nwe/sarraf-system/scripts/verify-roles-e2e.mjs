@@ -129,17 +129,32 @@ const waitForServer = async (url, timeoutMs = 60000) => {
 };
 
 try {
+  // Skipping is a convenience for a developer machine without a browser. In CI it would be a
+  // silent pass, which is worse than no check at all — so there it is a failure.
+  const strict = process.env.CI === "true" || process.env.ZEMAN_E2E_STRICT === "1";
+  const unavailable = (why) => {
+    if (strict) {
+      console.error(`${why} — per-role browser checks cannot run, and this is CI.`);
+      process.exit(1);
+    }
+    console.log(`${why} — per-role browser checks skipped.`);
+    console.log("Set ZEMAN_E2E_STRICT=1 to make this a failure instead.");
+    process.exit(0);
+  };
+
   const pw = await loadPlaywright();
-  if (!pw) {
-    console.log("Playwright is not available — per-role browser checks skipped.");
-    console.log("Install it, or set CHROMIUM_PATH, to run this verifier.");
-    process.exit(0);
-  }
-  const executablePath = CHROMIUM_CANDIDATES.find((p) => existsSync(p));
-  if (!executablePath) {
-    console.log("No Chromium binary found — per-role browser checks skipped.");
-    process.exit(0);
-  }
+  if (!pw) unavailable("Playwright is not installed");
+
+  // Playwright knows where its own download went, which is the case on a CI runner. The
+  // explicit candidates are the fallback for an environment that supplies a browser some
+  // other way — as this container does through PLAYWRIGHT_BROWSERS_PATH.
+  let executablePath;
+  try {
+    const own = pw.chromium.executablePath();
+    if (own && existsSync(own)) executablePath = own;
+  } catch { /* no managed download; fall back below */ }
+  if (!executablePath) executablePath = CHROMIUM_CANDIDATES.find((p) => existsSync(p));
+  if (!executablePath) unavailable("No Chromium binary was found");
 
   // The app refuses to boot without a Supabase URL; every call is intercepted anyway.
   writeFileSync(envFile,

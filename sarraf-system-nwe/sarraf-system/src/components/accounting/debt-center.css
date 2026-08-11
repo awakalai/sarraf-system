@@ -143,3 +143,29 @@
 @keyframes cashbox-spin { to { transform: rotate(360deg); } }
 
 @media (max-width: 480px) { .cashbox-btn { flex: 1 1 100%; } }
+
+/* Books reconciliation: the legacy ledger and the journal, side by side. */
+.recon-subtitle { margin: 14px 0 8px; font-size: 12px; font-weight: 600; color: var(--txt-2); }
+.recon-spin { animation: recon-spin 1s linear infinite; }
+@keyframes recon-spin { to { transform: rotate(360deg); } }
+.recon-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; }
+.recon-list > li {
+  border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surf-2);
+  padding: 10px 12px;
+}
+.recon-list.is-bad > li { border-color: color-mix(in srgb, var(--neg) 30%, var(--line)); }
+.recon-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.recon-row-main { display: grid; gap: 2px; min-width: 0; flex: 1 1 180px; }
+.recon-row-id {
+  font-family: var(--mono, monospace); font-size: 11px; color: var(--txt);
+  direction: ltr; unicode-bidi: embed;
+}
+.recon-row-text { font-size: 11.5px; color: var(--txt-2); }
+.recon-row-meta { display: flex; align-items: center; gap: 8px; margin-inline-start: auto; }
+.recon-badge {
+  font-size: 10.5px; font-weight: 700; padding: 3px 8px; border-radius: 999px;
+  background: var(--surf-3); color: var(--txt-2);
+  font-variant-numeric: tabular-nums; direction: ltr; unicode-bidi: embed;
+}
+.recon-badge.is-bad { background: color-mix(in srgb, var(--neg) 14%, transparent); color: var(--neg); }
+.recon-note { margin: 0; font-size: 10.5px; color: var(--txt-3); }

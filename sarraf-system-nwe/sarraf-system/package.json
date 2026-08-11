@@ -15,7 +15,8 @@
     "verify:search": "node scripts/verify-global-search.mjs",
     "verify:production": "node scripts/verify-production-readiness.mjs",
     "preview": "vite preview",
-    "verify:accounting": "node scripts/verify-accounting-db.mjs"
+    "verify:accounting": "node scripts/verify-accounting-db.mjs",
+    "verify:roles": "node scripts/verify-roles-e2e.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",

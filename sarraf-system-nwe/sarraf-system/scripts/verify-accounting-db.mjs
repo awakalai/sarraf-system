@@ -100,6 +100,10 @@ try {
       deleted boolean default false);
     -- day_closes predates these migrations and lives only in the production database, so the
     -- fixture recreates the shape the application writes.
+    create table if not exists public.ledger (
+      id text primary key, type text not null, owner text, investor_id text,
+      cur_id text references public.currencies(id), amount numeric(20,6) not null,
+      partner_id text, tx_id text, note text, date timestamptz not null default now());
     create table if not exists public.day_closes (
       id text primary key, close_date date not null, lines jsonb not null default '[]'::jsonb,
       total_diff numeric, has_diff boolean default false, note text,
@@ -115,7 +119,7 @@ try {
   psqlFile(prereq);
 
   // The migration under test must apply to an empty database.
-  for (const m of ["202608120001_double_entry_core.sql", "202608120002_cashbox_and_debt.sql", "202608120003_accounting_commands.sql", "202608120004_partner_and_office.sql", "202608120005_receipt_state_machine.sql", "202608120006_transaction_journal.sql", "202608120007_receipt_intake_commands.sql", "202608120008_receipt_forwarding.sql", "202608120009_forwarding_guard_fix.sql", "202608130001_day_close_integrity.sql"]) {
+  for (const m of ["202608120001_double_entry_core.sql", "202608120002_cashbox_and_debt.sql", "202608120003_accounting_commands.sql", "202608120004_partner_and_office.sql", "202608120005_receipt_state_machine.sql", "202608120006_transaction_journal.sql", "202608120007_receipt_intake_commands.sql", "202608120008_receipt_forwarding.sql", "202608120009_forwarding_guard_fix.sql", "202608130001_day_close_integrity.sql", "202608130002_ledger_journal_reconciliation.sql"]) {
     psqlFile(path.join(root, "supabase/migrations", m));
   }
   psql("insert into public.app_users(id,name,role) values ('u-a','A','admin') on conflict do nothing");
@@ -984,6 +988,73 @@ try {
     if (n < 3) throw new Error(`expected the differing closes to be listed, saw ${n}`);
     const clean = psql("select count(*) from public.v_day_close_differences where id='dc-clean'").trim();
     if (clean !== "0") throw new Error("a clean close was listed as a difference");
+  });
+
+  // ── §12: the legacy ledger and the journal must agree ──
+  // Two records of the same money are only safe while they agree, and nothing was checking.
+  check("a transaction the books never received is named, not hidden in a summary", () => {
+    psql(`insert into public.txs(id,type,cur_id,amount,rate,against_id,total,status)
+          values ('tx-ok','buy','cny',100,7.2,'usd',13.89,'completed')`);
+    // The trigger is what posts an entry; disabling it reproduces a transaction that reached
+    // the interface but never reached the books.
+    psql("alter table public.txs disable trigger txs_post_journal");
+    psql(`insert into public.txs(id,type,cur_id,amount,rate,against_id,total,status)
+          values ('tx-gap','buy','cny',500,7.2,'usd',69.44,'completed')`);
+    psql("alter table public.txs enable trigger txs_post_journal");
+    const gaps = psql("select transaction_id||'|'||gap from public.v_ledger_journal_gaps order by 1").trim();
+    if (!gaps.includes("tx-gap|no_journal_entry")) throw new Error(`gap not reported: ${gaps}`);
+    if (gaps.includes("tx-ok|")) throw new Error(`a healthy transaction was reported as a gap: ${gaps}`);
+  });
+
+  check("reconciliation refuses to say the books agree while a gap exists", () => {
+    const out = psql("select public.sarraf_ledger_journal_reconciliation()::text").trim();
+    if (/"agreed":\s*true/.test(out)) throw new Error(`agreed while a gap exists: ${out}`);
+    if (!/"missing_entries":\s*[1-9]/.test(out)) throw new Error(`the gap was not counted: ${out}`);
+  });
+
+  // The rows that would show an operator money the books cannot account for.
+  check("a ledger row pointing at an unposted transaction is counted", () => {
+    psql(`insert into public.ledger(id,type,cur_id,amount,tx_id)
+          values ('lg-gap','buy','cny',500,'tx-gap'),('lg-ok','buy','cny',100,'tx-ok')`);
+    const out = psql("select public.sarraf_ledger_journal_reconciliation()::text").trim();
+    if (!/"ledger_rows_without_entry":\s*1/.test(out))
+      throw new Error(`expected exactly the unposted one to count: ${out}`);
+  });
+
+  // An unvalued entry is a gap too: the trade happened, the books cannot state it in USD.
+  check("an entry left as a draft is reported separately from a missing one", () => {
+    psql(`insert into public.txs(id,type,cur_id,amount,rate,against_id,total,status)
+          values ('tx-unrated','buy','xxx',10,1,'usd',10,'completed')`);
+    const gaps = psql("select transaction_id||'|'||gap from public.v_ledger_journal_gaps order by 1").trim();
+    if (!gaps.includes("tx-unrated|entry_unvalued"))
+      throw new Error(`an unvalued entry was not distinguished: ${gaps}`);
+    const out = psql("select public.sarraf_ledger_journal_reconciliation()::text").trim();
+    if (!/"unvalued_entries":\s*[1-9]/.test(out)) throw new Error(`not counted: ${out}`);
+  });
+
+  check("an entry whose transaction was voided is reported as an orphan", () => {
+    psql("update public.txs set deleted = true where id='tx-ok'");
+    const n = psql("select count(*) from public.v_journal_orphans where source_id='tx-ok'").trim();
+    if (n !== "1") throw new Error("a voided transaction's entry was not flagged");
+  });
+
+  // Once the books receive the transaction, it stops being reported.
+  check("a resolved gap leaves the report", () => {
+    psql("update public.txs set status = status where id='tx-gap'");
+    const gaps = psql("select transaction_id from public.v_ledger_journal_gaps").trim();
+    if (gaps.includes("tx-gap")) throw new Error("the transaction is still reported after posting");
+    const n = psql("select count(*) from journal_entries where id='je-tx-tx-gap' and status='posted'").trim();
+    if (n !== "1") throw new Error("no entry was posted for it");
+  });
+
+  check("a non-admin cannot reconcile the books", () => {
+    psql(`create or replace function auth.uid() returns uuid language sql stable
+          as $fn$ select '99999999-9999-9999-9999-999999999999'::uuid $fn$`);
+    let denied = false;
+    try { psql("select public.sarraf_ledger_journal_reconciliation()"); } catch { denied = true; }
+    psql(`create or replace function auth.uid() returns uuid language sql stable
+          as $fn$ select '11111111-1111-1111-1111-111111111111'::uuid $fn$`);
+    if (!denied) throw new Error("a stranger could read the reconciliation");
   });
 
   let failed = 0;

@@ -12,6 +12,7 @@ import { rehearseRestore, sealBackup, verdictText } from "./services/backupInteg
 import { CommandKeyBook, runIdempotentCommand } from "./services/commandRetry";
 import { toCsv } from "./services/csvSafe";
 import { revokeAllUrls, revokeDroppedUrls } from "./services/objectUrls";
+import { unrealizedPnl, unrealizedReasonText } from "./services/unrealizedPnl";
 import { userFacingServiceError } from "./services/userFacingError";
 import { claimSharedReceiptHandoff, finishSharedReceiptHandoff, releaseSharedReceiptHandoff, sharedReceiptMessage, validateClaimedSharedFiles } from "./services/sharedReceiptHandoff";
 import { PortalDataStatus, PortalFrame, PortalPagedList, usePortalRoute } from "./components/portal/PortalFoundation";
@@ -42,6 +43,7 @@ const OfficePayments = lazyNamed(() => import("./components/accounting/OfficePay
 const ReceiptReviewWorkspace = lazyNamed(() => import("./components/receipts/ReceiptReviewWorkspace"), "ReceiptReviewWorkspace");
 const ReceiptForwardingCenter = lazyNamed(() => import("./components/receipts/ReceiptForwardingCenter"), "ReceiptForwardingCenter");
 const ForwardedReceipts = lazyNamed(() => import("./components/receipts/ForwardedReceipts"), "ForwardedReceipts");
+const BooksReconciliation = lazyNamed(() => import("./components/accounting/BooksReconciliation"), "BooksReconciliation");
 
 function DeferredPanel({ children, compact = false }) {
   return <React.Suspense fallback={<section className={`animate-pulse rounded-[var(--r)] border border-[var(--line)] bg-[var(--surf)] ${compact ? "h-12" : "h-28"}`} aria-live="polite" aria-label="Loading ZEMAN module" />}>
@@ -3582,6 +3584,8 @@ export default function App() {
             )}
             {page === "action-inbox" && <DeferredPanel><ActionInbox client={supabase} lang={lang} onNavigate={(path) => setPage(path.slice(2))} /></DeferredPanel>}
             {page === "integrity" && <DeferredPanel><IntegrityCenter client={supabase} lang={lang} onNavigate={(path) => setPage(path.slice(2))} /></DeferredPanel>}
+            {/* Two records of the same money are only safe while they agree. */}
+            {page === "integrity" && <div className="mt-4"><DeferredPanel><BooksReconciliation client={supabase} lang={lang} flash={flash} /></DeferredPanel></div>}
             {page === "export-audit" && <DeferredPanel><ExportAuditCenter client={supabase} lang={lang} /></DeferredPanel>}
             {page === "debt-center" && <DeferredPanel><DebtCenter client={supabase} lang={lang} nameOf={(id) => usr(id).name} /></DeferredPanel>}
             {page === "receipt-review" && <DeferredPanel><ReceiptReviewWorkspace client={supabase} lang={lang}
@@ -9578,7 +9582,7 @@ function UsersAdmin({ data, cur, createUser, deleteUser, setUserRate, flash, isO
 }
 
 /* ══════════════════ ڕاپۆرت ══════════════════ */
-function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare, sumUsd, toUsd, ratesReady }) {
+function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare, sumUsd, toUsd, ratesReady, usdValueAt }) {
   const today = new Date();
   const iso = (d) => d.toISOString().slice(0, 10);
   const [from, setFrom] = useState(iso(new Date(today.getFullYear(), today.getMonth(), 1)));
@@ -9618,6 +9622,19 @@ function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare, s
     const v = (vol[t.curId] = vol[t.curId] || { buy: 0, sell: 0, n: 0 });
     if (t.type === "buy") v.buy += t.amount; else v.sell += t.amount; v.n++;
   });
+  // §12: what is still held, valued at today's rate — a valuation, kept apart from earnings.
+  // The position is taken as of the end of the reported range; the rate is today's, because
+  // that is what the holding would fetch now.
+  const unrealized = useMemo(() => unrealizedPnl({
+    txs: data.txs,
+    currencies: data.currencies,
+    asOfDate: `${to}T23:59:59.999Z`,
+    usdCostOf: (t) => usdValueAt(Number(t.total), t.againstId, "spend", t.date),
+    // "receive": what the currency would realise if sold, which is the honest side of the
+    // spread for a position we would have to sell.
+    marketUsdRate: (curId) => usdValueAt(1, curId, "receive"),
+  }), [data.txs, data.currencies, to, usdValueAt]);
+
   const pm = profitIn(from, to);
   const invP = investorsProfitIn(pm);
   const net = {};
@@ -9742,6 +9759,58 @@ function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare, s
               </div>
             )}
           </>}
+        </Card>
+      )}
+
+      {/* §12: realized and unrealized are kept apart. What is above is money that has been
+          earned; what is below is what the currency still held would be worth if it were sold
+          today. Adding them produces a number that reads like earnings and is not. */}
+      {tab === "pl" && (
+        <Card className="p-5">
+          <SecLbl>{tr("خێری نەکراو — هێشتا نەفرۆشراوە")}</SecLbl>
+          <div className="text-xs text-[var(--txt-2)] mb-3 leading-relaxed">
+            {tr("ئەمە هەڵسەنگاندنە، نەک قازانج. ئەو دراوەی هێشتا لای تۆیە بە نرخی ئەمڕۆ بەراورد دەکرێت لەگەڵ ئەوەی پێت کڕیوە. نرخ دەگۆڕێت و ئەم ژمارەیەش دەگۆڕێت.")}
+          </div>
+          {Object.keys(unrealized.byCurrency).length === 0 ? (
+            <Empty t={tr("هیچ دراوێک لە مەخزەندا نەماوە")} />
+          ) : (
+            <>
+              {Object.entries(unrealized.byCurrency).map(([cid, u]) => (
+                <div key={cid} className="flex items-baseline justify-between gap-3 py-2 border-b border-[var(--line)] last:border-0">
+                  <div>
+                    <div className="text-sm font-semibold text-[var(--txt)]">{cur(cid).name}</div>
+                    <div className="text-[11px] text-[var(--txt-3)]" style={num}>
+                      {fmt(u.qty, cur(cid).dec ?? 0)} {cur(cid).code}
+                      {u.costUsd != null && ` · ${tr("تێچوو")} ${fmt(u.costUsd, 0)}$`}
+                    </div>
+                  </div>
+                  {u.unrealizedUsd == null ? (
+                    <span className="text-[11px] text-[var(--warn)] text-end max-w-[190px]">
+                      {unrealizedReasonText(u.reason)}
+                    </span>
+                  ) : (
+                    <span className={`text-base font-bold ${u.unrealizedUsd > 0 ? "text-[var(--pos)]" : u.unrealizedUsd < 0 ? "text-[var(--neg)]" : "text-[var(--txt)]"}`} style={num}>
+                      {u.unrealizedUsd > 0 ? "+" : u.unrealizedUsd < 0 ? "−" : ""}{fmt(Math.abs(u.unrealizedUsd), 0)} $
+                    </span>
+                  )}
+                </div>
+              ))}
+              {/* A total over some positions and not others looks complete and is not. */}
+              {unrealized.complete ? (
+                <div className={`report-net-box ${unrealized.totalUsd < 0 ? "is-negative" : unrealized.totalUsd > 0 ? "is-positive" : ""}`}>
+                  <span className="text-sm font-semibold">{tr("کۆی خێری نەکراو")}</span>
+                  <span className="text-xl font-bold" style={num}>
+                    {unrealized.totalUsd > 0 ? "+" : unrealized.totalUsd < 0 ? "−" : ""}{fmt(Math.abs(unrealized.totalUsd || 0), 0)} $
+                  </span>
+                </div>
+              ) : (
+                <div className="text-xs text-[var(--warn)] mt-3 p-3 rounded-[var(--r-sm)] border border-[color-mix(in_srgb,var(--warn)_30%,transparent)] bg-[color-mix(in_srgb,var(--warn)_9%,transparent)]">
+                  {tr("کۆی گشتی نانووسرێت — هەندێک دراو هەڵنەسەنگێندراون:")}{" "}
+                  {unrealized.unvalued.map((u) => cur(u.curId).code).join("، ")}
+                </div>
+              )}
+            </>
+          )}
         </Card>
       )}
 

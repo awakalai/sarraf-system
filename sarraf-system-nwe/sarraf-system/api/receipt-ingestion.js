@@ -2,6 +2,7 @@
 // The SQL RPC remains the preferred atomic path. This endpoint keeps receipt
 // delivery working while an older production database is missing that RPC.
 
+import { randomBytes } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 
 const serverConfig = () => ({
@@ -243,7 +244,34 @@ async function legacyCommit(service, actor, batch, receipts, context) {
   return { batch_id: batch.id, receipt_count: receipts.length, replayed: false, recovery: true };
 }
 
-export { validateCommand };
+// sarraf_ingest_receipt_batch only executes a command this service has blessed: it deletes a
+// matching receipt_ingestion_authorizations row and refuses the command when none is found.
+// Nothing else can create that row — the table is granted to service_role alone — so the
+// authorization is minted here, immediately before the RPC runs under the caller's token.
+//
+// The RPC checks authorization before its replay check, so each attempt needs its own token;
+// a retry after a failed attempt upserts over the stale row rather than colliding with it.
+//
+// Databases predating the receipt-assurance migration have no such table. That is not an
+// error: the older RPC does not demand a token, so a missing table means there is nothing to
+// authorize and ingestion proceeds unchanged.
+async function authorizeIngestionCommand(service, actorId, commandKey) {
+  const token = randomBytes(32).toString("base64url");
+  const { error } = await service.from("receipt_ingestion_authorizations").upsert({
+    command_key: commandKey,
+    actor_id: actorId,
+    authorization_token: token,
+    expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+  }, { onConflict: "command_key" });
+  if (!error) return token;
+  const code = String(error.code || "").toUpperCase();
+  const missingTable = code === "42P01" || code === "PGRST205"
+    || /receipt_ingestion_authorizations/i.test(String(error.message || ""));
+  if (missingTable) return null;
+  throw error;
+}
+
+export { validateCommand, authorizeIngestionCommand };
 
 export default async function handler(req, res) {
   const trace = requestId();
@@ -260,7 +288,9 @@ export default async function handler(req, res) {
     await validateStagedObjects(scoped, service, batch.id, receipts);
 
     console.info("[receipt-ingestion] commit started", { requestId: trace, batchId: batch.id, actorId: actor.id, count: receipts.length });
-    const rpc = await scoped.rpc("sarraf_ingest_receipt_batch", { p_batch: batch, p_receipts: receipts, p_command_key: commandKey });
+    const authorizationToken = await authorizeIngestionCommand(service, actor.id, commandKey);
+    const authorizedBatch = authorizationToken ? { ...batch, _authorization_token: authorizationToken } : batch;
+    const rpc = await scoped.rpc("sarraf_ingest_receipt_batch", { p_batch: authorizedBatch, p_receipts: receipts, p_command_key: commandKey });
     const data = rpc.error && missingRpc(rpc.error)
       ? await legacyCommit(service, actor, batch, receipts, context)
       : rpc.error

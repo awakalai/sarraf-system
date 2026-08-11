@@ -32,6 +32,18 @@ export const isMissingReceiptIngestionRpc = (error) => {
   return code === "PGRST202" || /schema cache|could not find the function|sarraf_ingest_receipt_batch/i.test(message);
 };
 
+/**
+ * The receipt-assurance RPC executes only commands the ingestion service has authorized, and
+ * only that service can mint the authorization. A browser calling the RPC directly can never
+ * satisfy it, so this is not a failure — it means the command has to be replayed through the
+ * server route, which authorizes it and runs the same RPC under the caller's own token.
+ */
+export const requiresIngestionServiceAuthorization = (error) => {
+  const code = String(error?.code || "").toUpperCase();
+  const message = String(error?.message || "");
+  return code === "42501" && /not authorized by the ingestion service/i.test(message);
+};
+
 async function commitThroughRecoveryApi({ supabase, batch, receipts, commandKey }) {
   const sessionResult = await supabase.auth.getSession();
   const token = sessionResult?.data?.session?.access_token;
@@ -95,7 +107,8 @@ export async function ingestReceiptBatch({ supabase, command, rows, makeBatch, m
     });
     let data = rpcData;
     if (rpcError) {
-      if (!isMissingReceiptIngestionRpc(rpcError)) throw new ReceiptIngestionError("finalize", rpcError);
+      const serverRoutable = isMissingReceiptIngestionRpc(rpcError) || requiresIngestionServiceAuthorization(rpcError);
+      if (!serverRoutable) throw new ReceiptIngestionError("finalize", rpcError);
       data = await recoveryCommit({ supabase, batch, receipts, commandKey: command.idempotencyKey });
     }
     return { committed: true, data, paths };

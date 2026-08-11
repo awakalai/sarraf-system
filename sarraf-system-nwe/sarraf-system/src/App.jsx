@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { supabase } from "./lib/supabase";
 import { createReceiptIngestionCommand, ingestReceiptBatch } from "./services/receiptIngestion";
 import { receiptNetFrom, unsendableReceipts, validateReceiptArithmetic } from "./services/receiptValidation";
@@ -18,7 +18,7 @@ import {
   LayoutDashboard, Vault, ArrowLeftRight, ListOrdered, Users, Handshake,
   TrendingUp, Building2, UserCog, PieChart, History, Plus, Trash2, Pencil,
   CheckCircle2, AlertTriangle, Eye, LogOut, Wallet, ChevronLeft, Coins,
-  Receipt, TrendingDown, ScanLine, Scale, Upload, XCircle, SlidersHorizontal, Search, MoreHorizontal, Zap, ArrowDownLeft, ArrowUpRight, X, Share2, Database, Download, ClipboardCheck, RotateCcw, MessageCircle, Moon, Sun, WifiOff, Wifi, EyeOff, Bell, QrCode, Camera, Fingerprint, ShieldCheck, KeyRound, Inbox, ShieldAlert, FileCheck2
+  Receipt, TrendingDown, ScanLine, Scale, Upload, XCircle, SlidersHorizontal, Search, MoreHorizontal, Zap, ArrowDownLeft, ArrowUpRight, X, Share2, Database, Download, ClipboardCheck, RotateCcw, MessageCircle, Moon, Sun, WifiOff, Wifi, EyeOff, Bell, QrCode, Camera, Fingerprint, ShieldCheck, KeyRound, Inbox, ShieldAlert, FileCheck2, Send
 } from "lucide-react";
 
 const lazyNamed = (loader, name) => React.lazy(() => loader().then((module) => ({ default: module[name] })));
@@ -35,6 +35,8 @@ const DebtCenter = lazyNamed(() => import("./components/accounting/DebtCenter"),
 const CashboxPanel = lazyNamed(() => import("./components/accounting/CashboxPanel"), "CashboxPanel");
 const OfficePayments = lazyNamed(() => import("./components/accounting/OfficePayments"), "OfficePayments");
 const ReceiptReviewWorkspace = lazyNamed(() => import("./components/receipts/ReceiptReviewWorkspace"), "ReceiptReviewWorkspace");
+const ReceiptForwardingCenter = lazyNamed(() => import("./components/receipts/ReceiptForwardingCenter"), "ReceiptForwardingCenter");
+const ForwardedReceipts = lazyNamed(() => import("./components/receipts/ForwardedReceipts"), "ForwardedReceipts");
 
 function DeferredPanel({ children, compact = false }) {
   return <React.Suspense fallback={<section className={`animate-pulse rounded-[var(--r)] border border-[var(--line)] bg-[var(--surf)] ${compact ? "h-12" : "h-28"}`} aria-live="polite" aria-label="Loading ZEMAN module" />}>
@@ -156,6 +158,7 @@ const ADMIN_CENTER_PAGE_IDS = new Set([
   "cashbox",
   "office-payments",
   "receipt-review",
+  "receipt-forwarding",
   "backup",
 ]);
 
@@ -662,6 +665,7 @@ function AdminCenterHub({ lang = "ku", onNavigate }) {
         ["integrity", label("ناوەندی یەکپارچەیی", "Integrity Center", "مركز سلامة البيانات"), label("پشکنینی ناکۆکی، دووبارە و پەیوەندیی شکێنراو", "Checks for inconsistencies, duplicates, and broken links", "فحص التعارض والتكرار والروابط المقطوعة"), ShieldAlert],
         ["audit", label("تۆماری گۆڕانکاری", "Change Log", "سجل التغييرات"), label("مێژووی کردار و گۆڕانکارییەکانی سیستەم", "History of system actions and changes", "سجل إجراءات النظام وتغييراته"), History],
         ["receipt-review", label("پشکنینی فیش", "Receipt Review", "مراجعة الإيصالات"), label("وێنەی ڕەسەن، ژمارەکان و مێژووی ڕاستکردنەوە", "Original image, figures, and correction history", "الصورة الأصلية والأرقام وسجل التصحيح"), ClipboardCheck],
+        ["receipt-forwarding", label("ناردنی فیش", "Receipt Forwarding", "إرسال الإيصالات"), label("ناردنی فیشی پەسەندکراو بۆ خاوەنەکەی و پێکهاتنەوەی گەیاندن", "Send accepted receipts to their owner and reconcile delivery", "إرسال الإيصالات المعتمدة إلى أصحابها ومطابقة التسليم"), Send],
         ["office-payments", label("پارەدانی نووسینگە", "Office Payments", "مدفوعات المكتب"), label("ئەرکی پارەدان و بەڵگە", "Payment assignments and evidence", "مهام الدفع والإثباتات"), Building2],
         ["cashbox", label("قاسەی کڕیاران", "Customer Cashbox", "خزنة الزبائن"), label("دانان، دەرهێنان و تسویەی قەرز لە قاسە", "Deposit, withdraw, and settle debt from the cashbox", "إيداع وسحب وتسوية الديون"), Wallet],
         ["debt-center", label("قەرز و قاسە", "Debt & Cashbox", "الديون والخزنة"), label("قەرز بە ئاڕاستەی ڕوون، تەمەن و قاسەی کڕیاران", "Debts by explicit direction, aging, and customer cashboxes", "الديون باتجاه واضح والأعمار وخزائن الزبائن"), Scale],
@@ -1760,7 +1764,17 @@ export default function App() {
     }
   }, [profile?.id, accessState]);
 
-  const flash = (t) => { setMsg(t); setTimeout(() => setMsg(null), 3000); };
+  // Stable across renders on purpose: the deferred panels below key their data loading off
+  // `flash`, so a new function each render made every one of them refetch on every render of
+  // this component. The timer is also tracked, so a second message cannot be cut short by the
+  // first one's timeout.
+  const flashTimer = useRef(null);
+  const flash = useCallback((t) => {
+    setMsg(t);
+    if (flashTimer.current) clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => { flashTimer.current = null; setMsg(null); }, 3000);
+  }, []);
+  useEffect(() => () => { if (flashTimer.current) clearTimeout(flashTimer.current); }, []);
 
   const reloadBatches = async () => {
     try {
@@ -3500,6 +3514,12 @@ export default function App() {
               signedUrlFor={async (path) => {
                 const { data } = await supabase.storage.from("receipts").createSignedUrl(path, 3600);
                 return data?.signedUrl || null;
+              }} /></DeferredPanel>}
+            {page === "receipt-forwarding" && <DeferredPanel><ReceiptForwardingCenter client={supabase} lang={lang} flash={flash}
+              people={(data?.users || []).filter((u) => !u.deleted)}
+              signedUrlFor={async (path) => {
+                const { data: signed } = await supabase.storage.from("receipts").createSignedUrl(path, 3600);
+                return signed?.signedUrl || null;
               }} /></DeferredPanel>}
             {page === "office-payments" && <DeferredPanel><OfficePayments client={supabase} lang={lang} flash={flash} /></DeferredPanel>}
             {page === "cashbox" && <DeferredPanel><CashboxPanel client={supabase} lang={lang} flash={flash}
@@ -11080,6 +11100,11 @@ function CustomerPortal({ user, c, base, data, calc, cur, usr, flash, reloadBatc
       {tab === "documents" && (
         <>
           <PortalAction icon={Upload} label={tr("ناردنی فیش")} hint={tr("فیشەکان")} onClick={() => setTab("upload")} primary />
+          <DeferredPanel><ForwardedReceipts client={supabase} flash={flash}
+            signedUrlFor={async (path) => {
+              const { data: signed } = await supabase.storage.from("receipts").createSignedUrl(path, 3600);
+              return signed?.signedUrl || null;
+            }} /></DeferredPanel>
           <ReceiptArchive customerId={user.id} data={data} flash={flash} simple />
         </>
       )}
@@ -11161,7 +11186,15 @@ function PartnerPortal({ user, data, calc, cur, usr, flash, reloadBatches, onlin
       )}
 
       {tab === "account" && <AccountSafe userId={user.id} data={data} calc={calc} cur={cur} usr={usr} flash={flash} readOnly />}
-      {tab === "documents" && <><PortalAction icon={Upload} label={tr("ناردنی فیش")} hint={tr("فیشەکان")} onClick={() => setTab("upload")} primary /><PartnerReceipts partnerId={user.id} data={data} flash={flash} /></>}
+      {tab === "documents" && <>
+        <PortalAction icon={Upload} label={tr("ناردنی فیش")} hint={tr("فیشەکان")} onClick={() => setTab("upload")} primary />
+        <DeferredPanel><ForwardedReceipts client={supabase} flash={flash}
+          signedUrlFor={async (path) => {
+            const { data: signed } = await supabase.storage.from("receipts").createSignedUrl(path, 3600);
+            return signed?.signedUrl || null;
+          }} /></DeferredPanel>
+        <PartnerReceipts partnerId={user.id} data={data} flash={flash} />
+      </>}
       {tab === "upload" && (
         <>
           <Back onClick={() => setTab("documents")} t={tr("گەڕانەوە")} />

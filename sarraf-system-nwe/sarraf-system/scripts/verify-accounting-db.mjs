@@ -107,7 +107,7 @@ try {
   psqlFile(prereq);
 
   // The migration under test must apply to an empty database.
-  for (const m of ["202608120001_double_entry_core.sql", "202608120002_cashbox_and_debt.sql", "202608120003_accounting_commands.sql", "202608120004_partner_and_office.sql", "202608120005_receipt_state_machine.sql", "202608120006_transaction_journal.sql", "202608120007_receipt_intake_commands.sql", "202608120008_receipt_forwarding.sql"]) {
+  for (const m of ["202608120001_double_entry_core.sql", "202608120002_cashbox_and_debt.sql", "202608120003_accounting_commands.sql", "202608120004_partner_and_office.sql", "202608120005_receipt_state_machine.sql", "202608120006_transaction_journal.sql", "202608120007_receipt_intake_commands.sql", "202608120008_receipt_forwarding.sql", "202608120009_forwarding_guard_fix.sql"]) {
     psqlFile(path.join(root, "supabase/migrations", m));
   }
   psql("insert into public.app_users(id,name,role) values ('u-a','A','admin') on conflict do nothing");
@@ -879,6 +879,22 @@ try {
     if (!denied) throw new Error("a non-recipient marked the receipt delivered");
     if (n !== 0) throw new Error(`a non-recipient saw ${n} forwarded receipts`);
   });
+
+  // The guard was written `between 1 and 0` — a range no length can satisfy — so an empty
+  // selection passed validation, forwarded nothing, and burnt its command key on a recorded
+  // "success". A retry with that key then replays the empty result forever.
+  check("an empty selection is refused rather than recorded as a completed forward", () => {
+    let denied = false;
+    try { psql(`select public.sarraf_forward_receipts('[]'::jsonb,'fw-part',null,
+      'forwarding nothing at all','cmd-fw-empty')::text`); } catch { denied = true; }
+    if (!denied) throw new Error("an empty selection was accepted");
+    const n = psql("select count(*) from accounting_commands where command_key='cmd-fw-empty'").trim();
+    if (n !== "0") throw new Error("the command key was spent on an empty selection");
+  });
+
+  mustFail("a null selection is refused",
+    `select public.sarraf_forward_receipts(null::jsonb,'fw-part',null,
+      'forwarding a null selection','cmd-fw-null')`);
 
   check("sent, delivered and seen reconcile separately", () => {
     const out = psql("select public.sarraf_forwarding_reconciliation()::text").trim();

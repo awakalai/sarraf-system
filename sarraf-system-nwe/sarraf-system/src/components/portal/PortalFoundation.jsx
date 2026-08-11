@@ -43,6 +43,7 @@ export function PortalFrame({ children, nav, active, onNavigate, navLabel, statu
 export function PortalDataStatus({ online, stale, refreshing, updatedAt, labels, onRefresh }) {
   const state = !online ? "offline" : refreshing ? "refreshing" : stale ? "stale" : "live";
   const text = labels[state];
+  if (state === "live") return null;
   return (
     <div className={`portal-data-status is-${state}`} role="status" aria-live="polite">
       <span className="portal-status-dot" aria-hidden="true" />

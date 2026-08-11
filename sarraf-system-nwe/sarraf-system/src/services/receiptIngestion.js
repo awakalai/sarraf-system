@@ -21,14 +21,46 @@ export class ReceiptIngestionError extends Error {
     this.stage = stage;
     this.outcomeUnknown = outcomeUnknown;
     this.cause = cause;
+    this.code = cause?.code || null;
+    this.requestId = cause?.requestId || null;
   }
+}
+
+export const isMissingReceiptIngestionRpc = (error) => {
+  const code = String(error?.code || "").toUpperCase();
+  const message = String(error?.message || "");
+  return code === "PGRST202" || /schema cache|could not find the function|sarraf_ingest_receipt_batch/i.test(message);
+};
+
+async function commitThroughRecoveryApi({ supabase, batch, receipts, commandKey }) {
+  const sessionResult = await supabase.auth.getSession();
+  const token = sessionResult?.data?.session?.access_token;
+  if (!token) {
+    const error = new Error("session expired");
+    error.code = "session_expired";
+    throw error;
+  }
+
+  const response = await fetch("/api/receipt-ingestion", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ p_batch: batch, p_receipts: receipts, p_command_key: commandKey }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(payload?.message || "receipt recovery failed");
+    error.code = payload?.code || `HTTP_${response.status}`;
+    error.requestId = payload?.requestId || null;
+    throw error;
+  }
+  return payload?.data || payload;
 }
 
 /**
  * Stage only the command's exact objects, then atomically commit relational rows through the RPC.
  * Storage cannot participate in the SQL transaction; exact-path compensation is used on a known failure.
  */
-export async function ingestReceiptBatch({ supabase, command, rows, makeBatch, makeReceipt, onPath }) {
+export async function ingestReceiptBatch({ supabase, command, rows, makeBatch, makeReceipt, onPath, recoveryCommit = commitThroughRecoveryApi }) {
   const paths = [];
   let rpcAttempted = false;
   const cleanup = async () => {
@@ -57,10 +89,15 @@ export async function ingestReceiptBatch({ supabase, command, rows, makeBatch, m
     }
 
     rpcAttempted = true;
-    const { data, error } = await supabase.rpc("sarraf_ingest_receipt_batch", {
-      p_batch: makeBatch(), p_receipts: receipts, p_command_key: command.idempotencyKey,
+    const batch = makeBatch();
+    const { data: rpcData, error: rpcError } = await supabase.rpc("sarraf_ingest_receipt_batch", {
+      p_batch: batch, p_receipts: receipts, p_command_key: command.idempotencyKey,
     });
-    if (error) throw new ReceiptIngestionError("finalize", error);
+    let data = rpcData;
+    if (rpcError) {
+      if (!isMissingReceiptIngestionRpc(rpcError)) throw new ReceiptIngestionError("finalize", rpcError);
+      data = await recoveryCommit({ supabase, batch, receipts, commandKey: command.idempotencyKey });
+    }
     return { committed: true, data, paths };
   } catch (error) {
     const failure = error instanceof ReceiptIngestionError ? error : new ReceiptIngestionError("finalize", error);

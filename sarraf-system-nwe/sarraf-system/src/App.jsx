@@ -3,6 +3,7 @@ import { supabase } from "./lib/supabase";
 import { createReceiptIngestionCommand, ingestReceiptBatch } from "./services/receiptIngestion";
 import { validateReceiptArithmetic } from "./services/receiptValidation";
 import { createReceiptReviewCommand, finalizeReceiptBatch, loadReceiptPolicy, reviewReceiptBatch } from "./services/receiptReview";
+import { userFacingServiceError } from "./services/userFacingError";
 import { claimSharedReceiptHandoff, finishSharedReceiptHandoff, releaseSharedReceiptHandoff, sharedReceiptMessage, validateClaimedSharedFiles } from "./services/sharedReceiptHandoff";
 import { PortalDataStatus, PortalFrame, PortalPagedList, usePortalRoute } from "./components/portal/PortalFoundation";
 import { separatedCurrencySummary } from "./components/portal/portalModel";
@@ -1403,6 +1404,8 @@ body{
   grid-template-columns:repeat(4,minmax(0,1fr));
   gap:9px;
 }
+.portal-actions-grid.is-single{grid-template-columns:1fr}
+.portal-actions-grid.is-single .portal-action{min-height:74px;padding-inline:16px}
 .portal-action{
   width:100%;
   min-width:0;
@@ -1642,6 +1645,7 @@ export default function App() {
     try { document.documentElement.setAttribute("data-role", activeRole); } catch {}
   }, [activeRole]);
   const [batches, setBatches] = useState([]);
+  const [batchLoadError, setBatchLoadError] = useState("");
   const [pendingBatch, setPendingBatch] = useState(null);
 
   useEffect(() => {
@@ -1673,12 +1677,13 @@ export default function App() {
 
   const reloadBatches = async () => {
     try {
+      setBatchLoadError("");
       const { data: b, error } = await supabase.from("receipt_batches").select("*").order("created_at", { ascending: false }).limit(200);
       if (error) throw error;
       setBatches(b || []);
     } catch (err) {
       console.error("reloadBatches", err);
-      setBatches([]);
+      setBatchLoadError(userFacingServiceError(err, lang, "لیستی فیشەکان بار نەبوو. دووبارە هەوڵ بدەرەوە."));
     }
   };
 
@@ -3185,17 +3190,11 @@ export default function App() {
       items: [
         ["people", tr("بەکارهێنەران"), Users],
         ["report", tr("ڕاپۆرت"), PieChart],
-        ["insights", tr("ڕەوت و شیکاری"), TrendingUp],
       ],
     },
     {
       label: navSectionLabel("سیستەم", "System", "النظام"),
       items: [
-        ["action-inbox", navSectionLabel("ئینباکسی کارەکان", "Action Inbox", "صندوق الإجراءات"), Inbox],
-        ["integrity", navSectionLabel("ناوەندی یەکپارچەیی", "Integrity Center", "مركز سلامة البيانات"), ShieldAlert],
-        ["approvals", navSectionLabel("کۆنترۆڵ و پەسەندکردن", "Controls & Approvals", "التحكم والموافقات"), ShieldCheck],
-        ["export-audit", navSectionLabel("هەناردە و وردبینی", "Export & Audit Center", "مركز التصدير والتدقيق"), FileCheck2],
-        ["audit", tr("تۆمار"), History],
         ["close", tr("بەستنی ڕۆژ"), ClipboardCheck],
         ["backup", tr("پاراستنی داتا"), Database],
       ],
@@ -3244,7 +3243,7 @@ export default function App() {
 
       <header className="sticky top-0 z-40 sarraf-topbar"
         style={{ paddingTop: "env(safe-area-inset-top)", borderInline: 0, borderTop: 0, borderBottom: "1px solid var(--line)" }}>
-        <div className="px-4 md:px-7 py-3 flex items-center justify-between gap-3 max-w-[1600px] mx-auto md:ml-[260px]">
+        <div className={`px-4 md:px-7 py-3 flex items-center justify-between gap-3 mx-auto ${portalUser ? "max-w-[920px]" : "max-w-[1600px] md:ml-[260px]"}`}>
           <div className="flex items-center gap-3 min-w-0">
             <div className="flex md:hidden items-center gap-2.5 me-2">
               <BrandLogo variant="symbol" decorative className="w-9 h-9" />
@@ -3263,15 +3262,15 @@ export default function App() {
                 {va ? `${tr("بینین وەک")} · ${va.name}` : (isOwner ? "خاوەنی سیستەم" : tr(ROLE_KU[profile.role]))}
               </div>
             </div>
-            <div className={`zeman-system-status ${systemNeedsAttention ? "is-attention" : "is-live"}`} role="status" aria-label={systemStatusLabel} title={systemStatusLabel}>
+            {!portalUser && <div className={`zeman-system-status ${systemNeedsAttention ? "is-attention" : "is-live"}`} role="status" aria-label={systemStatusLabel} title={systemStatusLabel}>
               <span className="zeman-system-light is-green" aria-hidden="true" />
               <span className="zeman-system-light is-red" aria-hidden="true" />
               <span className="hidden lg:inline">{systemStatusText}</span>
-            </div>
+            </div>}
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
-            <OperationalPalette client={supabase} lang={lang} onNavigate={(path) => setPage(path.slice(2))} />
+            {!portalUser && isAdmin && <OperationalPalette client={supabase} lang={lang} onNavigate={(path) => setPage(path.slice(2))} />}
             {isAdmin && va && (
               <button onClick={() => setViewAs(null)}
                 className="flex items-center gap-1.5 text-[12px] font-semibold px-3 py-2 rounded-full tap"
@@ -3333,7 +3332,7 @@ export default function App() {
               )}
             </div>
 
-            <div className="relative">
+            {!portalUser && <div className="relative">
               <button onClick={() => setLangOpen(!langOpen)}
                 aria-label={navSectionLabel("گۆڕینی زمان", "Change language", "تغيير اللغة")} aria-expanded={langOpen}
                 className="w-9 h-9 rounded-full text-[11px] font-bold tap flex items-center justify-center"
@@ -3355,13 +3354,13 @@ export default function App() {
                   </div>
                 </>
               )}
-            </div>
-            <button onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            </div>}
+            {!portalUser && <button onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
               aria-label={theme === "dark" ? navSectionLabel("ڕووناککردنی ڕووکار", "Use light theme", "استخدام المظهر الفاتح") : navSectionLabel("تاریککردنی ڕووکار", "Use dark theme", "استخدام المظهر الداكن")}
               className="w-9 h-9 rounded-full tap flex items-center justify-center"
               style={{ background: "var(--glass)", border: "1px solid var(--line)", color: "var(--txt-2)" }}>
               {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-            </button>
+            </button>}
             <button onClick={signOut} aria-label={navSectionLabel("چوونەدەرەوە", "Sign out", "تسجيل الخروج")} className="w-9 h-9 rounded-full tap flex items-center justify-center"
               style={{ background: "var(--glass)", border: "1px solid var(--line)", color: "var(--txt-2)" }}>
               <LogOut className="w-4 h-4" />
@@ -3423,7 +3422,7 @@ export default function App() {
             {page === "txs" && (editTx
               ? <TxForm {...shared} onSave={saveTx} editing={editTx} onCancel={() => setEditTx(null)} />
               : <TxList {...shared} onEdit={setEditTx} onDel={delTx} settle={settle} unsettle={unsettle} />)}
-            {page === "receipts" && <ReceiptsHub {...shared} batches={batches} reloadBatches={reloadBatches} flash={flash} profile={profile}
+            {page === "receipts" && <ReceiptsHub {...shared} batches={batches} batchLoadError={batchLoadError} reloadBatches={reloadBatches} flash={flash} profile={profile}
               onMakeTx={(b) => { setPendingBatch(b); setPage("newtx"); }} />}
             {page === "people" && <PeopleHub {...shared} accountMove={accountMove} accountTransfer={accountTransfer} profile={profile} detailId={detailId} setDetailId={setDetailId} onSave={saveTx} transfer={transfer} officePay={officePay} settle={settle} createUser={createUser} deleteUser={deleteUser} setUserRate={setUserRate} flash={flash} />}
             {page === "report" && <Report {...shared} />}
@@ -6198,7 +6197,7 @@ function ReceiptList({ rows, showFrom }) {
 }
 
 /* ─────────── ئەپلۆدکەری فیش ─────────── */
-function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, direction = "in", onDone, flash, data, allowDirection }) {
+function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, direction = "in", onDone, flash, data, allowDirection, simple = false }) {
   const [rows, setRows] = useState([]);
   const rowsRef = useRef([]);
   const [dir, setDir] = useState(direction);
@@ -6767,6 +6766,11 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
     const skippedBad = bad.length - persistableBad.length;
     const sendRows = [...good, ...persistableBad];
     if (!sendRows.length) return flash("هیچ فیشێکی گونجاو بۆ ناردن نییە");
+    const currencies = new Set(sendRows.map((row) => String(row.currency || "").trim().toUpperCase()).filter(Boolean));
+    if (currencies.size > 1) {
+      setSendError({ code: "mixed_currency", message: "فیشەکانی هەر دراوێک بە جیا بنێرە؛ بۆ نموونە CNY و USD لە یەک ناردندا تێکەڵ مەکە." });
+      return;
+    }
 
     setSending(true);
     setSendError(null);
@@ -6808,9 +6812,11 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
       setSelectedRows([]); setReviewTab("all"); setReviewSearch(""); setReviewPlatform("all");
       setIntakeSource("app"); onDone?.();
     } catch (error) {
-      console.error("receipt ingestion failed", { stage: error.stage, outcomeUnknown: error.outcomeUnknown });
-      setSendError({ stageLabel: error.stage, message: error.message, outcomeUnknown: !!error.outcomeUnknown });
-      flash(error.message);
+      console.error("receipt ingestion failed", { stage: error.stage, code: error.code, requestId: error.requestId, outcomeUnknown: error.outcomeUnknown });
+      const message = error.requestId
+        ? error.message
+        : userFacingServiceError(error, _lang, "فیشەکە تۆمار نەکرا؛ تکایە پەیوەندیی ئینتەرنێت بپشکنە و دووبارە هەوڵ بدەوە.");
+      setSendError({ stageLabel: error.stage, code: error.code, requestId: error.requestId, message, outcomeUnknown: !!error.outcomeUnknown });
     } finally { setSending(false); }
   };
 
@@ -6850,7 +6856,7 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
 
   return (
     <div className="space-y-4">
-      <DeferredPanel compact><ReceiptLifecycle stage={lifecycleStage} lang={_lang} /></DeferredPanel>
+      {!simple && <DeferredPanel compact><ReceiptLifecycle stage={lifecycleStage} lang={_lang} /></DeferredPanel>}
 
       {allowDirection && (
         <Card className="p-4">
@@ -6872,6 +6878,25 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
         <input ref={shareInputRef} type="file" accept="image/*" multiple className="hidden" disabled={working}
           onChange={(e) => { onFiles(e.target.files, "share"); e.target.value = ""; }} />
 
+        {simple ? (
+          <div className="space-y-2.5">
+            <button type="button" disabled={working} onClick={() => galleryInputRef.current?.click()}
+              className="w-full min-h-[76px] px-5 py-4 rounded-2xl flex items-center gap-3 text-start disabled:opacity-50"
+              style={{ background: "linear-gradient(135deg,var(--ac),var(--pos))", color: "#fff", boxShadow: "0 10px 24px -12px rgba(var(--ac-gl),.7)" }}>
+              {working ? <RotateCcw className="w-6 h-6 animate-spin shrink-0" /> : <Upload className="w-6 h-6 shrink-0" />}
+              <span className="min-w-0">
+                <span className="block text-[15px] font-bold">{working ? `فیشەکان دەخوێندرێنەوە ${prog || ""}` : "＋ ناردنی فیش"}</span>
+                <span className="block text-[11px] mt-1 opacity-90">وێنەیەک یان چەند وێنە هەڵبژێرە</span>
+              </span>
+            </button>
+            <button type="button" disabled={working} onClick={() => cameraInputRef.current?.click()}
+              className="w-full min-h-11 px-4 rounded-xl flex items-center justify-center gap-2 text-[12px] font-semibold disabled:opacity-50"
+              style={{ background: "var(--surf-2)", color: "var(--txt-2)", border: "1px solid var(--line)" }}>
+              <Camera className="w-4 h-4" /> وێنەگرتن بە کامێرا
+            </button>
+            <p className="text-[11px] leading-relaxed text-center" style={{ color: "var(--txt-3)" }}>سیستەمەکە فیشەکە دەخوێنێتەوە؛ تۆ تەنها بڕ و دراو پشتڕاست دەکەیت.</p>
+          </div>
+        ) : <>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
           <button type="button" disabled={working} onClick={() => cameraInputRef.current?.click()}
             className="p-4 rounded-2xl text-start disabled:opacity-50 transition hover:-translate-y-0.5"
@@ -6912,11 +6937,12 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
           <div className="text-sm font-semibold text-[var(--txt)]">{working ? `خوێندنەوەی فیشەکان... ${prog || ""}` : "فیشەکان لێرە دابنێ یان کلیک بکە"}</div>
           <div className="text-xs text-[var(--txt-3)] mt-1.5">AI زانیارییەکان دەخوێنێتەوە؛ خانە گومانلێکراوەکان پێش ناردن بە دەست پشتڕاست دەکرێنەوە.</div>
         </div>
+        </>}
       </Card>
 
       {rows.length > 0 && (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-2.5">
+          {!simple && <div className="grid grid-cols-2 md:grid-cols-5 gap-2.5">
             {[
               ["پشتڕاستکراو", good.length, "var(--pos)"],
               ["پشکنین پێویستە", review.length, "var(--warn)"],
@@ -6929,9 +6955,9 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
                 <div className="text-xl font-bold mt-1" style={{ ...num, color }}>{value}</div>
               </Card>
             ))}
-          </div>
+          </div>}
 
-          <Card className="p-3 md:p-4">
+          {!simple && <Card className="p-3 md:p-4">
             <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
               <div>
                 <div className="text-[13px] font-bold text-[var(--txt)]">ناوەندی پشکنینی فیش</div>
@@ -6991,7 +7017,7 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
                 </div>
               </div>
             )}
-          </Card>
+          </Card>}
 
           {retrying.length > 0 && (
             <Card className="p-4 border-[color-mix(in_srgb,var(--warn)_34%,transparent)] bg-[color-mix(in_srgb,var(--warn)_8%,transparent)]">
@@ -7024,7 +7050,7 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
             </Card>
           )}
 
-          {inspectedReceipt && (
+          {!simple && inspectedReceipt && (
             <DeferredPanel>
               <ReceiptSmartInspector receipt={inspectedReceipt} data={data} lang={_lang}
                 Card={Card} Btn={Btn} Pill={Pill} clamp01={clamp01} fmtMoney={fmtMoney} num={num} platMeta={platMeta}
@@ -7049,7 +7075,7 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
                 <Card key={r.id} className="p-0 overflow-hidden">
                   <div className={`p-3.5 md:p-4 ${r.status === "dup" ? "bg-[color-mix(in_srgb,var(--neg)_7%,transparent)]" : r.status === "suspect" ? "bg-[color-mix(in_srgb,var(--warn)_7%,transparent)]" : ""}`}>
                     <div className="flex items-start gap-3">
-                      <label className={`mt-0.5 shrink-0 ${r.status === "processing" ? "opacity-40" : "cursor-pointer"}`}>
+                      {!simple && <label className={`mt-0.5 shrink-0 ${r.status === "processing" ? "opacity-40" : "cursor-pointer"}`}>
                         <input type="checkbox" className="sr-only" disabled={r.status === "processing"}
                           checked={selectedRows.includes(r.id)} onChange={() => toggleSelected(r.id)} />
                         <span className="w-5 h-5 rounded-md flex items-center justify-center"
@@ -7058,10 +7084,10 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
                             : { background: "var(--surf)", color: "transparent", border: "1px solid var(--line-2)" }}>
                           <CheckCircle2 className="w-3.5 h-3.5" />
                         </span>
-                      </label>
+                      </label>}
                       <div className="text-[10px] w-5 pt-1 text-center shrink-0" style={{ ...num, color: "var(--txt-3)" }}>{i + 1}</div>
                       {r.url
-                        ? <button type="button" onClick={() => setInspectorId(r.id)} className="shrink-0 rounded-xl" aria-label="Open receipt inspector">
+                        ? <button type="button" onClick={() => simple ? setEditingId(editing ? null : r.id) : setInspectorId(r.id)} className="shrink-0 rounded-xl" aria-label="پشکنینی فیش">
                             <img src={r.url} alt="" className="w-14 h-14 md:w-16 md:h-16 object-cover rounded-xl shrink-0"
                               style={{ border: inspectorId === r.id ? "2px solid var(--ac)" : "1px solid var(--line)" }} />
                           </button>
@@ -7162,17 +7188,17 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
 
           {good.length > 0 && <ReceiptTotals rows={good} data={data} title={tr("کۆی گشتی")} />}
 
-          {good.length > 0 && (
+          {!simple && good.length > 0 && (
             <Btn kind="gold" className="w-full flex items-center justify-center gap-2" onClick={() => setShare(true)}>
               <Share2 className="w-4 h-4" /> {tr("ناردنی خشتەی وردەکاری")}
             </Btn>
           )}
-          {share && (
+          {!simple && share && (
             <ShareTable rows={good} data={data} who={displayValue(customerName)} title={tr("وردەکاری فیشەکان")}
               flash={flash} onClose={() => setShare(false)} />
           )}
 
-          {bad.length > 0 && <RejectedReceipts rows={bad} data={data} title={tr("ئەمانە هەژمار ناکرێن")} />}
+          {!simple && bad.length > 0 && <RejectedReceipts rows={bad} data={data} title={tr("ئەمانە هەژمار ناکرێن")} />}
 
           {sendError && (
             <Card className="p-4" style={{ borderColor: "color-mix(in srgb, var(--neg) 35%, var(--line))", background: "color-mix(in srgb, var(--neg) 7%, var(--surf))" }}>
@@ -7180,10 +7206,8 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
                 <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "var(--neg)" }} />
                 <div className="min-w-0 flex-1">
                   <div className="text-[12px] font-bold" style={{ color: "var(--neg)" }}>ناردن سەرکەوتوو نەبوو</div>
-                  <div className="text-[11px] mt-1" style={{ color: "var(--txt-2)" }}>قۆناغ: {sendError.stageLabel}</div>
-                  <div className="text-[10.5px] mt-1 break-words" dir="ltr" style={{ color: "var(--txt-3)" }}>
-                    {sendError.code ? `[${sendError.code}] ` : ""}{sendError.message}
-                  </div>
+                  <div className="text-[11px] mt-1 leading-relaxed" style={{ color: "var(--txt-2)" }}>{sendError.message}</div>
+                  {sendError.requestId && <div className="text-[10px] mt-1" dir="ltr" style={{ color: "var(--txt-3)" }}>Support code: {sendError.requestId}</div>}
                   <div className="text-[10.5px] mt-2" style={{ color: sendError.outcomeUnknown ? "var(--warn)" : "var(--txt-3)" }}>
                     {sendError.outcomeUnknown
                       ? "دۆخی DB بە دڵنیایی نەزانرا؛ وێنەکان پاک نەکرانەوە. هەمان ناردن دووبارە بکە—command key پارێزراوە و دووبارە تۆمار نابێت."
@@ -7195,7 +7219,7 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
             </Card>
           )}
 
-          <Btn className="w-full" onClick={send}
+          <Btn className={`w-full ${simple ? "!py-4 !text-[15px] sticky bottom-20 z-10" : ""}`} onClick={send}
             disabled={sending || working || processing.length > 0 || review.length > 0 || retrying.length > 0 || (!good.length && !bad.length)}>
             {sending
               ? "ناردن..."
@@ -7212,9 +7236,9 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
 }
 
 /* ─────────── ناوەندی فیشەکان (ئەدمین) ─────────── */
-function ReceiptsHub({ data, usr, batches, reloadBatches, flash, onMakeTx, profile, calc, cur }) {
+function ReceiptsHub({ data, usr, batches, batchLoadError, reloadBatches, flash, onMakeTx, profile, calc, cur }) {
   const initialReceiptQuery = useMemo(() => new URLSearchParams(window.location.search), []);
-  const [tab, setTab] = useState(initialReceiptQuery.get("receiptTab") || "control");
+  const [tab, setTab] = useState(initialReceiptQuery.get("receiptTab") || "inbox");
   const [sel, setSel] = useState(null);
   const [loc, setLoc] = useState("me");
   const [addFor, setAddFor] = useState("");
@@ -7231,7 +7255,7 @@ function ReceiptsHub({ data, usr, batches, reloadBatches, flash, onMakeTx, profi
   const inbox = (batches || []).filter((b) => (tab === "inbox" ? b.status === "new" : b.status !== "new"));
 
   const waN = (batches || []).filter((b) => b.status === "new" && b.source === "whatsapp").length;
-  const TABS = [["control", l10n("ژووری کۆنترۆڵ", "Control Room", "غرفة التحكم")], ["inbox", `${l10n("ئینباکس", "Inbox", "صندوق الوارد")} (${newN})`], ["done", tr("بەستراوەکان")], ["loc", tr("لای کێ")], ["add", tr("ناردنی فیش")], ["wa", tr("واتساپ")]];
+  const TABS = [["inbox", `${l10n("فیشی نوێ", "New receipts", "إيصالات جديدة")} (${newN})`], ["done", tr("بەستراوەکان")], ["add", tr("ناردنی فیش")], ["control", l10n("هەموو فیشەکان", "All receipts", "كل الإيصالات")]];
   const lifecycleOf = (b) => b.receipt_stage || (b.tx_id ? "matched" : b.status === "new" ? "needs_review" : "verified");
   const lifecycleTone = (stage) => stage === "matched" || stage === "finalized" ? "green" : stage === "rejected" ? "red" : stage === "archived" ? "slate" : "amber";
   const lifecycleLabel = (stage) => ({ received: l10n("وەرگیرا", "Received", "مستلم"), reading: l10n("دەخوێندرێتەوە", "Reading", "قيد القراءة"), needs_review: l10n("پشکنین پێویستە", "Needs review", "بحاجة إلى مراجعة"), verified: l10n("پشتڕاستکراو", "Verified", "موثّق"), matched: l10n("بەستراو", "Matched", "مرتبط"), rejected: l10n("ڕەتکراو", "Rejected", "مرفوض"), finalized: l10n("کۆتایی‌هاتوو", "Finalized", "مغلق نهائياً"), archived: l10n("ئەرشیفکراو", "Archived", "مؤرشف") }[stage] || stage);
@@ -7258,6 +7282,8 @@ function ReceiptsHub({ data, usr, batches, reloadBatches, flash, onMakeTx, profi
   return (
     <div className="space-y-4">
       <H sub={l10n("فیشەکانی کڕیاران و هاوبەشان — پشکنین، کۆکردنەوە و بەستنەوە بە مامەڵە", "Customer and partner receipts — review, reconcile, and match to transactions", "إيصالات الزبائن والشركاء — مراجعة وتسوية وربط بالمعاملات")}>{tr("فیشەکان")}</H>
+
+      {batchLoadError && <StatePanel type="error" title="لیستی فیشەکان بار نەبوو" detail={batchLoadError} onRetry={reloadBatches} compact />}
 
       <div className="flex gap-1 rounded-[var(--r)] p-1 overflow-x-auto" style={{ background: "var(--surf)", border: "1px solid var(--line)", boxShadow: "var(--sh-1)" }}>
         {TABS.map(([k, t]) => (
@@ -8217,7 +8243,7 @@ function BatchDetail({ id, back, usr, data, profile, onMakeTx, flash, reloadBatc
 }
 
 /* ─────────── ئەرشیفی فیشەکانی کڕیارێک ─────────── */
-function ReceiptArchive({ customerId, data, flash }) {
+function ReceiptArchive({ customerId, data, flash, simple = false }) {
   const [scan, setScan] = useState(false);
   const [recs, setRecs] = useState(null);
   const [share, setShare] = useState(false);
@@ -8229,7 +8255,7 @@ function ReceiptArchive({ customerId, data, flash }) {
   }, [customerId]);
 
   if (!recs) return <Card><Empty t={tr("بارکردن...")} /></Card>;
-  const list = recs.filter((r) => {
+  const list = simple ? recs : recs.filter((r) => {
     const d = (r.tx_date || r.created_at || "").slice(0, 10);
     if (from && d < from) return false;
     if (to && d > to) return false;
@@ -8239,7 +8265,7 @@ function ReceiptArchive({ customerId, data, flash }) {
 
   return (
     <div className="space-y-3">
-      <Card className="p-4 space-y-2.5">
+      {!simple && <Card className="p-4 space-y-2.5">
         <div className="flex gap-2">
           <Inp value={q} onChange={(e) => setQ(e.target.value)} placeholder={tr("گەڕان بە ناو، ژمارەی مامەڵە، بڕ...")} className="flex-1" />
           <button onClick={() => setScan(true)}
@@ -8253,15 +8279,15 @@ function ReceiptArchive({ customerId, data, flash }) {
           <div><Lbl>{tr("لە")}</Lbl><Inp type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
           <div><Lbl>{tr("بۆ")}</Lbl><Inp type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
         </div>
-      </Card>
+      </Card>}
       <ReceiptTotals rows={list} data={data} compact />
 
-      <Btn kind="gold" className="w-full flex items-center justify-center gap-2" onClick={() => setShare(true)}>
+      {!simple && <Btn kind="gold" className="w-full flex items-center justify-center gap-2" onClick={() => setShare(true)}>
         <Share2 className="w-4 h-4" /> {tr("ناردنی خشتەی وردەکاری")}
-      </Btn>
-      {share && <ShareTable rows={list} data={data} title={tr("ئەرشیفی فیشەکان")} flash={flash} onClose={() => setShare(false)} />}
+      </Btn>}
+      {!simple && share && <ShareTable rows={list} data={data} title={tr("ئەرشیفی فیشەکان")} flash={flash} onClose={() => setShare(false)} />}
 
-      <RejectedReceipts rows={list} />
+      {!simple && <RejectedReceipts rows={list} />}
       <ReceiptList rows={list} />
     </div>
   );
@@ -10703,7 +10729,7 @@ function Audit({ data }) {
 
 /* پۆرتاڵی کڕیار */
 function CustomerPortal({ user, c, base, data, calc, cur, usr, flash, reloadBatches, online, stale, refreshing, refreshedAt, refresh }) {
-  const [list, f, setF] = useTxFilter(base, cur, usr);
+  const list = base;
   const customerRoutes = useMemo(() => ["home", "activity", "documents", "account", "upload"], []);
   const [tab, setTab] = usePortalRoute("customer", customerRoutes, "home");
   const owe = Object.entries(c.owe).filter(([, v]) => v);
@@ -10713,10 +10739,10 @@ function CustomerPortal({ user, c, base, data, calc, cur, usr, flash, reloadBatc
   const singleCurrency = summary.currencyId;
   const singleNet = summary.amount || 0;
   const nav = useMemo(() => [
-    { id: "home", label: tr("داشبۆرد"), icon: LayoutDashboard },
-    { id: "activity", label: tr("چالاکی"), icon: History },
-    { id: "documents", label: tr("فیشەکانم"), icon: ScanLine },
-    { id: "account", label: tr("ئەکاونتم"), icon: Vault },
+    { id: "home", label: "ماڵەوە", icon: LayoutDashboard },
+    { id: "documents", label: "فیش", icon: ScanLine },
+    { id: "activity", label: "مامەڵە", icon: History },
+    { id: "account", label: "حیساب", icon: Vault },
   ], []);
   const status = <PortalDataStatus online={online} stale={stale} refreshing={refreshing} updatedAt={refreshedAt}
     onRefresh={refresh} labels={{ live: tr("داتا نوێیە"), refreshing: tr("نوێکردنەوە"), stale: tr("داتا کۆنە"), offline: tr("ئینتەرنێت نییە"), updated: tr("دوا نوێکردنەوە"), refresh: tr("نوێکردنەوە") }} />;
@@ -10740,14 +10766,9 @@ function CustomerPortal({ user, c, base, data, calc, cur, usr, flash, reloadBatc
           </div>
 
           {/* کرداری خێرا */}
-          <div className="portal-actions-grid">
+          <div className="portal-actions-grid is-single">
             <PortalAction icon={Upload} label={tr("ناردنی فیش")} hint={tr("فیشەکان")} onClick={() => setTab("upload")} primary />
-            <PortalAction icon={Vault} label={tr("قاسەم")} hint={tr("باڵانس")} onClick={() => setTab("account")} />
-            <PortalAction icon={ScanLine} label={tr("فیشەکانم")} hint={tr("ئەرشیفی فیشەکان")} onClick={() => setTab("documents")} />
-            <PortalAction icon={History} label={tr("مامەڵەکانم")} hint={tr("مێژوو")} onClick={() => setTab("activity")} />
           </div>
-
-          <MarketWatch compact />
 
           {/* دوو باڵانس */}
           {(owe.length > 0 || due.length > 0) && (
@@ -10800,7 +10821,7 @@ function CustomerPortal({ user, c, base, data, calc, cur, usr, flash, reloadBatc
             </div>
           </Card>
           <ReceiptUploader customerId={user.id} customerName={user.name} uploaderId={user.id} data={data}
-            flash={flash} onDone={() => { reloadBatches && reloadBatches(); setTab("documents"); }} />
+            simple flash={flash} onDone={() => { reloadBatches && reloadBatches(); setTab("documents"); }} />
         </>
       )}
 
@@ -10813,13 +10834,12 @@ function CustomerPortal({ user, c, base, data, calc, cur, usr, flash, reloadBatc
       {tab === "documents" && (
         <>
           <PortalAction icon={Upload} label={tr("ناردنی فیش")} hint={tr("فیشەکان")} onClick={() => setTab("upload")} primary />
-          <ReceiptArchive customerId={user.id} data={data} flash={flash} />
+          <ReceiptArchive customerId={user.id} data={data} flash={flash} simple />
         </>
       )}
 
       {tab === "activity" && (
         <>
-          <TxFilterBar data={data} f={f} setF={setF} count={list.length} />
           {list.length === 0 ? <Card className="p-2"><Empty t={tr("هیچ مامەڵەیەک نەدۆزرایەوە")} /></Card> :
             <Card className="px-1 py-1 portal-list-card">
               <PortalPagedList items={list} moreLabel={tr("زیاتر")}>{(visible) => visible.map((t, i) => (
@@ -10845,10 +10865,10 @@ function PartnerPortal({ user, data, calc, cur, usr, flash, reloadBatches, onlin
   const rows = data.currencies.map((c) => ({ c, v: bal[c.id] || 0 })).filter((r) => r.v);
   const main = rows[0];
   const nav = useMemo(() => [
-    { id: "home", label: tr("داشبۆرد"), icon: LayoutDashboard },
-    { id: "activity", label: tr("چالاکی"), icon: History },
-    { id: "documents", label: tr("فیشەکان"), icon: ScanLine },
-    { id: "account", label: tr("ئەکاونتم"), icon: Vault },
+    { id: "home", label: "ماڵەوە", icon: LayoutDashboard },
+    { id: "documents", label: "فیش", icon: ScanLine },
+    { id: "account", label: "باڵانس", icon: Vault },
+    { id: "activity", label: "چالاکی", icon: History },
   ], []);
   const status = <PortalDataStatus online={online} stale={stale} refreshing={refreshing} updatedAt={refreshedAt}
     onRefresh={refresh} labels={{ live: tr("داتا نوێیە"), refreshing: tr("نوێکردنەوە"), stale: tr("داتا کۆنە"), offline: tr("ئینتەرنێت نییە"), updated: tr("دوا نوێکردنەوە"), refresh: tr("نوێکردنەوە") }} />;
@@ -10869,14 +10889,9 @@ function PartnerPortal({ user, data, calc, cur, usr, flash, reloadBatches, onlin
               sub={rows.length > 1 ? tr("دراوەکان تێکەڵ ناکرێن") : main && main.v < 0 ? tr("· قەرز") : null} />
           </div>
 
-          <div className="portal-actions-grid">
+          <div className="portal-actions-grid is-single">
             <PortalAction icon={Upload} label={tr("ناردنی فیش")} hint={tr("فیشەکان")} onClick={() => setTab("upload")} primary />
-            <PortalAction icon={ScanLine} label={tr("فیشەکان")} hint={tr("ئەرشیفی فیشەکان")} onClick={() => setTab("documents")} />
-            <PortalAction icon={Vault} label={tr("قاسە")} hint={tr("باڵانس")} onClick={() => setTab("account")} />
-            <PortalAction icon={History} label={tr("مێژوو")} hint={tr("مێژووی ئاڵووگۆر")} onClick={() => setTab("activity")} />
           </div>
-
-          <MarketWatch compact />
 
           {rows.length > 1 && (
             <Card className="px-4 py-2 portal-list-card">
@@ -10910,7 +10925,7 @@ function PartnerPortal({ user, data, calc, cur, usr, flash, reloadBatches, onlin
             </div>
           </Card>
           <ReceiptUploader partnerId={user.id} uploaderId={user.id} data={data} direction="out" allowDirection
-            flash={flash} onDone={() => { reloadBatches && reloadBatches(); setTab("documents"); }} />
+            simple flash={flash} onDone={() => { reloadBatches && reloadBatches(); setTab("documents"); }} />
         </>
       )}
       {tab === "activity" && (

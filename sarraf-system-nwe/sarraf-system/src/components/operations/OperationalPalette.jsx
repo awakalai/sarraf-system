@@ -9,11 +9,11 @@ const COPY = {
 };
 
 const NAV_LABELS = {
-  ku: ["ئینباکسی کارەکان", "ناوەندی یەکپارچەیی", "هەناردە و وردبینی", "پشکنینی فیش", "پەسەندکردنەکان", "تۆماری وردبینی"],
-  en: ["Action Inbox", "Integrity Center", "Export & Audit Center", "Receipts", "Approvals", "Audit log"],
-  ar: ["صندوق الإجراءات", "مركز سلامة البيانات", "مركز التصدير والتدقيق", "الإيصالات", "الموافقات", "سجل التدقيق"],
+  ku: ["داشبۆرد", "پشکنینی فیش", "مامەڵەکان", "بەکارهێنەران"],
+  en: ["Dashboard", "Receipts", "Transactions", "Users"],
+  ar: ["لوحة التحكم", "الإيصالات", "المعاملات", "المستخدمون"],
 };
-const NAV_PATHS = ["#/action-inbox", "#/integrity", "#/export-audit", "#/receipts", "#/approvals", "#/audit"];
+const NAV_PATHS = ["#/dash", "#/receipts", "#/txs", "#/people"];
 const localeKey = (lang) => lang === "en" || lang === "ar" ? lang : "ku";
 const navigation = (lang) => NAV_LABELS[localeKey(lang)].map((label, index) => ({ label, kind: "navigation", type: "Command", path: NAV_PATHS[index] }));
 

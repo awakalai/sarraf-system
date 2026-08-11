@@ -53,3 +53,19 @@ test("unknown outcome preserves storage for a safe same-key retry", async () => 
   await assert.rejects(ingestReceiptBatch(args(supabase)), (e) => e.stage === "verify" && e.outcomeUnknown);
   assert.deepEqual(calls.removes, []);
 });
+
+test("missing production RPC uses the authenticated recovery commit", async () => {
+  const { supabase, calls } = mock({ rpcError: { code: "PGRST202", message: "Could not find the function sarraf_ingest_receipt_batch" } });
+  let recoveryArgs = null;
+  const result = await ingestReceiptBatch({
+    ...args(supabase),
+    recoveryCommit: async (input) => {
+      recoveryArgs = input;
+      return { batch_id: command.batchId, recovery: true };
+    },
+  });
+  assert.equal(result.committed, true);
+  assert.equal(result.data.recovery, true);
+  assert.equal(recoveryArgs.commandKey, command.idempotencyKey);
+  assert.deepEqual(calls.removes, []);
+});

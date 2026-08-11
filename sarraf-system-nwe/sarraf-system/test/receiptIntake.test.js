@@ -134,3 +134,38 @@ test("an uploader is never told a stored receipt failed", () => {
     assert.notEqual(intakeStatusText(s), s, `state ${s} has no human text`);
   }
 });
+
+// The durable intake and the later ingest must resolve to ONE storage path per receipt.
+// If these ever diverge, every image would be stored twice and the ingest would attach a
+// different object than the one the reading was made from.
+test("durable intake and ingest agree on the storage path", async () => {
+  const { receiptObjectPath } = await import("../src/services/receiptIngestion.js");
+  const fs = await import("node:fs");
+  const sql = fs.readFileSync(
+    new URL("../supabase/migrations/202608120007_receipt_intake_commands.sql", import.meta.url), "utf8");
+
+  // The server builds: ingest/<batch>/<document>.jpg
+  assert.match(sql, /format\('ingest\/%s\/%s\.jpg'/);
+  assert.equal(receiptObjectPath("batch-1", "doc-1"), "ingest/batch-1/doc-1.jpg");
+
+  // And the client passes the row id as the document id, and the ingest batch id as the batch.
+  const app = fs.readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
+  assert.match(app, /documentId: id,/);
+  assert.match(app, /batchId: receiptCommandRef\.current\?\.batchId/);
+  // The batch command must be created before the intake runs, otherwise the two sides would
+  // compute different batch ids and store the same image twice.
+  const created = app.indexOf("receiptCommandRef.current ||= createReceiptIngestionCommand()");
+  const called = app.indexOf("await durableIntake(");
+  assert.ok(created > 0 && called > 0, "both the command creation and the intake call must exist");
+  assert.ok(created < called,
+    "the batch command must be created before durableIntake runs");
+});
+
+test("a deployment ahead of its migration falls back instead of refusing receipts", async () => {
+  const fs = await import("node:fs");
+  const app = fs.readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
+  assert.match(app, /PGRST202/, "a missing intake command must degrade to the legacy path");
+  assert.match(app, /if \(notDeployed\) return \{ stored: false \}/);
+  // But a genuine refusal must still surface.
+  assert.match(app, /throw e;/);
+});

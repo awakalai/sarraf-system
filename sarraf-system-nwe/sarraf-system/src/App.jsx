@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "./lib/supabase";
 import { createReceiptIngestionCommand, ingestReceiptBatch } from "./services/receiptIngestion";
-import { validateReceiptArithmetic } from "./services/receiptValidation";
+import { receiptNetFrom, unsendableReceipts, validateReceiptArithmetic } from "./services/receiptValidation";
 import { createReceiptReviewCommand, finalizeReceiptBatch, loadReceiptPolicy, reviewReceiptBatch } from "./services/receiptReview";
 import { assignReceiptCustody, convertReceiptBatchToTransaction, loadPortalReceiptSummary } from "./services/receiptOperations";
 import { userFacingServiceError } from "./services/userFacingError";
@@ -5293,6 +5293,19 @@ function TxForm({ data, cur, calc, usr, avgRate, inventoryPosition, usdValueAt, 
             )}
           </div>
 
+          {/* Enough stock, but at least one buy is missing its cost snapshot. Profit is
+              deliberately not invented — say so instead of showing a silent blank. */}
+          {f.type === "sell" && pos && amtR <= pos.qty + 1e-9 && pos.costComplete === false && (
+            <div className="p-3 rounded-xl text-[11.5px] flex items-start gap-2"
+              style={{ background:"var(--warn-bg)", color:"var(--warn)" }}>
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>
+                تێچووی هەندێک لە کڕینەکانی ئەم دراوە تۆمار نەکراوە، بۆیە خێر/زەرەر ناژمێردرێت و
+                بە بەتاڵی تۆمار دەکرێت. سەرەتا نرخی کڕینی ئەو مامەڵانە ڕاست بکەرەوە.
+              </span>
+            </div>
+          )}
+
           {f.type === "sell" && pos && amtR > pos.qty + 1e-9 && (
             <div className="p-3 rounded-xl text-[11.5px] flex items-start gap-2"
               style={{ background:"var(--warn-bg)", color:"var(--warn)" }}>
@@ -6657,10 +6670,9 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
     patchRow(id, (r) => {
       const numeric = ["amount", "fee", "net", "orderAmount", "feeOriginal", "feeDiscount"].includes(key);
       const next = { ...r, [key]: numeric ? (value === "" ? "" : Number(value)) : value, manualEdited: true };
-      if (["amount", "fee", "orderAmount"].includes(key) && Number.isFinite(Number(next.amount)) && Number.isFinite(Number(next.fee))) {
-        next.net = Number.isFinite(Number(next.orderAmount)) && next.orderAmount !== ""
-          ? Math.max(0, Number(next.orderAmount))
-          : Math.max(0, Number(next.amount) - Number(next.fee));
+      if (["amount", "fee", "orderAmount"].includes(key)) {
+        const recomputed = receiptNetFrom(next);
+        if (recomputed != null) next.net = recomputed;
       }
       return next;
     });
@@ -6869,6 +6881,17 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
     // reason, and server verdict must be retained even when no amount exists.
     const sendRows = [...good, ...bad];
     if (!sendRows.length) return flash("هیچ فیشێکی گونجاو بۆ ناردن نییە");
+    // net_amount becomes the transaction amount when the batch is converted, so a row whose
+    // arithmetic no longer reconciles (typically after a manual edit that was never confirmed)
+    // must not reach the ingestion command.
+    const broken = unsendableReceipts(good);
+    if (broken.length) {
+      setSendError({
+        code: "receipt_arithmetic",
+        message: `${broken.length} فیش ژمارەکانیان یەک ناگرنەوە (بڕ، فی، بڕی بنەڕەتی و نەت). پێش ناردن بیانپشکنە و پشتڕاست بکەرەوە.`,
+      });
+      return;
+    }
     const currencies = new Set(good.map((row) => String(row.currency || "").trim().toUpperCase()).filter(Boolean));
     if (currencies.size > 1) {
       setSendError({ code: "mixed_currency", message: "فیشەکانی هەر دراوێک بە جیا بنێرە؛ بۆ نموونە CNY و USD لە یەک ناردندا تێکەڵ مەکە." });

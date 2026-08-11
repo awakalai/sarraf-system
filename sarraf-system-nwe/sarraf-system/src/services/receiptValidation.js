@@ -43,6 +43,43 @@ export function validateReceiptArithmetic(receipt, decimals = 2) {
   };
 }
 
+const numberOrNull = (value) => {
+  if (value === "" || value == null) return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+};
+
+/**
+ * Net amount a receipt contributes to the accounting set.
+ *
+ * An explicit order amount wins only when it is a real positive number. Guarding on
+ * Number.isFinite(Number(orderAmount)) alone is not enough: Number(null) is 0, which is
+ * finite, so a missing order amount — the common case — would resolve the net to 0 and
+ * silently drop the receipt's value.
+ */
+export function receiptNetFrom({ amount, fee, orderAmount } = {}) {
+  const order = numberOrNull(orderAmount);
+  if (order != null && order > 0) return Math.abs(order);
+  const gross = numberOrNull(amount);
+  if (gross == null) return null;
+  const feeValue = numberOrNull(fee);
+  return Math.max(0, Math.abs(gross) - (feeValue == null ? 0 : Math.abs(feeValue)));
+}
+
+/** Receipts whose arithmetic does not reconcile must never reach the ingestion command. */
+export function unsendableReceipts(receipts, decimals = 2) {
+  return (receipts || []).reduce((out, receipt) => {
+    const result = validateReceiptArithmetic({
+      amount: receipt?.amount,
+      fee: receipt?.fee,
+      orderAmount: receipt?.orderAmount,
+      netAmount: receipt?.net ?? receipt?.netAmount,
+    }, decimals);
+    if (!result.valid) out.push({ id: receipt?.id ?? null, issues: result.issues });
+    return out;
+  }, []);
+}
+
 export function classifyReceiptSet(receipts) {
   const seen = new Map();
   return (receipts || []).map((receipt) => {

@@ -44,6 +44,10 @@ begin
       'sarraf_customer_vault_move','sarraf_apply_vault_to_debt','sarraf_zeman_debt_to_vault',
       'sarraf_partner_disburse','sarraf_partner_credit','sarraf_office_payment_report',
       'receipt_transition_allowed','receipt_upload_allowed',
+      'sarraf_receipt_intake_begin','sarraf_receipt_intake_stored','sarraf_receipt_intake_extracted',
+      'sarraf_my_receipt_intakes',
+      'sarraf_forward_receipts','sarraf_receipt_mark_delivered','sarraf_receipt_mark_seen',
+      'sarraf_my_forwarded_receipts','sarraf_forwarding_reconciliation',
       'sarraf_usd_value','post_transaction_journal','sarraf_reverse_transaction_entry'])
   loop
     select count(*) into n from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace
@@ -208,7 +212,24 @@ begin
     values ('BEHAVIOUR','کڕیار ناتوانێت فیشی کڕین بنێرێت', case when ok then 'PASS' else 'FAIL' end, null);
   end if;
 
-  -- 6. The trial balance reports itself.
+  -- 6. The empty-selection guard in sarraf_forward_receipts is the fixed one.
+  -- The original was written `between 1 and 0`, a range no length can satisfy, so an empty
+  -- selection was accepted and burnt its command key on a forward that sent nothing.
+  begin
+    ok := not exists (
+      select 1 from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace
+       where ns.nspname='public' and p.proname='sarraf_forward_receipts'
+         and p.prosrc like '%between 1 and 0%');
+    insert into _zeman_verify(area,check_name,status,detail)
+    values ('BEHAVIOUR','ناردنی بەتاڵ ڕەت دەکرێتەوە', case when ok then 'PASS' else 'FAIL' end,
+            case when ok then 'گارد ڕاستکراوەتەوە ✓'
+                 else '202608120009_forwarding_guard_fix.sql ڕەن نەکراوە' end);
+  exception when others then
+    insert into _zeman_verify(area,check_name,status,detail)
+    values ('BEHAVIOUR','ناردنی بەتاڵ ڕەت دەکرێتەوە','SKIP', sqlerrm);
+  end;
+
+  -- 7. The trial balance reports itself.
   begin
     ok := (public.sarraf_trial_balance_check()->>'balanced')::boolean;
     insert into _zeman_verify(area,check_name,status,detail)

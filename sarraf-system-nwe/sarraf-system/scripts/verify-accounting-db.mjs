@@ -107,7 +107,7 @@ try {
   psqlFile(prereq);
 
   // The migration under test must apply to an empty database.
-  for (const m of ["202608120001_double_entry_core.sql", "202608120002_cashbox_and_debt.sql", "202608120003_accounting_commands.sql", "202608120004_partner_and_office.sql", "202608120005_receipt_state_machine.sql", "202608120006_transaction_journal.sql"]) {
+  for (const m of ["202608120001_double_entry_core.sql", "202608120002_cashbox_and_debt.sql", "202608120003_accounting_commands.sql", "202608120004_partner_and_office.sql", "202608120005_receipt_state_machine.sql", "202608120006_transaction_journal.sql", "202608120007_receipt_intake_commands.sql"]) {
     psqlFile(path.join(root, "supabase/migrations", m));
   }
   psql("insert into public.app_users(id,name,role) values ('u-a','A','admin') on conflict do nothing");
@@ -699,6 +699,96 @@ try {
        select 1 from information_schema.role_table_grants
        where grantee='authenticated' and table_name='journal_lines'
          and privilege_type in ('INSERT','UPDATE','DELETE'))) t`, 1);
+
+  psql(`create or replace function auth.uid() returns uuid language sql stable
+        as $fn$ select '11111111-1111-1111-1111-111111111111'::uuid $fn$`);
+
+
+  // ── 5: durable intake. The image must survive an OCR failure. ──
+  psql(`insert into public.app_users(id,name,role,auth_id) values
+        ('in-c','Intake Customer','customer','bbbbbbb1-0000-0000-0000-000000000001')
+        on conflict (id) do nothing`);
+  psql(`create or replace function auth.uid() returns uuid language sql stable
+        as $fn$ select 'bbbbbbb1-0000-0000-0000-000000000001'::uuid $fn$`);
+
+  check("intake claims a slot and returns the exact storage path", () => {
+    const out = psql(`select public.sarraf_receipt_intake_begin(
+      'doc-in-1','customer_sells_to_zeman','in-c',null,null,'batch-1','CNY','image/jpeg')::text`);
+    if (!out.includes("ingest/batch-1/doc-in-1.jpg")) throw new Error(`unexpected path: ${out}`);
+    const st = psql("select state from receipt_documents where id='doc-in-1'").trim();
+    if (st !== "uploading") throw new Error(`state is ${st}`);
+  });
+
+  check("replaying intake returns the same slot rather than duplicating it", () => {
+    const out = psql(`select public.sarraf_receipt_intake_begin(
+      'doc-in-1','customer_sells_to_zeman','in-c',null,null,'batch-1','CNY','image/jpeg')::text`);
+    if (!out.replace(/\s/g,"").includes('"replayed":true')) throw new Error(`not a replay: ${out}`);
+    const n = psql("select count(*) from receipt_documents where id='doc-in-1'").trim();
+    if (n !== "1") throw new Error(`${n} rows exist`);
+  });
+
+  mustFail("a customer cannot claim an intake for a purchase flow",
+    `select public.sarraf_receipt_intake_begin(
+      'doc-in-bad','customer_buys_from_zeman','in-c',null,null,null,'CNY','image/jpeg')`);
+
+  mustFail("an unsupported image type is refused before anything is stored",
+    `select public.sarraf_receipt_intake_begin(
+      'doc-in-pdf','customer_sells_to_zeman','in-c',null,null,null,'CNY','application/pdf')`);
+
+  check("recording the stored bytes moves the receipt to ocr_pending", () => {
+    psql(`select public.sarraf_receipt_intake_stored('doc-in-1', repeat('b',64), 12345)`);
+    const row = psql("select state||'|'||image_sha256 from receipt_documents where id='doc-in-1'").trim();
+    if (!row.startsWith("ocr_pending|")) throw new Error(`document is ${row}`);
+  });
+
+  check("a failed OCR keeps the image and leaves the receipt recoverable", () => {
+    psql(`select public.sarraf_receipt_intake_extracted('doc-in-1', false,
+          '{"error":"provider_timeout"}'::jsonb, 'groq', 'qwen')`);
+    const row = psql(`select state||'|'||storage_path||'|'||coalesce(last_error_code,'')
+                      from receipt_documents where id='doc-in-1'`).trim();
+    if (row !== "ocr_failed_retryable|ingest/batch-1/doc-in-1.jpg|provider_timeout")
+      throw new Error(`document is ${row}`);
+  });
+
+  check("a confident reading is recorded as version 1 and validated", () => {
+    psql(`select public.sarraf_receipt_intake_begin(
+      'doc-in-2','customer_sells_to_zeman','in-c',null,null,'batch-1','CNY','image/jpeg')`);
+    psql(`select public.sarraf_receipt_intake_stored('doc-in-2', repeat('c',64), 999)`);
+    psql(`select public.sarraf_receipt_intake_extracted('doc-in-2', true,
+      '{"grossAmount":"2520.41","orderAmount":"2447.00","feeAmount":"73.41",
+        "feeTreatment":"added_on_top","netAmount":"2447.00","currency":"CNY",
+        "refNo":"ORD-1","confidence":"0.91","txDate":"2026-08-04"}'::jsonb, 'groq', 'qwen')`);
+    const st = psql("select state from receipt_documents where id='doc-in-2'").trim();
+    if (st !== "validated") throw new Error(`state is ${st}`);
+    const v = psql(`select version||'|'||is_original||'|'||gross_amount
+                    from receipt_extractions where document_id='doc-in-2'`).trim();
+    if (v !== "1|true|2520.4100000000") throw new Error(`extraction is ${v}`);
+  });
+
+  check("a low-confidence reading goes to a human instead of straight through", () => {
+    psql(`select public.sarraf_receipt_intake_begin(
+      'doc-in-3','customer_sells_to_zeman','in-c',null,null,'batch-1','CNY','image/jpeg')`);
+    psql(`select public.sarraf_receipt_intake_stored('doc-in-3', repeat('d',64), 999)`);
+    psql(`select public.sarraf_receipt_intake_extracted('doc-in-3', true,
+      '{"grossAmount":"100","currency":"CNY","confidence":"0.40"}'::jsonb, 'groq', 'qwen')`);
+    const st = psql("select state from receipt_documents where id='doc-in-3'").trim();
+    if (st !== "needs_manual_review") throw new Error(`state is ${st}`);
+  });
+
+  check("a currency the transaction did not expect is flagged, never accepted", () => {
+    psql(`select public.sarraf_receipt_intake_begin(
+      'doc-in-4','customer_sells_to_zeman','in-c',null,null,'batch-1','CNY','image/jpeg')`);
+    psql(`select public.sarraf_receipt_intake_stored('doc-in-4', repeat('e',64), 999)`);
+    psql(`select public.sarraf_receipt_intake_extracted('doc-in-4', true,
+      '{"grossAmount":"2300","currency":"IQD","confidence":"0.95"}'::jsonb, 'groq', 'qwen')`);
+    const row = psql("select state||'|'||coalesce(rule_code,'') from receipt_documents where id='doc-in-4'").trim();
+    if (row !== "currency_mismatch|currency_mismatch") throw new Error(`document is ${row}`);
+  });
+
+  check("an uploader sees their own intakes and their status", () => {
+    const n = Number(psql("select count(*) from public.sarraf_my_receipt_intakes(100)").trim());
+    if (n < 4) throw new Error(`expected the uploader's own intakes, saw ${n}`);
+  });
 
   psql(`create or replace function auth.uid() returns uuid language sql stable
         as $fn$ select '11111111-1111-1111-1111-111111111111'::uuid $fn$`);

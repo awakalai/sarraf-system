@@ -3,6 +3,7 @@ import { supabase } from "./lib/supabase";
 import { createReceiptIngestionCommand, ingestReceiptBatch } from "./services/receiptIngestion";
 import { receiptNetFrom, unsendableReceipts, validateReceiptArithmetic } from "./services/receiptValidation";
 import { DICT } from "./i18n/dictionary";
+import { computeInventoryPosition } from "./services/inventoryAccounting";
 import { createReceiptReviewCommand, finalizeReceiptBatch, loadReceiptPolicy, reviewReceiptBatch } from "./services/receiptReview";
 import { assignReceiptCustody, convertReceiptBatchToTransaction, loadPortalReceiptSummary } from "./services/receiptOperations";
 import { userFacingServiceError } from "./services/userFacingError";
@@ -2367,52 +2368,13 @@ export default function App() {
       }
     }
 
-    let qty = 0, costUsd = 0, costComplete = true;
-    const asOfMs = asOfDate ? new Date(asOfDate).getTime() : null;
-
-    const txs = data.txs
-      .filter((t) => {
-        if (t.deleted || t.direct || t.id === excludeTxId || t.curId !== curId) return false;
-        if (Number.isFinite(asOfMs) && new Date(t.date).getTime() > asOfMs) return false;
-        return true;
-      })
-      .sort((a, b) => new Date(a.date) - new Date(b.date) || (a.code || 0) - (b.code || 0));
-
-    for (const t of txs) {
-      const amount = Number(t.amount);
-      if (!(amount > 0)) continue;
-
-      if (t.type === "buy") {
-        const snap = Number(t.buyTotal) > 0
-          ? Number(t.buyTotal)
-          : usdValueAt(Number(t.total), t.againstId, "spend", t.date);
-
-        qty += amount;
-        if (Number.isFinite(snap) && snap >= 0) costUsd += snap;
-        else costComplete = false;
-      } else if (t.type === "sell" && qty > 0) {
-        const used = Math.min(amount, qty);
-        if (costComplete && qty > 0) {
-          const avg = costUsd / qty;
-          costUsd -= used * avg;
-        }
-        qty -= used;
-        if (qty <= 1e-9) {
-          qty = 0;
-          costUsd = 0;
-          costComplete = true;
-        }
-      }
-    }
-
-    return {
-      qty,
-      cost: costUsd,
-      costUsd,
-      costComplete,
-      avgRate: costComplete && qty > 0 ? costUsd / qty : null,
-      avgUsdRate: costComplete && qty > 0 ? costUsd / qty : null,
-    };
+    return computeInventoryPosition({
+      txs: data.txs,
+      curId,
+      excludeTxId,
+      asOfDate,
+      usdCostOf: (t) => usdValueAt(Number(t.total), t.againstId, "spend", t.date),
+    });
   };
 
   const avgRate = (curId, againstId, excludeTxId = null, asOfDate = null) =>

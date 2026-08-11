@@ -1,53 +1,58 @@
--- Fix: src/App.jsx calls supabase.rpc("check_receipt_dupe", ...) during receipt
--- review to warn the uploader that an image/reference was already recorded in an
--- earlier batch. That function was never created, so the call always fails
--- PGRST202 and is silently swallowed by the caller's try/catch — every
--- already-recorded receipt was shown as a brand-new "verified" receipt instead
--- of being flagged as a duplicate before submission.
+-- src/App.jsx calls supabase.rpc("check_receipt_dupe", ...) during receipt review to
+-- warn the uploader that an image/reference was already recorded earlier. The function
+-- existed in production but had only ever been created by hand in the SQL editor, so it
+-- was absent from version control and carried two defects:
+--
+--   1. It filtered no status at all, matching every row in public.receipts — including
+--      rows that were rejected or never counted. Re-sending the image of a previously
+--      rejected receipt was therefore refused as a duplicate even though the original
+--      never entered the accounting set.
+--   2. It returned a single column (d). The caller also reads id/who/ref, so the
+--      "already submitted" message could never name the sender or the reference.
+--
+-- The existence check stays global on purpose: the same image or reference submitted by
+-- a different customer must still be caught, so this must NOT be scoped to the caller's
+-- own rows. Only the uploader's identity is withheld from non-staff callers.
+--
+-- Changing the return type requires dropping first; drop + create run in one transaction.
 begin;
 
-create or replace function public.check_receipt_dupe(p_hash text, p_ref text)
+drop function if exists public.check_receipt_dupe(text, text);
+
+create function public.check_receipt_dupe(p_hash text, p_ref text)
 returns table(id text, d timestamptz, who text, ref text)
 language plpgsql
-security definer
 stable
+security definer
 set search_path = pg_catalog, public
 as $$
 declare
-  v_actor public.app_users%rowtype;
-  v_hash text := nullif(btrim(p_hash), '');
-  v_ref text := nullif(upper(regexp_replace(coalesce(p_ref,''), '[^0-9A-Za-z]', '', 'g')), '');
+  v_staff boolean := false;
+  v_hash  text := nullif(btrim(p_hash), '');
+  -- Mirrors normRef() in src/App.jsx so both sides compare identical shapes.
+  v_ref   text := nullif(upper(regexp_replace(coalesce(p_ref,''), '[\s\-_.]', '', 'g')), '');
 begin
-  select * into v_actor from public.app_users where auth_id = auth.uid() and not deleted;
-  if not found then raise exception using errcode='42501', message='not authorized'; end if;
-  if v_hash is not null and v_hash !~ '^[a-f0-9]{64}$' then v_hash := null; end if;
   if v_hash is null and v_ref is null then return; end if;
 
+  select coalesce(a.role in ('admin','office'), false) into v_staff
+  from public.app_users a
+  where a.auth_id = auth.uid() and not a.deleted;
+
   return query
-  with candidates as (
-    select i.id, i.created_at as d, i.submitted_by, i.customer_id, i.partner_id, i.ref_no
-    from public.receipt_intake_items i
-    where i.intake_status = 'accepted'
-      and (
-        (v_hash is not null and i.image_hash = v_hash)
-        or (v_ref is not null and upper(regexp_replace(coalesce(i.ref_no,''), '[^0-9A-Za-z]', '', 'g')) = v_ref)
-      )
-    union all
-    select r.id, r.created_at as d, r.uploaded_by as submitted_by, r.customer_id, r.partner_id, r.ref_no
-    from public.receipts r
-    where r.status = 'ok' and coalesce(r.counted, true)
-      and (
-        (v_hash is not null and r.image_hash = v_hash)
-        or (v_ref is not null and upper(regexp_replace(coalesce(r.ref_no,''), '[^0-9A-Za-z]', '', 'g')) = v_ref)
-      )
-  )
-  select c.id, c.d, coalesce(u.name, c.submitted_by), c.ref_no
-  from candidates c
-  left join public.app_users u on u.id = c.submitted_by
-  where v_actor.role in ('admin','office')
-    or (v_actor.role = 'customer' and c.customer_id = v_actor.id)
-    or (v_actor.role = 'partner' and c.partner_id = v_actor.id)
-  order by c.d desc
+  select r.id,
+         r.created_at,
+         case when v_staff then coalesce(u.name, r.uploaded_by) else null end,
+         r.ref_no
+  from public.receipts r
+  left join public.app_users u on u.id = r.uploaded_by
+  where r.status = 'ok'
+    and coalesce(r.counted, true)
+    and (
+      (v_hash is not null and r.image_hash = v_hash)
+      or (v_ref is not null
+          and upper(regexp_replace(coalesce(r.ref_no,''), '[\s\-_.]', '', 'g')) = v_ref)
+    )
+  order by r.created_at
   limit 1;
 end;
 $$;

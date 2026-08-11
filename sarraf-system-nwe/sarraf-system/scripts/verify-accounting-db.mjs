@@ -83,7 +83,7 @@ try {
   psqlFile(prereq);
 
   // The migration under test must apply to an empty database.
-  for (const m of ["202608120001_double_entry_core.sql", "202608120002_cashbox_and_debt.sql"]) {
+  for (const m of ["202608120001_double_entry_core.sql", "202608120002_cashbox_and_debt.sql", "202608120003_accounting_commands.sql"]) {
     psqlFile(path.join(root, "supabase/migrations", m));
   }
   psql("insert into public.app_users(id,name,role) values ('u-a','A','admin') on conflict do nothing");
@@ -249,6 +249,91 @@ try {
     const out = psql("select public.sarraf_subledger_reconciliation()::text").trim();
     if (!out.includes("customer_vault_total") || !out.includes("CNY"))
       throw new Error(`reconciliation payload incomplete: ${out}`);
+  });
+
+
+  // ── Commands: the only way money moves. Impersonate an admin via auth.uid(). ──
+  psql(`update public.app_users set auth_id='11111111-1111-1111-1111-111111111111' where id='u-a'`);
+  psql(`create or replace function auth.uid() returns uuid language sql stable
+        as $fn$ select '11111111-1111-1111-1111-111111111111'::uuid $fn$`);
+  psql(`insert into public.app_users(id,name,role) values ('cust-2','Customer Two','customer')
+        on conflict do nothing`);
+
+  check("a deposit posts a balanced entry and credits the customer-funds liability", () => {
+    psql(`select public.sarraf_customer_vault_move('cust-2','CNY',7200,'in',7.2,'کڕیار پارەی دانا','cmd-dep-1')`);
+    const avail = psql("select available from customer_vaults where customer_id='cust-2' and currency='CNY'").trim();
+    if (Number(avail) !== 7200) throw new Error(`available is ${avail}`);
+    // Liability account 2000 must be credited, asset 1000 debited, and the entry balanced.
+    const sides = psql(`select string_agg(account_id||':'||side, ',' order by line_no)
+      from journal_lines where entry_id like 'je-vault-%'`).trim();
+    if (!sides.includes("acc-1000:debit") || !sides.includes("acc-2000:credit"))
+      throw new Error(`unexpected posting: ${sides}`);
+    const base = psql(`select base_amount from journal_lines where entry_id like 'je-vault-%' limit 1`).trim();
+    if (Number(base) !== 1000) throw new Error(`7200 CNY at 7.2 should value to 1000 USD, got ${base}`);
+  });
+
+  check("replaying a deposit command does not move the balance twice", () => {
+    const out = psql(`select public.sarraf_customer_vault_move('cust-2','CNY',7200,'in',7.2,'دووبارە','cmd-dep-1')::text`);
+    if (!out.includes('"replayed": true') && !out.includes('"replayed":true'))
+      throw new Error(`replay not detected: ${out}`);
+    const avail = psql("select available from customer_vaults where customer_id='cust-2' and currency='CNY'").trim();
+    if (Number(avail) !== 7200) throw new Error(`balance moved twice: ${avail}`);
+  });
+
+  mustFail("a withdrawal beyond the cashbox is refused by the command",
+    `select public.sarraf_customer_vault_move('cust-2','CNY',999999,'out',7.2,'زۆرە','cmd-wd-x')`);
+
+  check("settling a debt from the cashbox applies the waterfall and draws the balance down", () => {
+    psql(`insert into public.debts(id,debtor_type,debtor_id,creditor_type,creditor_id,currency,
+            original_principal,outstanding_principal,source_type,reason,created_by)
+          values ('d-c2','customer','cust-2','zeman',null,'CNY',5000,5000,'unpaid','قەرزی کڕین','u-a')`);
+    const out = psql(`select public.sarraf_apply_vault_to_debt('cust-2','CNY',5000,7.2,'تسویە لە قاسە','cmd-set-1')::text`);
+    if (!out.includes('"applied": 5000') && !out.includes('"applied":5000'))
+      throw new Error(`unexpected result: ${out}`);
+    const st = psql("select status from debts where id='d-c2'").trim();
+    if (st !== "settled") throw new Error(`debt is ${st}`);
+    const avail = psql("select available from customer_vaults where customer_id='cust-2' and currency='CNY'").trim();
+    if (Number(avail) !== 2200) throw new Error(`expected 2200 left, got ${avail}`);
+  });
+
+  check("an unallocated remainder returns to the cashbox instead of vanishing", () => {
+    const before = Number(psql("select available from customer_vaults where customer_id='cust-2' and currency='CNY'").trim());
+    psql(`select public.sarraf_apply_vault_to_debt('cust-2','CNY',1000,7.2,'هیچ قەرزێک نەماوە','cmd-set-2')`);
+    const after = Number(psql("select available from customer_vaults where customer_id='cust-2' and currency='CNY'").trim());
+    if (after !== before) throw new Error(`money vanished: ${before} -> ${after}`);
+  });
+
+  check("a debt ZEMAN owes a customer becomes cashbox credit without double liability", () => {
+    psql(`insert into public.debts(id,debtor_type,debtor_id,creditor_type,creditor_id,currency,
+            original_principal,outstanding_principal,source_type,reason,created_by)
+          values ('d-z2','zeman',null,'customer','cust-2','CNY',900,900,'owed','ZEMAN قەرزارە','u-a')`);
+    const before = Number(psql("select available from customer_vaults where customer_id='cust-2' and currency='CNY'").trim());
+    psql(`select public.sarraf_zeman_debt_to_vault('d-z2',900,7.2,'خرایە قاسەی کڕیار','cmd-d2v-1')`);
+    const after = Number(psql("select available from customer_vaults where customer_id='cust-2' and currency='CNY'").trim());
+    const st = psql("select status from debts where id='d-z2'").trim();
+    if (after - before !== 900) throw new Error(`cashbox moved by ${after - before}, expected 900`);
+    if (st !== "settled") throw new Error(`debt is ${st}`);
+    // The liability must be credited once, not twice: entry replaces receivable with funds held.
+    const n = psql(`select count(*) from journal_lines l join journal_entries e on e.id=l.entry_id
+                    where e.source_type='zeman_debt_to_customer_vault' and l.account_id='acc-2000'`).trim();
+    if (n !== "1") throw new Error(`liability credited ${n} times, expected once`);
+  });
+
+  check("the trial balance still reconciles after every command", () => {
+    const out = psql("select (public.sarraf_trial_balance_check()->>'balanced')::text").trim();
+    if (out !== "true") throw new Error(psql("select public.sarraf_trial_balance_check()::text"));
+  });
+
+  check("a customer cannot post accounting commands", () => {
+    psql(`update public.app_users set auth_id='22222222-2222-2222-2222-222222222222' where id='cust-2'`);
+    psql(`create or replace function auth.uid() returns uuid language sql stable
+          as $fn$ select '22222222-2222-2222-2222-222222222222'::uuid $fn$`);
+    let denied = false;
+    try { psql(`select public.sarraf_customer_vault_move('cust-2','CNY',100,'in',7.2,'forged','cmd-forge')`); }
+    catch { denied = true; }
+    psql(`create or replace function auth.uid() returns uuid language sql stable
+          as $fn$ select '11111111-1111-1111-1111-111111111111'::uuid $fn$`);
+    if (!denied) throw new Error("a customer was allowed to move the cashbox");
   });
 
   let failed = 0;

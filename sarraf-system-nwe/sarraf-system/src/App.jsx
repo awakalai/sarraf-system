@@ -33,6 +33,7 @@ const ExportAuditCenter = lazyNamed(() => import("./components/operations/Export
 const DebtCenter = lazyNamed(() => import("./components/accounting/DebtCenter"), "DebtCenter");
 const CashboxPanel = lazyNamed(() => import("./components/accounting/CashboxPanel"), "CashboxPanel");
 const OfficePayments = lazyNamed(() => import("./components/accounting/OfficePayments"), "OfficePayments");
+const ReceiptReviewWorkspace = lazyNamed(() => import("./components/receipts/ReceiptReviewWorkspace"), "ReceiptReviewWorkspace");
 
 function DeferredPanel({ children, compact = false }) {
   return <React.Suspense fallback={<section className={`animate-pulse rounded-[var(--r)] border border-[var(--line)] bg-[var(--surf)] ${compact ? "h-12" : "h-28"}`} aria-live="polite" aria-label="Loading ZEMAN module" />}>
@@ -153,6 +154,7 @@ const ADMIN_CENTER_PAGE_IDS = new Set([
   "debt-center",
   "cashbox",
   "office-payments",
+  "receipt-review",
   "backup",
 ]);
 
@@ -658,6 +660,7 @@ function AdminCenterHub({ lang = "ku", onNavigate }) {
         ["insights", label("ڕەوت و شیکاری", "Trends & Insights", "الاتجاهات والتحليلات"), label("ڕەوتی قازانج، مامەڵە و دۆخی دارایی", "Profit, transaction, and financial trends", "اتجاهات الربح والمعاملات والوضع المالي"), TrendingUp],
         ["integrity", label("ناوەندی یەکپارچەیی", "Integrity Center", "مركز سلامة البيانات"), label("پشکنینی ناکۆکی، دووبارە و پەیوەندیی شکێنراو", "Checks for inconsistencies, duplicates, and broken links", "فحص التعارض والتكرار والروابط المقطوعة"), ShieldAlert],
         ["audit", label("تۆماری گۆڕانکاری", "Change Log", "سجل التغييرات"), label("مێژووی کردار و گۆڕانکارییەکانی سیستەم", "History of system actions and changes", "سجل إجراءات النظام وتغييراته"), History],
+        ["receipt-review", label("پشکنینی فیش", "Receipt Review", "مراجعة الإيصالات"), label("وێنەی ڕەسەن، ژمارەکان و مێژووی ڕاستکردنەوە", "Original image, figures, and correction history", "الصورة الأصلية والأرقام وسجل التصحيح"), ClipboardCheck],
         ["office-payments", label("پارەدانی نووسینگە", "Office Payments", "مدفوعات المكتب"), label("ئەرکی پارەدان و بەڵگە", "Payment assignments and evidence", "مهام الدفع والإثباتات"), Building2],
         ["cashbox", label("قاسەی کڕیاران", "Customer Cashbox", "خزنة الزبائن"), label("دانان، دەرهێنان و تسویەی قەرز لە قاسە", "Deposit, withdraw, and settle debt from the cashbox", "إيداع وسحب وتسوية الديون"), Wallet],
         ["debt-center", label("قەرز و قاسە", "Debt & Cashbox", "الديون والخزنة"), label("قەرز بە ئاڕاستەی ڕوون، تەمەن و قاسەی کڕیاران", "Debts by explicit direction, aging, and customer cashboxes", "الديون باتجاه واضح والأعمار وخزائن الزبائن"), Scale],
@@ -3491,6 +3494,12 @@ export default function App() {
             {page === "integrity" && <DeferredPanel><IntegrityCenter client={supabase} lang={lang} onNavigate={(path) => setPage(path.slice(2))} /></DeferredPanel>}
             {page === "export-audit" && <DeferredPanel><ExportAuditCenter client={supabase} lang={lang} /></DeferredPanel>}
             {page === "debt-center" && <DeferredPanel><DebtCenter client={supabase} lang={lang} nameOf={(id) => usr(id).name} /></DeferredPanel>}
+            {page === "receipt-review" && <DeferredPanel><ReceiptReviewWorkspace client={supabase} lang={lang}
+              actorId={profile?.id || null} flash={flash}
+              signedUrlFor={async (path) => {
+                const { data } = await supabase.storage.from("receipts").createSignedUrl(path, 3600);
+                return data?.signedUrl || null;
+              }} /></DeferredPanel>}
             {page === "office-payments" && <DeferredPanel><OfficePayments client={supabase} lang={lang} flash={flash} /></DeferredPanel>}
             {page === "cashbox" && <DeferredPanel><CashboxPanel client={supabase} lang={lang} flash={flash}
               customers={(data?.users || []).filter((u) => u.role === "customer" && !u.deleted)}

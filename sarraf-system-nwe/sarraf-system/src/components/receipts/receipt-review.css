@@ -1,0 +1,125 @@
+.rrw {
+  background: var(--surf); border: 1px solid var(--line); border-radius: var(--r);
+  box-shadow: var(--sh-1); padding: clamp(14px, 3vw, 22px); display: grid; gap: 16px;
+}
+
+.rrw-header { display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.rrw-header h2 { margin: 0; font-size: 15px; font-weight: 700; color: var(--txt); }
+.rrw-header p { margin: 3px 0 0; font-size: 11.5px; color: var(--txt-3); }
+.rrw-header .rrw-btn { margin-inline-start: auto; }
+
+.rrw-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  min-height: 40px; padding: 9px 14px; border-radius: var(--r-sm);
+  font-size: 12.5px; font-weight: 600; cursor: pointer;
+  background: var(--glass); color: var(--txt); border: 1px solid var(--line);
+}
+.rrw-btn:hover:not(:disabled) { background: var(--surf-3); }
+.rrw-btn:disabled { opacity: .4; cursor: not-allowed; }
+.rrw-btn svg { width: 15px; height: 15px; }
+.rrw-btn.is-pos { border-color: color-mix(in srgb, var(--pos) 42%, var(--line)); color: var(--pos); }
+.rrw-btn.is-neg { border-color: color-mix(in srgb, var(--neg) 42%, var(--line)); color: var(--neg); }
+.rrw-spin { animation: rrw-spin 1s linear infinite; }
+@keyframes rrw-spin { to { transform: rotate(360deg); } }
+
+.rrw-totals {
+  display: flex; gap: 14px; flex-wrap: wrap; padding: 10px 12px;
+  background: var(--surf-2); border: 1px solid var(--line); border-radius: var(--r-sm);
+  font-size: 11.5px; color: var(--txt-3);
+}
+.rrw-totals b { color: var(--txt); font-variant-numeric: tabular-nums; margin-inline-end: 3px; }
+
+.rrw-nav { display: flex; align-items: center; gap: 10px; justify-content: center; }
+.rrw-counter { font-size: 12px; font-weight: 600; color: var(--txt-2); font-variant-numeric: tabular-nums; }
+
+/* Evidence and numbers side by side; stacked on a phone so neither is cramped. */
+.rrw-split { display: grid; gap: 14px; grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr); }
+@media (max-width: 900px) { .rrw-split { grid-template-columns: 1fr; } }
+
+.rrw-image {
+  display: grid; gap: 8px; align-content: start; padding: 10px;
+  background: var(--surf-2); border: 1px solid var(--line); border-radius: var(--r-sm);
+}
+.rrw-zoom { display: flex; gap: 6px; justify-content: flex-end; }
+.rrw-zoom button {
+  min-height: 34px; min-width: 34px; padding: 0 10px; border-radius: var(--r-sm);
+  background: var(--surf); border: 1px solid var(--line); color: var(--txt-2);
+  font-size: 11px; font-weight: 700; cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.rrw-zoom svg { width: 14px; height: 14px; }
+.rrw-image-frame {
+  min-height: 300px; max-height: 520px; overflow: auto;
+  display: grid; place-items: center; border-radius: var(--r-sm); background: var(--bg);
+}
+.rrw-image-frame img { max-width: 100%; transform-origin: center; transition: transform .15s; }
+
+.rrw-detail { display: grid; gap: 12px; align-content: start; }
+
+.rrw-equation {
+  display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+  border-radius: var(--r-sm); font-size: 12px; font-weight: 600; line-height: 1.5;
+}
+.rrw-equation svg { width: 16px; height: 16px; flex-shrink: 0; }
+.rrw-equation.is-ok { background: var(--pos-bg); color: var(--pos); }
+.rrw-equation.is-bad { background: color-mix(in srgb, var(--neg) 11%, transparent); color: var(--neg); }
+.rrw-equation.is-unknown { background: var(--warn-bg); color: var(--warn); }
+
+.rrw-fields { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+.rrw-field {
+  display: grid; gap: 3px; padding: 9px 11px;
+  background: var(--surf-2); border: 1px solid var(--line); border-radius: var(--r-sm);
+}
+.rrw-field-label { font-size: 10px; color: var(--txt-3); font-weight: 600; }
+.rrw-field-value {
+  font-size: 13px; font-weight: 600; color: var(--txt);
+  font-variant-numeric: tabular-nums; direction: ltr; unicode-bidi: embed; word-break: break-word;
+}
+
+.rrw-changes { display: grid; gap: 6px; }
+.rrw-changes h3 {
+  margin: 0; font-size: 11.5px; font-weight: 600; color: var(--txt-2);
+  display: flex; align-items: center; gap: 6px;
+}
+.rrw-changes h3 svg { width: 14px; height: 14px; }
+.rrw-change {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font-size: 11.5px; padding: 7px 10px; border-radius: var(--r-sm); background: var(--surf-2);
+}
+.rrw-before { color: var(--txt-3); text-decoration: line-through; }
+.rrw-after { color: var(--pos); font-weight: 600; }
+
+.rrw-note { margin: 0; font-size: 10.5px; color: var(--txt-3); line-height: 1.6; }
+
+.rrw-edit { display: grid; gap: 9px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+.rrw-edit label { display: grid; gap: 4px; font-size: 10.5px; font-weight: 600; color: var(--txt-3); }
+.rrw-edit .rrw-wide, .rrw-edit .rrw-actions { grid-column: 1 / -1; }
+.rrw-edit input, .rrw-reject input {
+  width: 100%; min-height: 40px; padding: 9px 11px; font-size: 13px;
+  background: var(--surf-2); border: 1px solid var(--line); color: var(--txt);
+  border-radius: var(--r-sm); outline: none;
+}
+.rrw-edit input:focus, .rrw-reject input:focus {
+  border-color: var(--ac); box-shadow: 0 0 0 3px rgba(var(--ac-gl), .16);
+}
+
+.rrw-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.rrw-actions .rrw-btn { flex: 1 1 auto; }
+
+.rrw-reject { display: flex; gap: 8px; flex-wrap: wrap; align-items: stretch; }
+.rrw-reject input { flex: 1 1 200px; }
+
+.rrw-history { display: grid; gap: 6px; }
+.rrw-history h3 { margin: 0; font-size: 11.5px; font-weight: 600; color: var(--txt-2); }
+.rrw-history ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+.rrw-history li {
+  display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+  font-size: 11px; color: var(--txt-3); padding: 6px 9px;
+  background: var(--surf-2); border-radius: var(--r-sm);
+}
+.rrw-history b { color: var(--txt-2); }
+.rrw-history time { font-variant-numeric: tabular-nums; }
+
+.rrw-empty { padding: 26px; text-align: center; color: var(--txt-3); font-size: 12.5px; }
+
+@media (max-width: 480px) { .rrw-actions .rrw-btn { flex: 1 1 100%; } }

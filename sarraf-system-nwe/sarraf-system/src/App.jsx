@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "./lib/supabase";
 import { createReceiptIngestionCommand, ingestReceiptBatch } from "./services/receiptIngestion";
 import { receiptNetFrom, unsendableReceipts, validateReceiptArithmetic } from "./services/receiptValidation";
+import { intakeReceipt, RECEIPT_FLOWS, intakeStatusText } from "./services/receiptIntake";
 import { DICT } from "./i18n/dictionary";
 import { computeInventoryPosition } from "./services/inventoryAccounting";
 import { createReceiptReviewCommand, finalizeReceiptBatch, loadReceiptPolicy, reviewReceiptBatch } from "./services/receiptReview";
@@ -33,6 +34,7 @@ const ExportAuditCenter = lazyNamed(() => import("./components/operations/Export
 const DebtCenter = lazyNamed(() => import("./components/accounting/DebtCenter"), "DebtCenter");
 const CashboxPanel = lazyNamed(() => import("./components/accounting/CashboxPanel"), "CashboxPanel");
 const OfficePayments = lazyNamed(() => import("./components/accounting/OfficePayments"), "OfficePayments");
+const ReceiptReviewWorkspace = lazyNamed(() => import("./components/receipts/ReceiptReviewWorkspace"), "ReceiptReviewWorkspace");
 
 function DeferredPanel({ children, compact = false }) {
   return <React.Suspense fallback={<section className={`animate-pulse rounded-[var(--r)] border border-[var(--line)] bg-[var(--surf)] ${compact ? "h-12" : "h-28"}`} aria-live="polite" aria-label="Loading ZEMAN module" />}>
@@ -153,6 +155,7 @@ const ADMIN_CENTER_PAGE_IDS = new Set([
   "debt-center",
   "cashbox",
   "office-payments",
+  "receipt-review",
   "backup",
 ]);
 
@@ -658,6 +661,7 @@ function AdminCenterHub({ lang = "ku", onNavigate }) {
         ["insights", label("ڕەوت و شیکاری", "Trends & Insights", "الاتجاهات والتحليلات"), label("ڕەوتی قازانج، مامەڵە و دۆخی دارایی", "Profit, transaction, and financial trends", "اتجاهات الربح والمعاملات والوضع المالي"), TrendingUp],
         ["integrity", label("ناوەندی یەکپارچەیی", "Integrity Center", "مركز سلامة البيانات"), label("پشکنینی ناکۆکی، دووبارە و پەیوەندیی شکێنراو", "Checks for inconsistencies, duplicates, and broken links", "فحص التعارض والتكرار والروابط المقطوعة"), ShieldAlert],
         ["audit", label("تۆماری گۆڕانکاری", "Change Log", "سجل التغييرات"), label("مێژووی کردار و گۆڕانکارییەکانی سیستەم", "History of system actions and changes", "سجل إجراءات النظام وتغييراته"), History],
+        ["receipt-review", label("پشکنینی فیش", "Receipt Review", "مراجعة الإيصالات"), label("وێنەی ڕەسەن، ژمارەکان و مێژووی ڕاستکردنەوە", "Original image, figures, and correction history", "الصورة الأصلية والأرقام وسجل التصحيح"), ClipboardCheck],
         ["office-payments", label("پارەدانی نووسینگە", "Office Payments", "مدفوعات المكتب"), label("ئەرکی پارەدان و بەڵگە", "Payment assignments and evidence", "مهام الدفع والإثباتات"), Building2],
         ["cashbox", label("قاسەی کڕیاران", "Customer Cashbox", "خزنة الزبائن"), label("دانان، دەرهێنان و تسویەی قەرز لە قاسە", "Deposit, withdraw, and settle debt from the cashbox", "إيداع وسحب وتسوية الديون"), Wallet],
         ["debt-center", label("قەرز و قاسە", "Debt & Cashbox", "الديون والخزنة"), label("قەرز بە ئاڕاستەی ڕوون، تەمەن و قاسەی کڕیاران", "Debts by explicit direction, aging, and customer cashboxes", "الديون باتجاه واضح والأعمار وخزائن الزبائن"), Scale],
@@ -3491,6 +3495,12 @@ export default function App() {
             {page === "integrity" && <DeferredPanel><IntegrityCenter client={supabase} lang={lang} onNavigate={(path) => setPage(path.slice(2))} /></DeferredPanel>}
             {page === "export-audit" && <DeferredPanel><ExportAuditCenter client={supabase} lang={lang} /></DeferredPanel>}
             {page === "debt-center" && <DeferredPanel><DebtCenter client={supabase} lang={lang} nameOf={(id) => usr(id).name} /></DeferredPanel>}
+            {page === "receipt-review" && <DeferredPanel><ReceiptReviewWorkspace client={supabase} lang={lang}
+              actorId={profile?.id || null} flash={flash}
+              signedUrlFor={async (path) => {
+                const { data } = await supabase.storage.from("receipts").createSignedUrl(path, 3600);
+                return data?.signedUrl || null;
+              }} /></DeferredPanel>}
             {page === "office-payments" && <DeferredPanel><OfficePayments client={supabase} lang={lang} flash={flash} /></DeferredPanel>}
             {page === "cashbox" && <DeferredPanel><CashboxPanel client={supabase} lang={lang} flash={flash}
               customers={(data?.users || []).filter((u) => u.role === "customer" && !u.deleted)}
@@ -6482,6 +6492,40 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
     };
   };
 
+  /**
+   * Durable intake: claim a slot, store the image, then read it.
+   *
+   * Falls back to the legacy read-only path when the intake commands are not present, so a
+   * deployment that runs ahead of its migration degrades to the previous behaviour instead of
+   * refusing receipts outright.
+   */
+  const durableIntake = async ({ id, img, patchRow }) => {
+    const flow = partnerId ? RECEIPT_FLOWS.customerBuys : RECEIPT_FLOWS.customerSells;
+    try {
+      const result = await intakeReceipt({
+        client: supabase,
+        documentId: id,
+        blob: img.blob,
+        mediaType: img.mediaType || "image/jpeg",
+        sha256: img.hash,
+        flow,
+        customerId: customerId || null,
+        partnerId: partnerId || null,
+        batchId: receiptCommandRef.current?.batchId || null,
+        readImage: () => readReceiptAI(img.b64, img.mediaType),
+        onStage: (stage, info) => patchRow(id, { note: intakeStatusText(info?.state) || stage }),
+      });
+      return { stored: true, ...result };
+    } catch (e) {
+      const code = String(e?.code || e?.cause?.code || "").toUpperCase();
+      const message = String(e?.cause?.message || e?.message || "");
+      const notDeployed = code === "PGRST202" || /could not find the function|schema cache/i.test(message);
+      if (notDeployed) return { stored: false };
+      // A refused claim or a failed upload is a real failure: the image never arrived.
+      throw e;
+    }
+  };
+
   const onFiles = async (files, source = "gallery") => {
     const list = Array.from(files || []).filter((f) => f.type?.startsWith("image/"));
     if (!list.length) return flash("تەنها وێنە هەڵبژێرە");
@@ -6489,6 +6533,9 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
 
     setIntakeSource(source);
     setWorking(true);
+    // Created up front, not at send time: the durable intake and the later ingest must agree
+    // on the batch id so both resolve to one storage path per receipt.
+    receiptCommandRef.current ||= createReceiptIngestionCommand();
     const tasks = list.map((file) => ({ id: uid(), file }));
     setInspectorId((current) => current || tasks[0]?.id || null);
     commitRows((xs) => [
@@ -6546,9 +6593,17 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
             continue;
           }
 
-          patchRow(id, { note: "فیشەکە دەخوێندرێتەوە...", status: "processing" });
-          const d = await readReceiptAI(img.b64, img.mediaType);
-          patchRow(id, { note: "پشتڕاستکردنەوەی زانیاری..." });
+          // Store the evidence BEFORE reading it. Past this point an OCR failure degrades the
+          // reading but can no longer lose the receipt.
+          patchRow(id, { note: "ناردنی وێنە...", status: "processing" });
+          const intake = await durableIntake({ id, img, patchRow });
+          patchRow(id, { note: intake.stored ? "وێنە گەیشت — دەخوێندرێتەوە..." : "فیشەکە دەخوێندرێتەوە...", status: "processing" });
+          const d = intake.stored
+            ? intake.extraction
+            : await readReceiptAI(img.b64, img.mediaType);
+          if (intake.stored && intake.readError) throw intake.readError;
+          patchRow(id, { documentId: intake.documentId || null, intakeState: intake.state || null,
+                         stagedPath: intake.storagePath || undefined, note: "پشتڕاستکردنەوەی زانیاری..." });
           const ready = await classifyParsed(id, img, d);
           patchRow(id, ready);
 

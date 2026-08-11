@@ -107,7 +107,7 @@ try {
   psqlFile(prereq);
 
   // The migration under test must apply to an empty database.
-  for (const m of ["202608120001_double_entry_core.sql", "202608120002_cashbox_and_debt.sql", "202608120003_accounting_commands.sql", "202608120004_partner_and_office.sql", "202608120005_receipt_state_machine.sql", "202608120006_transaction_journal.sql", "202608120007_receipt_intake_commands.sql"]) {
+  for (const m of ["202608120001_double_entry_core.sql", "202608120002_cashbox_and_debt.sql", "202608120003_accounting_commands.sql", "202608120004_partner_and_office.sql", "202608120005_receipt_state_machine.sql", "202608120006_transaction_journal.sql", "202608120007_receipt_intake_commands.sql", "202608120008_receipt_forwarding.sql"]) {
     psqlFile(path.join(root, "supabase/migrations", m));
   }
   psql("insert into public.app_users(id,name,role) values ('u-a','A','admin') on conflict do nothing");
@@ -792,6 +792,100 @@ try {
 
   psql(`create or replace function auth.uid() returns uuid language sql stable
         as $fn$ select '11111111-1111-1111-1111-111111111111'::uuid $fn$`);
+
+
+  // 8: forwarding. Accepted evidence reaches exactly the party the flow sends it to.
+  psql(`insert into public.app_users(id,name,role,auth_id) values
+        ('fw-cust','FW Customer','customer','ccccccc1-0000-0000-0000-000000000001'),
+        ('fw-part','FW Partner','partner','ccccccc2-0000-0000-0000-000000000002')
+        on conflict (id) do nothing`);
+  // A sale receipt, taken through to accepted.
+  psql(`insert into public.receipt_documents(id,flow,uploader_id,customer_id,storage_path)
+        values ('fw-1','customer_sells_to_zeman','fw-cust','fw-cust','ingest/fw/fw-1.jpg')`);
+  for (const st of ["uploading","uploaded","ocr_pending","ocr_processing","parsed","validated","submitted","accepted"])
+    psql(`update public.receipt_documents set state='${st}' where id='fw-1'`);
+  // And one left mid-review, which must never be forwarded.
+  psql(`insert into public.receipt_documents(id,flow,uploader_id,customer_id,storage_path)
+        values ('fw-2','customer_sells_to_zeman','fw-cust','fw-cust','ingest/fw/fw-2.jpg')`);
+  for (const st of ["uploading","uploaded","ocr_pending","ocr_processing","parsed","needs_manual_review"])
+    psql(`update public.receipt_documents set state='${st}' where id='fw-2'`);
+
+  check("a sale receipt forwards to the partner and moves into their custody", () => {
+    const out = psql(`select public.sarraf_forward_receipts('["fw-1"]'::jsonb,'fw-part',null,
+      'partner takes custody of this currency','cmd-fw-1')::text`);
+    if (!out.replace(/\s/g,"").includes('"forwarded":1')) throw new Error(`unexpected: ${out}`);
+    const st = psql("select state from receipt_documents where id='fw-1'").trim();
+    if (st !== "forwarded") throw new Error(`document is ${st}`);
+    const custody = psql("select count(*) from receipt_custody_ledger where document_id='fw-1'").trim();
+    if (custody !== "1") throw new Error("custody was not recorded");
+    const owner = psql("select partner_id from receipt_documents where id='fw-1'").trim();
+    if (owner !== "fw-part") throw new Error(`custody holder is ${owner}`);
+  });
+
+  check("a receipt still under review is skipped and named, not forwarded", () => {
+    const out = psql(`select public.sarraf_forward_receipts('["fw-2"]'::jsonb,'fw-part',null,
+      'attempting to forward a pending receipt','cmd-fw-2')::text`);
+    if (!out.replace(/\s/g,"").includes('"forwarded":0')) throw new Error(`it was forwarded: ${out}`);
+    if (!out.includes("needs_manual_review")) throw new Error(`the reason was not named: ${out}`);
+    const n = psql("select count(*) from receipt_forwardings where document_id='fw-2'").trim();
+    if (n !== "0") throw new Error("a pending receipt reached a portal");
+  });
+
+  check("a sale receipt cannot be forwarded to a customer", () => {
+    // A fresh accepted receipt, so the recipient rule is what is under test rather than the
+    // already-forwarded state of fw-1.
+    psql(`insert into public.receipt_documents(id,flow,uploader_id,customer_id,storage_path)
+          values ('fw-3','customer_sells_to_zeman','fw-cust','fw-cust','ingest/fw/fw-3.jpg')`);
+    for (const st of ["uploading","uploaded","ocr_pending","ocr_processing","parsed","validated","submitted","accepted"])
+      psql(`update public.receipt_documents set state='${st}' where id='fw-3'`);
+    const out = psql(`select public.sarraf_forward_receipts('["fw-3"]'::jsonb,'fw-cust',null,
+      'wrong recipient for this flow','cmd-fw-3')::text`);
+    if (!out.includes("recipient_must_be_partner")) throw new Error(`unexpected: ${out}`);
+    const n = psql("select count(*) from receipt_forwardings where document_id='fw-3'").trim();
+    if (n !== "0") throw new Error("the receipt reached the wrong party");
+  });
+
+  check("forwarding twice does not duplicate the delivery record", () => {
+    psql(`select public.sarraf_forward_receipts('["fw-1"]'::jsonb,'fw-part',null,
+      'resend after a delivery problem','cmd-fw-4')`);
+    const n = psql(`select count(*) from receipt_forwardings where document_id='fw-1'`).trim();
+    if (n !== "1") throw new Error(`${n} forwarding rows exist`);
+  });
+
+  check("delivered and seen are recorded by the recipient, not by the sender", () => {
+    psql(`create or replace function auth.uid() returns uuid language sql stable
+          as $fn$ select 'ccccccc2-0000-0000-0000-000000000002'::uuid $fn$`);
+    psql(`select public.sarraf_receipt_mark_delivered('fw-1')`);
+    let st = psql("select delivery_status from receipt_forwardings where document_id='fw-1'").trim();
+    if (st !== "delivered") throw new Error(`status is ${st}`);
+    psql(`select public.sarraf_receipt_mark_seen('fw-1')`);
+    st = psql("select state from receipt_documents where id='fw-1'").trim();
+    if (st !== "seen") throw new Error(`document is ${st}`);
+  });
+
+  check("a recipient sees their forwarded receipts with the figures", () => {
+    const n = Number(psql("select count(*) from public.sarraf_my_forwarded_receipts(50)").trim());
+    if (n !== 1) throw new Error(`expected 1 forwarded receipt, saw ${n}`);
+  });
+
+  check("someone the receipt was not forwarded to cannot mark it delivered", () => {
+    psql(`create or replace function auth.uid() returns uuid language sql stable
+          as $fn$ select 'ccccccc1-0000-0000-0000-000000000001'::uuid $fn$`);
+    let denied = false;
+    try { psql(`select public.sarraf_receipt_mark_delivered('fw-1')`); } catch { denied = true; }
+    const n = Number(psql("select count(*) from public.sarraf_my_forwarded_receipts(50)").trim());
+    psql(`create or replace function auth.uid() returns uuid language sql stable
+          as $fn$ select '11111111-1111-1111-1111-111111111111'::uuid $fn$`);
+    if (!denied) throw new Error("a non-recipient marked the receipt delivered");
+    if (n !== 0) throw new Error(`a non-recipient saw ${n} forwarded receipts`);
+  });
+
+  check("sent, delivered and seen reconcile separately", () => {
+    const out = psql("select public.sarraf_forwarding_reconciliation()::text").trim();
+    for (const k of ["forwarded","sent","delivered","seen","failed"]) {
+      if (!out.includes(k)) throw new Error(`${k} missing from reconciliation`);
+    }
+  });
 
   let failed = 0;
   for (const [ok, name] of checks) { console.log(`${ok ? "PASS" : "FAIL"}  ${name}`); if (!ok) failed++; }

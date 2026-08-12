@@ -3548,7 +3548,8 @@ export default function App() {
                 const { data: signed } = await supabase.storage.from("receipts").createSignedUrl(path, 3600);
                 return signed?.signedUrl || null;
               }} /></DeferredPanel>}
-            {page === "office-payments" && <DeferredPanel><OfficePayments client={supabase} lang={lang} flash={flash} /></DeferredPanel>}
+            {page === "office-payments" && <DeferredPanel><OfficePayments client={supabase} lang={lang}
+              flash={flash} canConfirm={isAdmin} /></DeferredPanel>}
             {page === "cashbox" && <DeferredPanel><CashboxPanel client={supabase} lang={lang} flash={flash}
               customers={(data?.users || []).filter((u) => u.role === "customer" && !u.deleted)}
               rateFor={(code) => { const c = (data?.currencies || []).find((x) => x.code === code);

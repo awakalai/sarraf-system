@@ -1,3 +1,9 @@
+import { limitSubject, refuseIfOverLimit } from "./_rate-limit.js";
+
+// User administration is rare and deliberate; a burst of it is not.
+const ADMIN_LIMIT = Number(process.env.ADMIN_RATE_LIMIT || 20);
+const ADMIN_WINDOW_SECONDS = Number(process.env.ADMIN_RATE_WINDOW || 60);
+
 // api/admin-user.js
 // Server-only Sarraf user administration.
 // Requires a valid Admin session at AAL2 (TOTP MFA) and a Supabase secret/service key.
@@ -132,6 +138,14 @@ export default async function handler(req, res) {
 
   const authClient = makeClient(url, publicKey);
   const service = makeClient(url, secretKey);
+
+  // Limited by address before anyone is identified: an automated attempt at this route is
+  // limited by how fast it can type otherwise, and a failure to sign in must not be a way of
+  // escaping the limit.
+  if (await refuseIfOverLimit(res, {
+    url, key: secretKey, bucket: "admin-user", subject: limitSubject(req, null),
+    limit: ADMIN_LIMIT, windowSeconds: ADMIN_WINDOW_SECONDS,
+  })) return;
 
   let actor;
   try {

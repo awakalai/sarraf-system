@@ -3,7 +3,77 @@
 // Uses Groq Qwen Vision as primary, with Gemini, Google Vision and Claude fallbacks.
 // No Supabase writes happen in this endpoint.
 
+import { createHash, randomUUID } from "node:crypto";
 import { callGoogleVision } from "./_google-vision-receipt.js";
+import { limitSubject, refuseIfOverLimit } from "./_rate-limit.js";
+
+// One image a second, sustained, is far more than a person reading receipts off a phone and far
+// less than a script working through a stolen session.
+const OCR_LIMIT = Number(process.env.OCR_RATE_LIMIT || 60);
+const OCR_WINDOW_SECONDS = Number(process.env.OCR_RATE_WINDOW || 60);
+
+const sha256Hex = (value) => createHash("sha256").update(value).digest("hex");
+
+/**
+ * The canonical shape of a reading, matching public.sarraf_extraction_digest exactly.
+ *
+ * The database recomputes this from the figures actually submitted with the batch. If they were
+ * altered between here and there, the two digests differ and the batch is refused — which is
+ * what makes "the uploader cannot change what the reader read" a rule rather than a screen.
+ *
+ * Amounts are normalised the way PostgreSQL's trim_scale does, so 1200, 1200.0 and "1200.00" are
+ * one number. Text is trimmed and never case-folded: a payee's name is part of the reading.
+ */
+function extractionDigest(fields) {
+  const amount = (v) => {
+    if (v === null || v === undefined || v === "") return "";
+    const n = Number(v);
+    if (!Number.isFinite(n)) return "";
+    // Matches numeric::text after trim_scale: no exponent, no trailing zeros, no bare dot.
+    let s = n.toFixed(10).replace(/0+$/, "").replace(/\.$/, "");
+    if (s === "-0") s = "0";
+    return s;
+  };
+  const text = (v) => String(v ?? "").trim();
+  return sha256Hex([
+    amount(fields.amount),
+    amount(fields.fee),
+    amount(fields.net_amount),
+    text(fields.currency).toUpperCase(),
+    text(fields.ref_no),
+    text(fields.merchant_order_no),
+    text(fields.tx_date),
+    text(fields.receiver),
+    text(fields.sender),
+  ].join("|"));
+}
+
+/**
+ * Record what this reader read, so the ingestion command can tell whether the figures it is
+ * given are the ones that came off the image. The browser never sees a secret and cannot write
+ * one of these rows; the function is unreachable from a signed-in session.
+ */
+async function attestReading({ url, key, nonce, profileId, imageSha256, fields, provider, model }) {
+  if (!url || !key) return null;
+  try {
+    const res = await fetch(`${url.replace(/\/$/, "")}/rest/v1/rpc/sarraf_record_ocr_attestation`, {
+      method: "POST",
+      headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        p_nonce: nonce, p_issued_to: profileId, p_image_sha256: imageSha256,
+        p_extraction: fields, p_provider: provider || null, p_model: model || null,
+        p_ttl_seconds: 3600,
+      }),
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    // A reading that could not be attested is still a reading. It arrives unattested and the
+    // ingestion command treats it according to the receipt policy, rather than the customer
+    // losing their upload because a side table was unreachable.
+    return null;
+  }
+}
 
 const MAX_BASE64_CHARS = 3_500_000;
 const RETRYABLE = new Set([502, 503, 504]);
@@ -633,8 +703,9 @@ export default async function handler(req, res) {
     return;
   }
 
+  let caller = null;
   try {
-    await requireSarrafUser(req, ["admin", "office", "customer", "partner"]);
+    caller = await requireSarrafUser(req, ["admin", "office", "customer", "partner"]);
   } catch (authError) {
     const status = Number(authError?.status) || 401;
     res.status(status).json({
@@ -648,6 +719,15 @@ export default async function handler(req, res) {
     });
     return;
   }
+
+  // Counted per person, not per process: these routes are serverless and a per-process counter
+  // would reset on every cold start.
+  const serverConfig = supabaseServerConfig();
+  if (await refuseIfOverLimit(res, {
+    url: serverConfig.url, key: serverConfig.key, bucket: "ocr",
+    subject: limitSubject(req, caller?.profile?.id),
+    limit: OCR_LIMIT, windowSeconds: OCR_WINDOW_SECONDS,
+  })) return;
 
   const qKey = process.env.GROQ_API_KEY;
   const gKey = process.env.GEMINI_API_KEY;
@@ -743,10 +823,41 @@ export default async function handler(req, res) {
       throw new Error("OCR providers failed");
     }
 
+    // §2: the figures come from the evidence. What was read here is recorded server-side against
+    // the image it was read from, so that anything altered on the way to the ingestion command is
+    // caught rather than believed.
+    const d = result.data || {};
+    const attestedFields = {
+      amount: d.amount ?? null,
+      fee: d.fee ?? null,
+      net_amount: d.netAmount ?? null,
+      currency: d.currency ?? null,
+      ref_no: d.refNo ?? null,
+      merchant_order_no: d.merchantOrderNo ?? null,
+      tx_date: d.txDate ?? null,
+      receiver: d.receiver ?? null,
+      sender: d.sender ?? null,
+    };
+    const imageSha256 = sha256Hex(Buffer.from(image, "base64"));
+    const nonce = randomUUID().replace(/-/g, "") + randomUUID().replace(/-/g, "").slice(0, 8);
+    const attested = await attestReading({
+      url: serverConfig.url, key: serverConfig.key, nonce,
+      profileId: caller?.profile?.id, imageSha256, fields: attestedFields,
+      provider: result.meta?.provider, model: result.meta?.model,
+    });
+
     res.setHeader("Cache-Control", "no-store");
     res.status(200).json({
       ...result.data,
       _meta: result.meta,
+      // What the uploader carries to the ingestion command. Neither value is a secret: the
+      // nonce is worthless without the figures it was issued for, and the digest is derived
+      // from figures the uploader can already see.
+      attestation: attested ? {
+        nonce,
+        imageSha256,
+        extractionDigest: attested.extraction_digest || extractionDigest(attestedFields),
+      } : null,
       ocrVersion: 5
     });
   } catch (e) {

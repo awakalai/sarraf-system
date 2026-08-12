@@ -6473,17 +6473,30 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
     const fc = d?.fieldConfidence && typeof d.fieldConfidence === "object" ? d.fieldConfidence : {};
     const conf = clamp01(d?.confidence, 0.5);
 
-    // Exact reference duplicate = hard duplicate. Same amount/time alone is only a review warning.
-    if (rn || merchantRn) {
+    // An identifier repeated is a hard duplicate. The four together — same currency, amount, day
+    // and recipient, with no identifier matching — is a suspicion for a person to settle, because
+    // it is also the shape of a genuine second payment to the same supplier on a busy day.
+    let suspect = null;
+    if (rn || merchantRn || (d?.currency && amountV != null && d?.txDate && (d?.receiver || d?.sender))) {
       const local = rowsRef.current.find((r) => r.id !== id && r.status !== "error" && (
         (rn && r.refNo && normRef(r.refNo) === rn) ||
         (merchantRn && r.merchantOrderNo && normRef(r.merchantOrderNo) === merchantRn)
       ));
       let old = null;
       try {
-        const { data: hit } = await supabase.rpc("check_receipt_dupe", { p_hash: null, p_ref: rn });
+        const { data: hit } = await supabase.rpc("check_receipt_dupe", {
+          p_hash: null,
+          p_ref: rn,
+          p_merchant_ref: merchantRn,
+          p_currency: d?.currency || null,
+          p_amount: amountV ?? null,
+          p_tx_date: d?.txDate || null,
+          p_payee: d?.receiver || d?.sender || null,
+        });
         if (hit?.length) old = hit[0];
       } catch {}
+      // A suspicion is never a refusal: it goes to review with the reason attached.
+      if (old?.kind === "suspect" && !local) { suspect = old; old = null; }
       if (local || old) {
         const repeatedIdentifier = rn && local?.refNo && normRef(local.refNo) === rn ? d.refNo : d.merchantOrderNo;
         const reason = local
@@ -6569,6 +6582,12 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
       reviewCode = reviewCode || "tampered";
     }
 
+    // Duplicate key 4: everything matches except an identifier. Held for a person, not refused.
+    if (suspect) {
+      reviewReasons.push(`هەمان بڕ، هەمان ڕۆژ و هەمان وەرگر پێشتر تۆمار کراوە${suspect.d ? ` لە ${new Date(suspect.d).toLocaleDateString("en-GB")}` : ""} — دڵنیا بەوە کە دوو پارەدانی جیاوازن`);
+      reviewCode = reviewCode || "possible_duplicate";
+    }
+
     let note = reviewReasons.join(" · ");
     if (!note && feeDisc > 0) note = `داشکاندنی فی: ${fmtMoney(data, feeOrig, d?.currency)} → ${fmtMoney(data, feeV, d?.currency)}`;
     else if (!note && d?.note) note = d.note;
@@ -6590,6 +6609,8 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
       merchantName: d?.merchantName || null, platformEvidence: d?.platformEvidence || null,
       txTime: d?.txTime, txDate: d?.txDate, bank: d?.bank, platform: plat,
       confidence: conf, fieldConfidence: fc, raw: d,
+      // Carried through to ingestion, where the figures are checked against it.
+      attestation: d?.attestation || null,
     };
   };
 
@@ -7071,7 +7092,11 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
             recipientNote: r.recipientNote || r.raw?.recipientNote || null, merchantName: r.merchantName || r.raw?.merchantName || null,
             platformEvidence: r.platformEvidence || r.raw?.platformEvidence || null,
             sourceSignedAmount: r.raw?.sourceSignedAmount ?? null, sourceAmountDirection: r.raw?.sourceAmountDirection || null,
-            validation: r.validation || r.raw?.validation || null, reviewedManually: !!r.reviewedManually, manualEdited: !!r.manualEdited },
+            validation: r.validation || r.raw?.validation || null, reviewedManually: !!r.reviewedManually, manualEdited: !!r.manualEdited,
+            // What the reader read, recorded server-side when it read it. The database
+            // recomputes the digest from the figures above; if they were altered on the way,
+            // the two differ and the batch is refused. §2, enforced rather than displayed.
+            attestation: r.attestation || r.raw?.attestation || null },
         }),
       });
       // The atomic RPC re-checks every receipt server-side (duplicates included) and is the

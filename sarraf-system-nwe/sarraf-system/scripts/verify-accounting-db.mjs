@@ -144,7 +144,7 @@ try {
       amount numeric, fee numeric, net_amount numeric, currency text,
       sender text, receiver text, ref_no text, tx_time time, tx_date date,
       bank text, platform text, note text, status text, counted boolean default true,
-      reject_code text, raw jsonb not null default '{}'::jsonb,
+      reject_code text, image_hash text, image_path text, raw jsonb not null default '{}'::jsonb,
       created_at timestamptz not null default now());
     create table if not exists public.ledger (
       id text primary key, type text not null, owner text, investor_id text,
@@ -165,7 +165,7 @@ try {
   psqlFile(prereq);
 
   // The migration under test must apply to an empty database.
-  for (const m of ["202608120001_double_entry_core.sql", "202608120002_cashbox_and_debt.sql", "202608120003_accounting_commands.sql", "202608120004_partner_and_office.sql", "202608120005_receipt_state_machine.sql", "202608120006_transaction_journal.sql", "202608120007_receipt_intake_commands.sql", "202608120008_receipt_forwarding.sql", "202608120009_forwarding_guard_fix.sql", "202608130001_day_close_integrity.sql", "202608130002_ledger_journal_reconciliation.sql", "202608140001_single_currency_ratio.sql", "202608140002_receipt_conversion_moves_money.sql", "202608150001_uploader_receipt_view.sql", "202608160001_canonical_batch_summary.sql", "202608170001_debt_register.sql"]) {
+  for (const m of ["202608120001_double_entry_core.sql", "202608120002_cashbox_and_debt.sql", "202608120003_accounting_commands.sql", "202608120004_partner_and_office.sql", "202608120005_receipt_state_machine.sql", "202608120006_transaction_journal.sql", "202608120007_receipt_intake_commands.sql", "202608120008_receipt_forwarding.sql", "202608120009_forwarding_guard_fix.sql", "202608130001_day_close_integrity.sql", "202608130002_ledger_journal_reconciliation.sql", "202608140001_single_currency_ratio.sql", "202608140002_receipt_conversion_moves_money.sql", "202608150001_uploader_receipt_view.sql", "202608160001_canonical_batch_summary.sql", "202608170001_debt_register.sql", "202608180001_receipt_duplicate_keys.sql", "202608180002_ocr_attestation.sql", "202608180003_rate_limit_and_pending.sql"]) {
     psqlFile(path.join(root, "supabase/migrations", m));
   }
   psql("insert into public.app_users(id,name,role) values ('u-a','A','admin') on conflict do nothing");
@@ -1695,6 +1695,278 @@ try {
   });
 
   check("the books still reconcile after netting and writing off", () => {
+    const out = psql("select (public.sarraf_trial_balance_check()->>'balanced')::text").trim();
+    if (out !== "true") throw new Error(psql("select public.sarraf_trial_balance_check()::text"));
+  });
+
+  // ── four keys for a duplicate, not two ──
+  asAdmin();
+  psql(`insert into public.receipt_batches(id,customer_id,uploaded_by,direction,currency)
+        values ('b-dupe','cust-s','cust-s','in','CNY')`);
+  psql(`insert into public.receipts(id,batch_id,customer_id,uploaded_by,direction,amount,fee,
+          net_amount,currency,receiver,ref_no,merchant_order_no,tx_date,image_hash,status,counted)
+        values ('r-orig','b-dupe','cust-s','cust-s','in',1200,0,1200,'CNY','ئەحمەد',
+                'REF-9001','ORD-77001','2026-08-01',repeat('a',64),'ok',true)`);
+  const dupe = (args) => {
+    const row = psql(`select coalesce((select kind||'|'||matched_key||'|'||id
+      from public.check_receipt_dupe(${args}) limit 1), 'none')`).trim();
+    return row;
+  };
+
+  check("the same image is a duplicate", () => {
+    const r = dupe(`'${"a".repeat(64)}', null`);
+    if (r !== "duplicate|image|r-orig") throw new Error(r);
+  });
+
+  check("the same transaction reference is a duplicate, however it is punctuated", () => {
+    const r = dupe(`null, 'ref 9001'`);
+    if (r !== "duplicate|reference|r-orig") throw new Error(r);
+  });
+
+  // Key 3: the reader has always extracted it and nothing was ever comparing it.
+  check("the same merchant order number is a duplicate", () => {
+    const r = dupe(`null, null, 'ord-770.01'`);
+    if (r !== "duplicate|merchant_order|r-orig") throw new Error(r);
+  });
+
+  // Key 4: four coincidences at once. A question for a person, not a refusal by a rule.
+  check("the same amount, day, currency and recipient is a suspicion, not a refusal", () => {
+    const r = dupe(`null, null, null, 'CNY', 1200, '2026-08-01', 'ئەحمەد'`);
+    if (r !== "suspect|compound|r-orig") throw new Error(r);
+  });
+
+  check("three of the four is not even a suspicion", () => {
+    if (dupe(`null, null, null, 'CNY', 1200, '2026-08-02', 'ئەحمەد'`) !== "none") throw new Error("a different day matched");
+    if (dupe(`null, null, null, 'CNY', 1201, '2026-08-01', 'ئەحمەد'`) !== "none") throw new Error("a different amount matched");
+    if (dupe(`null, null, null, 'USD', 1200, '2026-08-01', 'ئەحمەد'`) !== "none") throw new Error("a different currency matched");
+    if (dupe(`null, null, null, 'CNY', 1200, '2026-08-01', 'سارا'`) !== "none") throw new Error("a different recipient matched");
+  });
+
+  check("a hard duplicate outranks a suspicion", () => {
+    const r = dupe(`'${"a".repeat(64)}', null, null, 'CNY', 1200, '2026-08-01', 'ئەحمەد'`);
+    if (r !== "duplicate|image|r-orig") throw new Error(`the weaker answer came first: ${r}`);
+  });
+
+  check("a rejected receipt does not make its replacement a duplicate", () => {
+    psql(`insert into public.receipts(id,batch_id,customer_id,uploaded_by,direction,amount,
+            currency,ref_no,status,counted)
+          values ('r-rej','b-dupe','cust-s','cust-s','in',5,'CNY','REF-REJECTED','dup',false)`);
+    if (dupe(`null, 'REF-REJECTED'`) !== "none") throw new Error("a rejected receipt blocked a resend");
+  });
+
+  // ── what the reader read, attested and unrepeatable ──
+  const digest = (json) => psql(`select public.sarraf_extraction_digest('${json}'::jsonb)`).trim();
+  const extraction = `{"amount":"1200","fee":"0","net_amount":"1200","currency":"CNY","ref_no":"REF-9001","merchant_order_no":"ORD-77001","tx_date":"2026-08-01","receiver":"ئەحمەد","sender":"من"}`;
+
+  check("the same figures always digest to the same value, however they are written", () => {
+    const a = digest(extraction);
+    const b = digest(extraction.replace('"1200"', '"1200.00"').replace('"cny"', '"CNY"'));
+    if (a !== b) throw new Error("1200 and 1200.00 digested differently");
+    if (!/^[a-f0-9]{64}$/.test(a)) throw new Error(`the digest is ${a}`);
+  });
+
+  check("changing a single figure changes the digest", () => {
+    const a = digest(extraction);
+    const b = digest(extraction.replace('"amount":"1200"', '"amount":"12000"'));
+    if (a === b) throw new Error("an altered amount digested the same");
+  });
+
+  check("a reading is attested by the reader and redeemed once", () => {
+    psql(`select public.sarraf_record_ocr_attestation('nonce-aaaaaaaaaaaaaaaaaaaaaa','cust-s',
+      '${"b".repeat(64)}', '${extraction}'::jsonb, 'groq', 'qwen', 3600)`);
+    psql(`select public.sarraf_redeem_ocr_attestation('nonce-aaaaaaaaaaaaaaaaaaaaaa','cust-s',
+      '${"b".repeat(64)}', '${extraction}'::jsonb, 'r-att')`);
+    const used = psql(`select redeemed_receipt_id from public.ocr_attestations
+                       where nonce='nonce-aaaaaaaaaaaaaaaaaaaaaa'`).trim();
+    if (used !== "r-att") throw new Error(`the attestation records ${used}`);
+  });
+
+  const redeem = (nonce, actor, hash, ext) => psql(`select public.zeman_probe_redeem(
+    '${nonce}','${actor}','${hash}','${ext}'::jsonb)`).trim();
+
+  psql(`create or replace function public.zeman_probe_redeem(a text,b text,c text,d jsonb)
+        returns text language plpgsql as $fn$ begin
+          perform public.sarraf_redeem_ocr_attestation(a,b,c,d,'r-probe'); return 'ok';
+        exception when others then return sqlerrm; end $fn$`);
+
+  check("the same reading cannot be used for a second receipt", () => {
+    const out = redeem("nonce-aaaaaaaaaaaaaaaaaaaaaa", "cust-s", "b".repeat(64), extraction);
+    if (!/already been used/.test(out)) throw new Error(out);
+  });
+
+  // The whole point: a browser that edits 1200 into 12000 is caught by the server.
+  check("figures altered after the reading are refused", () => {
+    psql(`select public.sarraf_record_ocr_attestation('nonce-bbbbbbbbbbbbbbbbbbbbbb','cust-s',
+      '${"c".repeat(64)}', '${extraction}'::jsonb, 'groq', 'qwen', 3600)`);
+    const out = redeem("nonce-bbbbbbbbbbbbbbbbbbbbbb", "cust-s", "c".repeat(64),
+      extraction.replace('"amount":"1200"', '"amount":"12000"'));
+    if (!/do not match what the reader read/.test(out)) throw new Error(out);
+  });
+
+  check("a reading of one image cannot be presented for another", () => {
+    const out = redeem("nonce-bbbbbbbbbbbbbbbbbbbbbb", "cust-s", "d".repeat(64), extraction);
+    if (!/different image/.test(out)) throw new Error(out);
+  });
+
+  check("a reading issued to one person cannot be used by another", () => {
+    const out = redeem("nonce-bbbbbbbbbbbbbbbbbbbbbb", "cust-t", "c".repeat(64), extraction);
+    if (!/belongs to someone else/.test(out)) throw new Error(out);
+  });
+
+  check("a reading that was never issued is refused", () => {
+    const out = redeem("nonce-zzzzzzzzzzzzzzzzzzzzzz", "cust-s", "c".repeat(64), extraction);
+    if (!/was not issued/.test(out)) throw new Error(out);
+  });
+
+  check("an expired reading is refused", () => {
+    psql(`insert into public.ocr_attestations(nonce,issued_to,image_sha256,extraction_digest,
+            issued_at,expires_at)
+          values ('nonce-cccccccccccccccccccccc','cust-s','${"e".repeat(64)}',
+                  public.sarraf_extraction_digest('${extraction}'::jsonb),
+                  now() - interval '2 hours', now() - interval '1 hour')`);
+    const out = redeem("nonce-cccccccccccccccccccccc", "cust-s", "e".repeat(64), extraction);
+    if (!/expired/.test(out)) throw new Error(out);
+  });
+
+  check("no signed-in user can attest to their own arithmetic", () => {
+    const granted = psql(`select has_function_privilege('authenticated',
+      'public.sarraf_record_ocr_attestation(text,text,text,jsonb,text,text,int)','execute')`).trim();
+    if (granted !== "f") throw new Error("a browser can mint its own attestation");
+  });
+
+  mustFail("an attestation cannot be destroyed",
+    "delete from public.ocr_attestations where nonce='nonce-aaaaaaaaaaaaaaaaaaaaaa'");
+
+  // The rule enforced where it counts: on the way into the receipts table, on every path.
+  check("a receipt whose figures were altered after reading is refused at the door", () => {
+    psql(`select public.sarraf_record_ocr_attestation('nonce-dddddddddddddddddddddd','cust-s',
+      '${"f".repeat(64)}', '${extraction}'::jsonb, 'groq', 'qwen', 3600)`);
+    let denied = false;
+    try {
+      psql(`insert into public.receipts(id,batch_id,customer_id,uploaded_by,direction,amount,fee,
+              net_amount,currency,receiver,sender,ref_no,merchant_order_no,tx_date,status,counted,raw)
+            values ('r-tampered','b-dupe','cust-s','cust-s','in',12000,0,12000,'CNY','ئەحمەد','من',
+                    'REF-9001','ORD-77001','2026-08-01','ok',true,
+                    '{"attestation":{"nonce":"nonce-dddddddddddddddddddddd","imageSha256":"${"f".repeat(64)}"}}')`);
+    } catch { denied = true; }
+    if (!denied) throw new Error("an altered amount was accepted");
+    const there = psql("select count(*) from public.receipts where id='r-tampered'").trim();
+    if (there !== "0") throw new Error("the tampered receipt was stored anyway");
+  });
+
+  check("a receipt whose figures match the reading is accepted, once", () => {
+    psql(`insert into public.receipts(id,batch_id,customer_id,uploaded_by,direction,amount,fee,
+            net_amount,currency,receiver,sender,ref_no,merchant_order_no,tx_date,status,counted,raw)
+          values ('r-attested','b-dupe','cust-s','cust-s','in',1200,0,1200,'CNY','ئەحمەد','من',
+                  'REF-9001','ORD-77001','2026-08-01','ok',true,
+                  '{"attestation":{"nonce":"nonce-dddddddddddddddddddddd","imageSha256":"${"f".repeat(64)}"}}')`);
+    const redeemed = psql(`select redeemed_receipt_id from public.ocr_attestations
+                           where nonce='nonce-dddddddddddddddddddddd'`).trim();
+    if (redeemed !== "r-attested") throw new Error(`the attestation records ${redeemed}`);
+  });
+
+  check("the merchant order number is lifted out of the raw payload as the row is written", () => {
+    psql(`insert into public.receipts(id,batch_id,customer_id,uploaded_by,direction,amount,
+            currency,status,counted,raw)
+          values ('r-mo','b-dupe','cust-s','cust-s','in',7,'CNY','ok',true,
+                  '{"merchantOrderNo":"ORD-88002"}')`);
+    const v = psql("select merchant_order_no from public.receipts where id='r-mo'").trim();
+    if (v !== "ORD-88002") throw new Error(`the column holds ${v}`);
+  });
+
+  check("an unattested receipt is allowed until the policy demands otherwise", () => {
+    psql(`insert into public.receipts(id,batch_id,customer_id,uploaded_by,direction,amount,
+            currency,status,counted) values ('r-plain','b-dupe','cust-s','cust-s','in',9,'CNY','ok',true)`);
+    psql(`update public.receipt_control_policy set require_attestation = true where singleton`);
+    let denied = false;
+    try {
+      psql(`insert into public.receipts(id,batch_id,customer_id,uploaded_by,direction,amount,
+              currency,status,counted) values ('r-plain2','b-dupe','cust-s','cust-s','in',9,'CNY','ok',true)`);
+    } catch { denied = true; }
+    psql(`update public.receipt_control_policy set require_attestation = false where singleton`);
+    if (!denied) throw new Error("the policy switch does nothing");
+  });
+
+  check("a rejected receipt needs no reading, because it enters no total", () => {
+    psql(`update public.receipt_control_policy set require_attestation = true where singleton`);
+    psql(`insert into public.receipts(id,batch_id,customer_id,uploaded_by,direction,amount,
+            currency,status,counted) values ('r-nored','b-dupe','cust-s','cust-s','in',9,'CNY','dup',false)`);
+    psql(`update public.receipt_control_policy set require_attestation = false where singleton`);
+    const there = psql("select count(*) from public.receipts where id='r-nored'").trim();
+    if (there !== "1") throw new Error("evidence of a rejected receipt was refused");
+  });
+
+  // ── a limit on how fast our own doors can be knocked on ──
+  check("a caller within the limit is allowed", () => {
+    for (let i = 1; i <= 3; i++) {
+      const out = JSON.parse(psql(`select public.sarraf_rate_limit('ocr','cust-s',5,60)::text`));
+      if (out.allowed !== true) throw new Error(`attempt ${i} was refused`);
+      if (out.remaining !== 5 - i) throw new Error(`remaining is ${out.remaining} after ${i}`);
+    }
+  });
+
+  check("a caller past the limit is refused and told when to come back", () => {
+    let last;
+    for (let i = 0; i < 4; i++) last = JSON.parse(psql(`select public.sarraf_rate_limit('ocr','cust-s',5,60)::text`));
+    if (last.allowed !== false) throw new Error("the limit did not bite");
+    if (!(last.retry_after_seconds > 0)) throw new Error(`retry after ${last.retry_after_seconds}`);
+  });
+
+  check("one caller's limit is not another's", () => {
+    const other = JSON.parse(psql(`select public.sarraf_rate_limit('ocr','cust-t',5,60)::text`));
+    if (other.allowed !== true) throw new Error("a second caller was refused someone else's budget");
+  });
+
+  check("the window rolls over rather than locking someone out for ever", () => {
+    psql(`update public.rate_limit_counters set window_started_at = now() - interval '2 minutes'
+          where bucket='ocr' and subject='cust-s'`);
+    const out = JSON.parse(psql(`select public.sarraf_rate_limit('ocr','cust-s',5,60)::text`));
+    if (out.allowed !== true || out.hits !== 1) throw new Error(`the window did not roll: ${JSON.stringify(out)}`);
+  });
+
+  check("the counter is unreachable from a browser", () => {
+    const granted = psql(`select has_function_privilege('authenticated',
+      'public.sarraf_rate_limit(text,text,int,int)','execute')`).trim();
+    if (granted !== "f") throw new Error("a caller can raise their own limit");
+  });
+
+  // ── money handed over but not yet confirmed ──
+  check("a reported deposit is visible but cannot be spent", () => {
+    const out = JSON.parse(psql(`select public.sarraf_vault_pending_deposit('cust-1','CNY',500,
+      'reported at the counter','cmd-pend-1')::text`));
+    if (Number(out.pending) !== 500) throw new Error(`pending is ${out.pending}`);
+    if (out.posted !== false) throw new Error("unconfirmed money was posted to the journal");
+    const v = psql(`select pending||'|'||available from public.customer_vaults
+                    where customer_id='cust-1' and currency='CNY'`).trim();
+    if (!v.startsWith("500.0000000000|")) throw new Error(`the cashbox reads ${v}`);
+  });
+
+  check("confirming a deposit moves it across and posts it", () => {
+    const before = Number(psql(`select available from public.customer_vaults
+                                where customer_id='cust-1' and currency='CNY'`).trim());
+    const out = JSON.parse(psql(`select public.sarraf_vault_pending_resolve('cust-1','CNY',500,true,
+      null,'counted at the counter','cmd-pend-2')::text`));
+    if (Number(out.pending) !== 0) throw new Error(`pending is ${out.pending}`);
+    if (Number(out.available) !== before + 500) throw new Error(`available is ${out.available}`);
+    if (!out.voucher) throw new Error("no voucher was issued for a confirmed deposit");
+    const posted = psql(`select count(*) from public.journal_lines where entry_id like 'je-vault-confirm-%'`).trim();
+    if (posted !== "2") throw new Error(`the confirmation wrote ${posted} lines`);
+  });
+
+  check("a deposit that never arrived is turned away and posts nothing", () => {
+    psql(`select public.sarraf_vault_pending_deposit('cust-1','CNY',300,'reported by phone','cmd-pend-3')`);
+    const entriesBefore = psql("select count(*) from public.journal_entries").trim();
+    const out = JSON.parse(psql(`select public.sarraf_vault_pending_resolve('cust-1','CNY',300,false,
+      null,'the money never arrived','cmd-pend-4')::text`));
+    const entriesAfter = psql("select count(*) from public.journal_entries").trim();
+    if (Number(out.pending) !== 0) throw new Error(`pending is ${out.pending}`);
+    if (entriesBefore !== entriesAfter) throw new Error("a deposit that never arrived was posted");
+  });
+
+  mustFail("more cannot be confirmed than was ever reported",
+    `select public.sarraf_vault_pending_resolve('cust-1','CNY',9999,true,null,'over confirming','cmd-pend-5')`);
+
+  check("the books still reconcile after pending deposits", () => {
     const out = psql("select (public.sarraf_trial_balance_check()->>'balanced')::text").trim();
     if (out !== "true") throw new Error(psql("select public.sarraf_trial_balance_check()::text"));
   });

@@ -90,6 +90,13 @@ try {
     create table if not exists public.currencies (
       id text primary key, code text unique not null, name text not null, symbol text,
       dec int default 2, buy_rate numeric, sell_rate numeric, rate_updated timestamptz);
+    create table if not exists public.rate_history (
+      id text primary key, cur_id text references public.currencies(id),
+      buy_rate numeric, sell_rate numeric, changed_by text,
+      created_at timestamptz not null default now());
+    create table if not exists public.audit (
+      id text primary key, date timestamptz not null default now(), user_id text,
+      action text, detail text);
     create table if not exists public.txs (
       id text primary key, code int unique, type text not null, cp_id text, cp_name text,
       cur_id text not null references public.currencies(id), amount numeric(20,6) not null,
@@ -119,7 +126,7 @@ try {
   psqlFile(prereq);
 
   // The migration under test must apply to an empty database.
-  for (const m of ["202608120001_double_entry_core.sql", "202608120002_cashbox_and_debt.sql", "202608120003_accounting_commands.sql", "202608120004_partner_and_office.sql", "202608120005_receipt_state_machine.sql", "202608120006_transaction_journal.sql", "202608120007_receipt_intake_commands.sql", "202608120008_receipt_forwarding.sql", "202608120009_forwarding_guard_fix.sql", "202608130001_day_close_integrity.sql", "202608130002_ledger_journal_reconciliation.sql"]) {
+  for (const m of ["202608120001_double_entry_core.sql", "202608120002_cashbox_and_debt.sql", "202608120003_accounting_commands.sql", "202608120004_partner_and_office.sql", "202608120005_receipt_state_machine.sql", "202608120006_transaction_journal.sql", "202608120007_receipt_intake_commands.sql", "202608120008_receipt_forwarding.sql", "202608120009_forwarding_guard_fix.sql", "202608130001_day_close_integrity.sql", "202608130002_ledger_journal_reconciliation.sql", "202608140001_single_currency_ratio.sql"]) {
     psqlFile(path.join(root, "supabase/migrations", m));
   }
   psql("insert into public.app_users(id,name,role) values ('u-a','A','admin') on conflict do nothing");
@@ -1056,6 +1063,60 @@ try {
           as $fn$ select '11111111-1111-1111-1111-111111111111'::uuid $fn$`);
     if (!denied) throw new Error("a stranger could read the reconciliation");
   });
+
+  // ── one ratio per currency ──
+  // The owner's own worked example, and the one the specification locks in §4.13.
+  check("3400 yuan at 1 USD = 7.20 values at 472.22 dollars", () => {
+    const v = psql("select round(public.sarraf_usd_value(3400,'cny'),2)").trim();
+    if (v !== "472.22") throw new Error(`got ${v}`);
+  });
+
+  check("2520.41 CNY at 7.20 is 350.06, its fee 10.20, its net 339.86", () => {
+    const rows = psql(`select round(public.sarraf_usd_value(2520.41,'cny'),2)||'|'||
+                              round(public.sarraf_usd_value(73.41,'cny'),2)||'|'||
+                              round(public.sarraf_usd_value(2447.00,'cny'),2)`).trim();
+    if (rows !== "350.06|10.20|339.86") throw new Error(`got ${rows}`);
+  });
+
+  check("the backfill took the midpoint of the pair that was there before", () => {
+    // The fixture seeded cny at buy 7.10 / sell 7.30.
+    const r = psql("select rate from public.currencies where id='cny'").trim();
+    if (Number(r) !== 7.2) throw new Error(`expected 7.2, got ${r}`);
+  });
+
+  check("the dollar is exactly one", () => {
+    const r = psql("select rate from public.currencies where id='usd'").trim();
+    if (Number(r) !== 1) throw new Error(`got ${r}`);
+  });
+
+  // A currency nobody has priced cannot be valued. Zero would read as "worth nothing".
+  check("an unpriced currency values as unknown, never as zero", () => {
+    const v = psql("select coalesce(public.sarraf_usd_value(100,'xxx')::text,'NULL')").trim();
+    if (v !== "NULL") throw new Error(`expected NULL, got ${v}`);
+    const listed = psql("select count(*) from public.v_unpriced_currencies where id='xxx'").trim();
+    if (listed !== "1") throw new Error("the unpriced currency was not listed");
+  });
+
+  mustFail("a ratio of zero is refused by the database",
+    "update public.currencies set rate = 0 where id='cny'");
+  mustFail("a negative ratio is refused by the database",
+    "update public.currencies set rate = -1 where id='cny'");
+
+  check("saving a ratio records it, and history keeps the old one", () => {
+    psql(`select public.sarraf_save_rates(
+            '[{"id":"cny","rate":7.05}]'::jsonb,
+            '[{"id":"rh-1","cur_id":"cny","rate":7.05,"changed_by":"u-a"}]'::jsonb,
+            'cmd-rate-1','ratio change','1 USD = 7.05 CNY')`);
+    const now = psql("select rate from public.currencies where id='cny'").trim();
+    if (Number(now) !== 7.05) throw new Error(`currency not updated: ${now}`);
+    const hist = psql("select rate from public.rate_history where id='rh-1'").trim();
+    if (Number(hist) !== 7.05) throw new Error("history did not record the ratio");
+    // Restore, so the checks above stay reproducible in any order.
+    psql("update public.currencies set rate = 7.2 where id='cny'");
+  });
+
+  mustFail("a zero ratio is refused by the command too",
+    `select public.sarraf_save_rates('[{"id":"cny","rate":0}]'::jsonb,'[]'::jsonb,'cmd-rate-bad','x','y')`);
 
   let failed = 0;
   for (const [ok, name] of checks) { console.log(`${ok ? "PASS" : "FAIL"}  ${name}`); if (!ok) failed++; }

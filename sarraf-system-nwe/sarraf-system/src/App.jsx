@@ -16,6 +16,7 @@ import { revokeAllUrls, revokeDroppedUrls } from "./services/objectUrls";
 import { unrealizedPnl, unrealizedReasonText } from "./services/unrealizedPnl";
 import { capitalEventsFrom, investorShare, investorsTotalByCurrency, profitEventsFrom } from "./services/investorShare";
 import { crossRate, fromUsdAsOf, rateAsOf, rateErrorText, rateOf, unpricedCurrencies, usdFromAsOf, validateRate } from "./services/currencyRate";
+import { mayEditExtraction, payeeLabel } from "./services/receiptDisplay";
 import { userFacingServiceError } from "./services/userFacingError";
 import { claimSharedReceiptHandoff, finishSharedReceiptHandoff, releaseSharedReceiptHandoff, sharedReceiptMessage, validateClaimedSharedFiles } from "./services/sharedReceiptHandoff";
 import { PortalDataStatus, PortalFrame, PortalPagedList, usePortalRoute } from "./components/portal/PortalFoundation";
@@ -6095,8 +6096,11 @@ function ReceiptImg({ path, className }) {
 }
 
 /* ─────────── کۆکردنەوەی فیشەکان — بە فی و بێ فی ─────────── */
-function ReceiptTotals({ rows, data, title, compact }) {
-  const u = usdConv(data);
+function ReceiptTotals({ rows, data, title, compact, showValuation = true }) {
+  // The uploader is shown what their receipts say and nothing else. A valuation in another
+  // currency is a bookkeeping decision that has not been made yet; it arrives with the
+  // transaction, once the operator has made one.
+  const u = showValuation ? usdConv(data) : () => null;
   const counted = (rows || []).filter((r) => r.counted !== false && r.status !== "dup" && r.status !== "error");
   const rejected = (rows || []).filter((r) => r.counted === false || r.status === "dup" || r.status === "error");
   const gross = {}, fees = {}, net = {}, byWho = {}, byPlat = {};
@@ -6105,7 +6109,7 @@ function ReceiptTotals({ rows, data, title, compact }) {
     const g = +(r.amount) || 0, f = +(r.fee) || 0;
     const n = r.net != null ? +r.net : (r.net_amount != null ? +r.net_amount : g - f);
     gross[c] = (gross[c] || 0) + g; fees[c] = (fees[c] || 0) + f; net[c] = (net[c] || 0) + n;
-    const k = (r.receiver || r.sender || tr("نەزانراو")).trim();
+    const k = payeeLabel(r);
     byWho[k] = byWho[k] || { n: 0, cur: {} };
     byWho[k].n++; byWho[k].cur[c] = (byWho[k].cur[c] || 0) + n;
     const pl = r.platform || detectPlatform(r.bank) || tr("نەزانراو");
@@ -7303,7 +7307,7 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
             <DeferredPanel>
               <ReceiptSmartInspector receipt={inspectedReceipt} data={data} lang={_lang}
                 Card={Card} Btn={Btn} Pill={Pill} clamp01={clamp01} fmtMoney={fmtMoney} num={num} platMeta={platMeta}
-                onEdit={() => setEditingId(inspectedReceipt.id)}
+                onEdit={mayEditExtraction(staffReview) ? () => setEditingId(inspectedReceipt.id) : null}
                 onConfirm={() => confirmRow(inspectedReceipt.id)}
                 onReject={() => rejectRow(inspectedReceipt.id)}
                 onRetry={() => retryRow(inspectedReceipt.id)}
@@ -7375,9 +7379,17 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
                         {r.note && <div className={`text-[10.5px] mt-1.5 leading-relaxed ${r.status === "suspect" ? "text-[var(--warn)]" : r.status === "dup" ? "text-[var(--neg)]" : "text-[var(--txt-3)]"}`}>{r.note}</div>}
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
+                        {/* An uploader supplies the image; the figures come from the evidence.
+                            They may look, and report a discrepancy — they may not retype what
+                            the receipt says. */}
                         {r.status !== "processing" && !hardDup && (
-                          <button title="پشکنین و دەستکاری" onClick={() => { setInspectorId(r.id); setEditingId(editing ? null : r.id); }}
-                            className="p-2 rounded-lg hover:bg-[var(--surf-3)] text-[var(--txt-2)]"><Pencil className="w-3.5 h-3.5" /></button>
+                          mayEditExtraction(staffReview) ? (
+                            <button title="پشکنین و دەستکاری" onClick={() => { setInspectorId(r.id); setEditingId(editing ? null : r.id); }}
+                              className="p-2 rounded-lg hover:bg-[var(--surf-3)] text-[var(--txt-2)]"><Pencil className="w-3.5 h-3.5" /></button>
+                          ) : (
+                            <button title="بینینی وردەکاری" onClick={() => setInspectorId(r.id)}
+                              className="p-2 rounded-lg hover:bg-[var(--surf-3)] text-[var(--txt-2)]"><Eye className="w-3.5 h-3.5" /></button>
+                          )
                         )}
                         {r.status !== "processing" && !hardDup && r.ocrImage && (
                           <button title="دووبارە خوێندنەوە" onClick={() => retryRow(r.id)}
@@ -7388,7 +7400,7 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
                       </div>
                     </div>
 
-                    {editing && !hardDup && r.status !== "processing" && (
+                    {editing && mayEditExtraction(staffReview) && !hardDup && r.status !== "processing" && (
                       <div className="mt-4 pt-4 border-t border-[var(--line)]">
                         <div className="flex items-center justify-between gap-3 mb-3">
                           <div>
@@ -7435,7 +7447,7 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
             })}
           </div>
 
-          {good.length > 0 && <ReceiptTotals rows={good} data={data} title={tr("کۆی گشتی")} />}
+          {good.length > 0 && <ReceiptTotals rows={good} data={data} title={tr("کۆی گشتی")} showValuation={staffReview} />}
 
           {!simple && good.length > 0 && (
             <Btn kind="gold" className="w-full flex items-center justify-center gap-2" onClick={() => setShare(true)}>
@@ -8628,7 +8640,7 @@ function ReceiptArchive({ customerId, data, flash, simple = false }) {
           <div><Lbl>{tr("بۆ")}</Lbl><Inp type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
         </div>
       </Card>}
-      <ReceiptTotals rows={list} data={data} compact />
+      <ReceiptTotals rows={list} data={data} compact showValuation={!simple} />
 
       {!simple && <Btn kind="gold" className="w-full flex items-center justify-center gap-2" onClick={() => setShare(true)}>
         <Share2 className="w-4 h-4" /> {tr("ناردنی خشتەی وردەکاری")}

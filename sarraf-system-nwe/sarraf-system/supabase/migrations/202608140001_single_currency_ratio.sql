@@ -94,8 +94,15 @@ grant select on public.v_unpriced_currencies to authenticated;
 -- Saving the ratio. The previous function took a buy rate and a sell rate; it now takes the
 -- one number, records it in history, and refuses anything that is not positive — a zero would
 -- divide every valuation in the system into nonsense.
-create or replace function public.sarraf_save_rates(
-  p_rows jsonb, p_history jsonb, p_command_key text, p_action text, p_detail text
+--
+-- Dropped first rather than replaced: the existing function carries defaults on its trailing
+-- parameters, and PostgreSQL will not let CREATE OR REPLACE remove a default. The signature is
+-- unchanged, and the defaults are kept below so any caller passing fewer arguments still works.
+drop function if exists public.sarraf_save_rates(jsonb, jsonb, text, text, text);
+
+create function public.sarraf_save_rates(
+  p_rows jsonb, p_history jsonb, p_command_key text,
+  p_action text default 'گۆڕینی ڕەیتیۆی ڕۆژ', p_detail text default ''
 ) returns jsonb
 language plpgsql security definer
 set search_path = pg_catalog, public

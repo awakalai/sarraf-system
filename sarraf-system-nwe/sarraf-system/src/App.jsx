@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { supabase } from "./lib/supabase";
 import { createReceiptIngestionCommand, ingestReceiptBatch } from "./services/receiptIngestion";
+import { forgetSend, outcomeText, pendingSend, rememberSend, resolveSendOutcome, settleFailedSend, stageText } from "./services/receiptSendState";
 import { receiptNetFrom, unsendableReceipts, validateReceiptArithmetic } from "./services/receiptValidation";
 import { intakeReceipt, RECEIPT_FLOWS, intakeStatusText } from "./services/receiptIntake";
 import { DICT } from "./i18n/dictionary";
@@ -6411,6 +6412,25 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
   const maxAge = 7;
   const shareImportStarted = useRef(false);
 
+  // A send whose answer was lost leaves a note behind. On the next load the note is redeemed:
+  // the uploader is told their receipts arrived, instead of being left to send them again and
+  // be refused as duplicates.
+  const [resumedSend, setResumedSend] = useState(null);
+  useEffect(() => {
+    const pending = pendingSend();
+    if (!pending) return;
+    let alive = true;
+    (async () => {
+      const r = await resolveSendOutcome(supabase, pending.batchId);
+      if (!alive) return;
+      // Unknown stays remembered; there is nothing honest to say yet.
+      if (r.outcome === "unknown") return;
+      forgetSend();
+      if (r.outcome === "landed") setResumedSend({ ...r, text: outcomeText(r.outcome) });
+    })();
+    return () => { alive = false; };
+  }, []);
+
   const commitRows = (updater) => {
     setRows((prev) => {
       const next = typeof updater === "function" ? updater(prev) : updater;
@@ -7044,6 +7064,9 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
     setSendError(null);
     receiptCommandRef.current ||= createReceiptIngestionCommand();
     const command = receiptCommandRef.current;
+    // Written down before the send: if the answer is lost, the question "did they arrive?"
+    // survives a reload and can still be answered.
+    rememberSend(command, sendRows.length);
     const fallbackCurrencies = new Set(bad.map((row) => String(row.currency || "").trim().toUpperCase()).filter((value) => /^[A-Z]{3,8}$/.test(value)));
     const batchCurrency = mainCur || (fallbackCurrencies.size === 1 ? [...fallbackCurrencies][0] : "UNKNOWN");
     const a = mainCur ? agg[mainCur] : { g: 0, f: 0, n: 0 };
@@ -7083,15 +7106,34 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
       const acceptedCount = Number.isFinite(Number(commitData?.accepted_count)) ? Number(commitData.accepted_count) : good.length;
       const serverRejected = Number.isFinite(Number(commitData?.rejected_count)) ? Number(commitData.rejected_count) - bad.length : 0;
       flash(`${acceptedCount} ${tr("فیش نێردرا")} ✓${bad.length ? ` — ${bad.length} ${tr("ڕەتکراو بە وێنە و هۆکارەوە تۆمار کران")}` : ""}${serverRejected > 0 ? ` — ⚠️ ${serverRejected} ${tr("لەوانەی وا دەرکەوت پشتڕاستکراوبن لەلایەن سێرڤەرەوە وەک دووبارە ڕەتکرانەوە؛ لیستی فیشە ڕەتکراوەکان ببینە")}` : ""}`);
+      forgetSend();
       commitRows([]); receiptCommandRef.current = null; setEditingId(null); setInspectorId(null);
       setSelectedRows([]); setReviewTab("all"); setReviewSearch(""); setReviewPlatform("all");
       setIntakeSource("app"); onDone?.();
     } catch (error) {
       console.error("receipt ingestion failed", { stage: error.stage, code: error.code, requestId: error.requestId, outcomeUnknown: error.outcomeUnknown });
+      // The write is atomic, so the batch either exists or it does not. Ask, rather than
+      // telling the uploader it failed and sending them into a retry the duplicate check
+      // will then refuse.
+      const settled = await settleFailedSend(supabase, command, error);
+      if (settled.outcome === "landed") {
+        flash(settled.text);
+        commitRows([]); receiptCommandRef.current = null; setEditingId(null); setInspectorId(null);
+        setSelectedRows([]); setReviewTab("all"); setReviewSearch(""); setReviewPlatform("all");
+        setIntakeSource("app"); onDone?.();
+        return;
+      }
       const message = error.requestId
         ? error.message
         : userFacingServiceError(error, _lang, "فیشەکە تۆمار نەکرا؛ تکایە پەیوەندیی ئینتەرنێت بپشکنە و دووبارە هەوڵ بدەوە.");
-      setSendError({ stageLabel: error.stage, code: error.code, requestId: error.requestId, message, outcomeUnknown: !!error.outcomeUnknown });
+      setSendError({
+        stageLabel: error.stage, code: error.code, requestId: error.requestId,
+        // Says which stage broke and what is known about the receipts, instead of only
+        // "sending failed".
+        message: `${stageText(error.stage)} — ${settled.text}`,
+        detail: message,
+        outcomeUnknown: settled.outcome === "unknown",
+      });
     } finally { setSending(false); }
   };
 
@@ -7475,13 +7517,31 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
 
           {!simple && bad.length > 0 && <RejectedReceipts rows={bad} data={data} title={tr("ئەمانە هەژمار ناکرێن")} />}
 
+          {resumedSend && (
+            <Card className="p-4" style={{ borderColor: "color-mix(in srgb, var(--pos) 35%, var(--line))", background: "color-mix(in srgb, var(--pos) 8%, var(--surf))" }}>
+              <div className="flex items-start gap-2">
+                <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "var(--pos)" }} />
+                <div className="min-w-0 flex-1">
+                  <div className="text-[12px] font-bold" style={{ color: "var(--pos)" }}>{resumedSend.text}</div>
+                  {resumedSend.receiptCount != null && (
+                    <div className="text-[11px] mt-1" style={{ color: "var(--txt-2)" }}>
+                      {resumedSend.receiptCount} {tr("فیش")}
+                      {resumedSend.at ? ` · ${new Date(resumedSend.at).toLocaleString("en-GB")}` : ""}
+                    </div>
+                  )}
+                </div>
+                <button onClick={() => setResumedSend(null)} className="p-1.5 rounded-lg" style={{ color: "var(--txt-3)" }}><X className="w-4 h-4" /></button>
+              </div>
+            </Card>
+          )}
+
           {sendError && (
             <Card className="p-4" style={{ borderColor: "color-mix(in srgb, var(--neg) 35%, var(--line))", background: "color-mix(in srgb, var(--neg) 7%, var(--surf))" }}>
               <div className="flex items-start gap-2">
                 <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "var(--neg)" }} />
                 <div className="min-w-0 flex-1">
-                  <div className="text-[12px] font-bold" style={{ color: "var(--neg)" }}>ناردن سەرکەوتوو نەبوو</div>
-                  <div className="text-[11px] mt-1 leading-relaxed" style={{ color: "var(--txt-2)" }}>{sendError.message}</div>
+                  <div className="text-[12px] font-bold" style={{ color: "var(--neg)" }}>{sendError.message}</div>
+                  {sendError.detail && <div className="text-[11px] mt-1 leading-relaxed" style={{ color: "var(--txt-2)" }}>{sendError.detail}</div>}
                   {sendError.requestId && <div className="text-[10px] mt-1" dir="ltr" style={{ color: "var(--txt-3)" }}>Support code: {sendError.requestId}</div>}
                   <div className="text-[10.5px] mt-2" style={{ color: sendError.outcomeUnknown ? "var(--warn)" : "var(--txt-3)" }}>
                     {sendError.outcomeUnknown

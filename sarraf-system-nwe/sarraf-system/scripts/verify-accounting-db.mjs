@@ -107,6 +107,12 @@ try {
       deleted boolean default false);
     -- day_closes predates these migrations and lives only in the production database, so the
     -- fixture recreates the shape the application writes.
+    create table if not exists public.receipt_intake_items (
+      id text primary key, batch_id text, intake_status text, counted boolean default true,
+      currency text, net_amount numeric, partner_id text,
+      transaction_id text, converted_at timestamptz);
+    create table if not exists public.receipt_batches (
+      id text primary key, tx_id text, status text, receipt_stage text);
     create table if not exists public.ledger (
       id text primary key, type text not null, owner text, investor_id text,
       cur_id text references public.currencies(id), amount numeric(20,6) not null,
@@ -126,7 +132,7 @@ try {
   psqlFile(prereq);
 
   // The migration under test must apply to an empty database.
-  for (const m of ["202608120001_double_entry_core.sql", "202608120002_cashbox_and_debt.sql", "202608120003_accounting_commands.sql", "202608120004_partner_and_office.sql", "202608120005_receipt_state_machine.sql", "202608120006_transaction_journal.sql", "202608120007_receipt_intake_commands.sql", "202608120008_receipt_forwarding.sql", "202608120009_forwarding_guard_fix.sql", "202608130001_day_close_integrity.sql", "202608130002_ledger_journal_reconciliation.sql", "202608140001_single_currency_ratio.sql"]) {
+  for (const m of ["202608120001_double_entry_core.sql", "202608120002_cashbox_and_debt.sql", "202608120003_accounting_commands.sql", "202608120004_partner_and_office.sql", "202608120005_receipt_state_machine.sql", "202608120006_transaction_journal.sql", "202608120007_receipt_intake_commands.sql", "202608120008_receipt_forwarding.sql", "202608120009_forwarding_guard_fix.sql", "202608130001_day_close_integrity.sql", "202608130002_ledger_journal_reconciliation.sql", "202608140001_single_currency_ratio.sql", "202608140002_receipt_conversion_moves_money.sql"]) {
     psqlFile(path.join(root, "supabase/migrations", m));
   }
   psql("insert into public.app_users(id,name,role) values ('u-a','A','admin') on conflict do nothing");
@@ -575,7 +581,7 @@ try {
   // ── Phase 5: transactions post to the journal ──
   check("a completed buy posts a balanced entry with the spread recognised", () => {
     psql(`insert into public.txs(id,type,cur_id,amount,rate,against_id,total,status,date)
-          values ('tx-buy','buy','cny',7200,0.1972,'usd',1420,'completed',now())`);
+          values ('tx-buy','buy','cny',7200,0.138889,'usd',1000.00,'completed',now())`);
     const st = psql("select status from journal_entries where source_id='tx-buy'").trim();
     if (st !== "posted") throw new Error(`entry status is '${st}'`);
     const lines = Number(psql("select count(*) from journal_lines where entry_id='je-tx-tx-buy'").trim());
@@ -587,7 +593,7 @@ try {
 
   check("a pending buy books a payable rather than moving cash", () => {
     psql(`insert into public.txs(id,type,cur_id,amount,rate,against_id,total,status,date)
-          values ('tx-pend','buy','cny',720,0.1972,'usd',142,'pending',now())`);
+          values ('tx-pend','buy','cny',720,0.138889,'usd',100.00,'pending',now())`);
     const acct = psql(`select account_id from journal_lines
                        where entry_id='je-tx-tx-pend' and side='credit' order by line_no limit 1`).trim();
     if (acct !== "acc-2300") throw new Error(`pending buy credited ${acct}, expected the payable`);
@@ -595,7 +601,7 @@ try {
 
   check("a sell credits inventory and debits what came in", () => {
     psql(`insert into public.txs(id,type,cur_id,amount,rate,against_id,total,status,date)
-          values ('tx-sell','sell','cny',7200,0.2,'usd',1440,'completed',now())`);
+          values ('tx-sell','sell','cny',7200,0.14,'usd',1008.00,'completed',now())`);
     const inv = psql(`select side from journal_lines
                       where entry_id='je-tx-tx-sell' and account_id='acc-1400'`).trim();
     if (inv !== "credit") throw new Error(`inventory side on a sell is ${inv}`);
@@ -604,7 +610,7 @@ try {
   check("a transaction in a currency with no rate becomes a draft, never a guess", () => {
     psql(`insert into public.currencies(id,code,name) values ('try','TRY','Lira') on conflict do nothing`);
     psql(`insert into public.txs(id,type,cur_id,amount,rate,against_id,total,status,date)
-          values ('tx-norate','buy','try',100,1,'usd',10,'completed',now())`);
+          values ('tx-norate','buy','try',100,1,'usd',100,'completed',now())`);
     const st = psql("select status from journal_entries where source_id='tx-norate'").trim();
     if (st !== "draft") throw new Error(`expected a draft, got '${st}'`);
     const n = psql("select count(*) from journal_lines where entry_id='je-tx-tx-norate'").trim();
@@ -1001,12 +1007,12 @@ try {
   // Two records of the same money are only safe while they agree, and nothing was checking.
   check("a transaction the books never received is named, not hidden in a summary", () => {
     psql(`insert into public.txs(id,type,cur_id,amount,rate,against_id,total,status)
-          values ('tx-ok','buy','cny',100,7.2,'usd',13.89,'completed')`);
+          values ('tx-ok','buy','cny',100,0.138889,'usd',13.89,'completed')`);
     // The trigger is what posts an entry; disabling it reproduces a transaction that reached
     // the interface but never reached the books.
     psql("alter table public.txs disable trigger txs_post_journal");
     psql(`insert into public.txs(id,type,cur_id,amount,rate,against_id,total,status)
-          values ('tx-gap','buy','cny',500,7.2,'usd',69.44,'completed')`);
+          values ('tx-gap','buy','cny',500,0.138889,'usd',69.44,'completed')`);
     psql("alter table public.txs enable trigger txs_post_journal");
     const gaps = psql("select transaction_id||'|'||gap from public.v_ledger_journal_gaps order by 1").trim();
     if (!gaps.includes("tx-gap|no_journal_entry")) throw new Error(`gap not reported: ${gaps}`);
@@ -1117,6 +1123,90 @@ try {
 
   mustFail("a zero ratio is refused by the command too",
     `select public.sarraf_save_rates('[{"id":"cny","rate":0}]'::jsonb,'[]'::jsonb,'cmd-rate-bad','x','y')`);
+
+  // ── receipts become a real transaction, once ──
+  // The owner's report: "a yuan receipt arrived, so I am buying yuan — the yuan should go up
+  // and the dollars should come down, because this is a real transaction."
+  check("a completed purchase brings the currency in and takes the payment out", () => {
+    psql(`insert into public.txs(id,type,cur_id,amount,rate,against_id,total,status,date)
+          values ('tx-mv','buy','cny',3400,0.138889,'usd',472.22,'completed',now())`);
+    psql("select public.sarraf_ensure_transaction_ledger('tx-mv')");
+    const cny = psql("select amount from ledger where tx_id='tx-mv' and cur_id='cny'").trim();
+    const usd = psql("select amount from ledger where tx_id='tx-mv' and cur_id='usd'").trim();
+    if (Number(cny) !== 3400) throw new Error(`yuan moved by ${cny}, expected +3400`);
+    if (Number(usd) !== -472.22) throw new Error(`dollars moved by ${usd}, expected -472.22`);
+  });
+
+  // An unpaid purchase must not pretend cash left the safe.
+  check("an unpaid purchase brings the currency in and moves no cash", () => {
+    psql(`insert into public.txs(id,type,cur_id,amount,rate,against_id,total,status,date)
+          values ('tx-unpaid','buy','cny',1000,0.138889,'usd',138.89,'pending',now())`);
+    psql("select public.sarraf_ensure_transaction_ledger('tx-unpaid')");
+    const cny = psql("select amount from ledger where tx_id='tx-unpaid' and cur_id='cny'").trim();
+    const usd = psql("select count(*) from ledger where tx_id='tx-unpaid' and cur_id='usd'").trim();
+    if (Number(cny) !== 1000) throw new Error(`yuan moved by ${cny}`);
+    if (usd !== "0") throw new Error("an unpaid purchase moved cash");
+  });
+
+  check("a sale takes the currency out and brings the payment in", () => {
+    psql(`insert into public.txs(id,type,cur_id,amount,rate,against_id,total,status,date)
+          values ('tx-mv-sell','sell','cny',2000,0.14,'usd',280.00,'completed',now())`);
+    psql("select public.sarraf_ensure_transaction_ledger('tx-mv-sell')");
+    const cny = psql("select amount from ledger where tx_id='tx-mv-sell' and cur_id='cny'").trim();
+    const usd = psql("select amount from ledger where tx_id='tx-mv-sell' and cur_id='usd'").trim();
+    if (Number(cny) !== -2000) throw new Error(`yuan moved by ${cny}, expected -2000`);
+    if (Number(usd) !== 280) throw new Error(`dollars moved by ${usd}, expected +280`);
+  });
+
+  // Whichever path already moved the money, it must not be moved a second time.
+  check("the movement is written once, however often it is ensured", () => {
+    const before = psql("select count(*) from ledger where tx_id='tx-mv'").trim();
+    psql("select public.sarraf_ensure_transaction_ledger('tx-mv')");
+    psql("select public.sarraf_ensure_transaction_ledger('tx-mv')");
+    const after = psql("select count(*) from ledger where tx_id='tx-mv'").trim();
+    if (before !== after) throw new Error(`rows went from ${before} to ${after}`);
+  });
+
+  // The three numbers on a transaction must agree with each other.
+  mustFail("a total that its own rate does not support is refused",
+    `insert into public.txs(id,type,cur_id,amount,rate,against_id,total,status)
+     values ('tx-lies','buy','cny',3400,0.138889,'usd',999.99,'completed')`);
+
+  check("a rounding-sized difference is accepted, a real one is not", () => {
+    psql(`insert into public.txs(id,type,cur_id,amount,rate,against_id,total,status)
+          values ('tx-round','buy','cny',3400,0.138889,'usd',472.23,'completed')`);
+    let denied = false;
+    try {
+      psql(`insert into public.txs(id,type,cur_id,amount,rate,against_id,total,status)
+            values ('tx-round2','buy','cny',3400,0.138889,'usd',472.50,'completed')`);
+    } catch { denied = true; }
+    if (!denied) throw new Error("a total off by a quarter of a dollar was accepted");
+  });
+
+  mustFail("an edit cannot break the agreement either",
+    "update public.txs set total = 5000 where id='tx-mv'");
+
+  // A receipt already turned into a transaction cannot be turned into another one.
+  check("a converted receipt is named as converted, not merely ineligible", () => {
+    psql(`insert into public.receipt_intake_items(id,batch_id,intake_status,counted,currency,net_amount,transaction_id)
+          values ('ri-1','b-1','accepted',true,'CNY',3400,'tx-mv')`);
+    const n = psql(`select count(*) from public.sarraf_receipt_already_converted('["ri-1"]'::jsonb)`).trim();
+    if (n !== "1") throw new Error("an already-converted receipt was not reported");
+  });
+
+  check("an unconverted receipt is not reported as converted", () => {
+    psql(`insert into public.receipt_intake_items(id,batch_id,intake_status,counted,currency,net_amount)
+          values ('ri-2','b-1','accepted',true,'CNY',1000)`);
+    const n = psql(`select count(*) from public.sarraf_receipt_already_converted('["ri-2"]'::jsonb)`).trim();
+    if (n !== "0") throw new Error("a free receipt was reported as converted");
+  });
+
+  // Voiding the transaction must give the evidence back, or a mistaken conversion strands it.
+  check("voiding a transaction releases its receipts", () => {
+    psql("update public.txs set deleted = true where id='tx-mv'");
+    const still = psql("select coalesce(transaction_id,'FREE') from public.receipt_intake_items where id='ri-1'").trim();
+    if (still !== "FREE") throw new Error(`the receipt is still held by ${still}`);
+  });
 
   let failed = 0;
   for (const [ok, name] of checks) { console.log(`${ok ? "PASS" : "FAIL"}  ${name}`); if (!ok) failed++; }

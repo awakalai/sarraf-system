@@ -112,7 +112,20 @@ try {
       currency text, net_amount numeric, partner_id text,
       transaction_id text, converted_at timestamptz);
     create table if not exists public.receipt_batches (
-      id text primary key, tx_id text, status text, receipt_stage text);
+      id text primary key, tx_id text, status text, receipt_stage text,
+      customer_id text, customer_name text, partner_id text, uploaded_by text,
+      direction text, currency text,
+      total_gross numeric, total_fee numeric, total_net numeric,
+      n int, dup_n int, rejected_n int, source text,
+      created_at timestamptz not null default now());
+    create table if not exists public.receipts (
+      id text primary key, batch_id text, customer_id text, customer_name text,
+      partner_id text, uploaded_by text, direction text,
+      amount numeric, fee numeric, net_amount numeric, currency text,
+      sender text, receiver text, ref_no text, tx_time time, tx_date date,
+      bank text, platform text, note text, status text, counted boolean default true,
+      reject_code text, raw jsonb not null default '{}'::jsonb,
+      created_at timestamptz not null default now());
     create table if not exists public.ledger (
       id text primary key, type text not null, owner text, investor_id text,
       cur_id text references public.currencies(id), amount numeric(20,6) not null,
@@ -132,7 +145,7 @@ try {
   psqlFile(prereq);
 
   // The migration under test must apply to an empty database.
-  for (const m of ["202608120001_double_entry_core.sql", "202608120002_cashbox_and_debt.sql", "202608120003_accounting_commands.sql", "202608120004_partner_and_office.sql", "202608120005_receipt_state_machine.sql", "202608120006_transaction_journal.sql", "202608120007_receipt_intake_commands.sql", "202608120008_receipt_forwarding.sql", "202608120009_forwarding_guard_fix.sql", "202608130001_day_close_integrity.sql", "202608130002_ledger_journal_reconciliation.sql", "202608140001_single_currency_ratio.sql", "202608140002_receipt_conversion_moves_money.sql"]) {
+  for (const m of ["202608120001_double_entry_core.sql", "202608120002_cashbox_and_debt.sql", "202608120003_accounting_commands.sql", "202608120004_partner_and_office.sql", "202608120005_receipt_state_machine.sql", "202608120006_transaction_journal.sql", "202608120007_receipt_intake_commands.sql", "202608120008_receipt_forwarding.sql", "202608120009_forwarding_guard_fix.sql", "202608130001_day_close_integrity.sql", "202608130002_ledger_journal_reconciliation.sql", "202608140001_single_currency_ratio.sql", "202608140002_receipt_conversion_moves_money.sql", "202608150001_uploader_receipt_view.sql"]) {
     psqlFile(path.join(root, "supabase/migrations", m));
   }
   psql("insert into public.app_users(id,name,role) values ('u-a','A','admin') on conflict do nothing");
@@ -1206,6 +1219,110 @@ try {
     psql("update public.txs set deleted = true where id='tx-mv'");
     const still = psql("select coalesce(transaction_id,'FREE') from public.receipt_intake_items where id='ri-1'").trim();
     if (still !== "FREE") throw new Error(`the receipt is still held by ${still}`);
+  });
+
+  // ── a customer-seller sells, and reads back their own archive ──
+  // The owner's report: "the customer-seller may only send their own sale receipts, not
+  // purchase", and "the customer-seller and every other user must see the history and details
+  // of their own receipts".
+  psql(`insert into public.app_users(id,name,role,auth_id) values
+        ('cust-s','Seller','customer','66666666-6666-6666-6666-666666666666') on conflict do nothing`);
+  const asSeller = () => psql(`create or replace function auth.uid() returns uuid language sql stable
+        as $fn$ select '66666666-6666-6666-6666-666666666666'::uuid $fn$`);
+  const asAdmin = () => psql(`create or replace function auth.uid() returns uuid language sql stable
+        as $fn$ select '11111111-1111-1111-1111-111111111111'::uuid $fn$`);
+  asSeller();
+
+  check("a customer may send the receipts of what they sold", () => {
+    psql(`insert into public.receipt_batches(id,customer_id,uploaded_by,direction,currency,
+            total_gross,total_fee,total_net,n,rejected_n)
+          values ('b-s1','cust-s','cust-s','in','CNY',1700,6,1694,4,1)`);
+    psql(`insert into public.receipts(id,batch_id,customer_id,uploaded_by,direction,amount,fee,
+            net_amount,currency,receiver,raw,status,counted,ref_no) values
+          ('r-s1','b-s1','cust-s','cust-s','in',1000,3,997,'CNY','ئەحمەد','{}','ok',true,'R-1'),
+          ('r-s2','b-s1','cust-s','cust-s','in',500,1,499,'CNY','ئەحمەد','{}','ok',true,'R-2'),
+          ('r-s3','b-s1','cust-s','cust-s','in',200,2,198,'CNY',null,'{"payee":"Taobao"}','ok',true,'R-3'),
+          ('r-s4','b-s1','cust-s','cust-s','in',999,0,999,'CNY','ئەحمەد','{}','dup',false,'R-4')`);
+    const n = psql("select count(*) from public.receipts where batch_id='b-s1'").trim();
+    if (n !== "4") throw new Error(`the sale batch stored ${n} receipts`);
+  });
+
+  mustFail("a customer cannot send a batch of what they bought",
+    `insert into public.receipt_batches(id,customer_id,uploaded_by,direction,currency)
+     values ('b-bad','cust-s','cust-s','out','CNY')`);
+
+  mustFail("a customer cannot send a purchase receipt",
+    `insert into public.receipts(id,customer_id,uploaded_by,direction,amount,currency)
+     values ('r-bad','cust-s','cust-s','buy',100,'CNY')`);
+
+  mustFail("a customer cannot turn a sale into a purchase afterwards",
+    `update public.receipt_batches set direction='out' where id='b-s1'`);
+
+  check("an administrator still records both directions", () => {
+    asAdmin();
+    psql(`insert into public.receipt_batches(id,customer_id,uploaded_by,direction,currency)
+          values ('b-admin','cust-s','u-a','out','CNY')`);
+    const d = psql("select direction from public.receipt_batches where id='b-admin'").trim();
+    asSeller();
+    if (d !== "out") throw new Error(`the administrator's batch is ${d}`);
+  });
+
+  const sellerSummary = () => JSON.parse(psql("select public.sarraf_portal_receipt_summary(365)::text"));
+
+  check("the seller's grand total is stated with the fee and without it", () => {
+    const g = sellerSummary().grand_total;
+    if (g.length !== 1) throw new Error(`expected one currency, got ${JSON.stringify(g)}`);
+    const cny = g[0];
+    if (cny.currency !== "CNY") throw new Error(`currency is ${cny.currency}`);
+    if (Number(cny.with_fee) !== 1700) throw new Error(`with fee is ${cny.with_fee}, expected 1700`);
+    if (Number(cny.without_fee) !== 1694) throw new Error(`without fee is ${cny.without_fee}, expected 1694`);
+    if (Number(cny.count) !== 3) throw new Error(`counted ${cny.count} receipts, expected 3`);
+  });
+
+  check("a rejected receipt is shown but counted towards nothing", () => {
+    const s = sellerSummary();
+    if (Number(s.unread_count) !== 1) throw new Error(`unread is ${s.unread_count}`);
+    if (s.receipts.length !== 4) throw new Error(`the archive holds ${s.receipts.length} receipts`);
+    if (!s.receipts.some((r) => r.id === "r-s4" && r.status === "dup")) {
+      throw new Error("the rejected receipt is missing from the archive");
+    }
+  });
+
+  check("the summary says which recipient received how many receipts and how much", () => {
+    const r = sellerSummary().by_recipient;
+    if (r.length !== 2) throw new Error(`expected two recipients, got ${JSON.stringify(r)}`);
+    if (r[0].payee !== "ئەحمەد" || Number(r[0].count) !== 2) {
+      throw new Error(`the busiest recipient is ${JSON.stringify(r[0])}`);
+    }
+    if (Number(r[0].by_currency.CNY.without_fee) !== 1496) {
+      throw new Error(`ئەحمەد received ${r[0].by_currency.CNY.without_fee}, expected 1496`);
+    }
+    // The name lives in the raw payload for a merchant payment; reading only the receiver
+    // column is why receipts that plainly showed a name were reported as going to nobody.
+    if (r[1].payee !== "Taobao") throw new Error(`the merchant reads as ${r[1].payee}`);
+  });
+
+  check("the archive carries the details, and never a valuation", () => {
+    const one = sellerSummary().receipts.find((r) => r.id === "r-s1");
+    if (!one) throw new Error("the archive is missing a receipt the seller sent");
+    for (const f of ["ref_no", "currency", "amount", "fee", "net_amount", "payee", "created_at"]) {
+      if (one[f] === undefined) throw new Error(`the archive does not carry ${f}`);
+    }
+    const text = psql("select public.sarraf_portal_receipt_summary(365)::text");
+    if (/usd|"rate"/i.test(text)) throw new Error("the uploader's summary quotes a valuation");
+  });
+
+  check("one uploader never sees another's receipts", () => {
+    asAdmin();
+    psql(`insert into public.app_users(id,name,role,auth_id) values
+          ('cust-t','Other','customer','77777777-7777-7777-7777-777777777777') on conflict do nothing`);
+    psql(`create or replace function auth.uid() returns uuid language sql stable
+          as $fn$ select '77777777-7777-7777-7777-777777777777'::uuid $fn$`);
+    const s = JSON.parse(psql("select public.sarraf_portal_receipt_summary(365)::text"));
+    asAdmin();
+    if (s.receipts.length || s.grand_total.length) {
+      throw new Error(`a stranger saw ${s.receipts.length} receipts`);
+    }
   });
 
   let failed = 0;

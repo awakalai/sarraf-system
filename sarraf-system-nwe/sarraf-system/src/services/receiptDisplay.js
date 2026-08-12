@@ -116,6 +116,99 @@ export function uploaderTotals(receipts) {
 }
 
 /**
+ * The one currency a set of receipts is in — or nothing, when it is more than one.
+ *
+ * The owner's report: "I sent yuan, why does it show dollars here?" The screen took the first
+ * currency it happened to encounter and presented that currency's net as *the* headline total.
+ * With a yuan receipt and a dollar receipt in the same batch, the headline read USD and the
+ * yuan sat below it, which reads as a conversion the house never made.
+ *
+ * There is no such thing as one total across two currencies. When a set is mixed, no single
+ * figure may stand at the top of the screen — each currency is stated on its own.
+ */
+export function soleCurrency(receipts) {
+  const seen = new Set();
+  for (const r of receipts || []) {
+    const c = currencyOf(r);
+    if (c) seen.add(c);
+    if (seen.size > 1) return null;
+  }
+  return seen.size === 1 ? [...seen][0] : null;
+}
+
+/**
+ * A sale is money that came to the uploader; a purchase is money they sent out.
+ *
+ * A customer-seller earns yuan in China and sells it to the house. Their evidence is always a
+ * receipt of money received. Offering them the other direction invites a receipt the house
+ * cannot buy and, worse, one that would be booked the wrong way round.
+ */
+export const SALE_DIRECTIONS = Object.freeze(["in", "sell"]);
+export const PURCHASE_DIRECTIONS = Object.freeze(["out", "buy"]);
+
+export const DIRECTION_REFUSED = "کڕیار تەنها فیشی فرۆشتنی خۆی دەنێرێت";
+
+/** The directions this role is allowed to upload. Staff choose; a customer does not. */
+export function uploadDirectionsFor(role) {
+  return role === "customer" ? [...SALE_DIRECTIONS] : [...SALE_DIRECTIONS, ...PURCHASE_DIRECTIONS];
+}
+
+export function mayUploadDirection(role, direction) {
+  const d = String(direction ?? "").trim().toLowerCase();
+  return uploadDirectionsFor(role).includes(d);
+}
+
+const tidy = (n) => Math.round(n * 1e6) / 1e6;
+
+/**
+ * What the uploader asked to see: who received their receipts, and what the whole lot came to.
+ *
+ *   "the details the customer-seller needs to see are only: how many receipts went to which
+ *    recipient and how much went, the recipient's name, that many receipts and that much yuan,
+ *    and at the end the grand total with fee and without fee"
+ *
+ * With fee is what left the sender's account; without fee is what reached the recipient. Both
+ * are stated in the currency the receipt itself names — nothing is converted, and a receipt
+ * whose currency could not be read is counted apart rather than added to a currency it may not
+ * belong to.
+ */
+export function recipientSummary(receipts) {
+  const byName = new Map();
+  const grandTotal = {};
+  let unread = 0;
+
+  const bucket = (into, currency) => into[currency]
+    || (into[currency] = { count: 0, withFee: 0, withoutFee: 0, fee: 0 });
+
+  for (const r of receipts || []) {
+    const v = uploaderReceiptView(r);
+    if (!v.currencyKnown || v.net == null) { unread += 1; continue; }
+
+    const entry = byName.get(v.payee ?? null)
+      || { name: v.payee ?? PAYEE_UNKNOWN, named: v.payee != null, count: 0, byCurrency: {} };
+    byName.set(v.payee ?? null, entry);
+    entry.count += 1;
+
+    for (const b of [bucket(entry.byCurrency, v.currency), bucket(grandTotal, v.currency)]) {
+      b.count += 1;
+      b.withFee = tidy(b.withFee + (v.gross ?? v.net));
+      b.withoutFee = tidy(b.withoutFee + v.net);
+      b.fee = tidy(b.fee + (v.fee ?? 0));
+    }
+  }
+
+  // Busiest recipient first; a stable order after that, so the list does not reshuffle between
+  // two readings of the same figures. The unnamed group is always last — it is a gap to close,
+  // not a recipient.
+  const recipients = [...byName.values()].sort((a, b) =>
+    (a.named === b.named ? 0 : a.named ? -1 : 1)
+    || b.count - a.count
+    || a.name.localeCompare(b.name));
+
+  return { recipients, grandTotal, unread };
+}
+
+/**
  * May this person change what the reader extracted?
  *
  * Only staff, and only through the reviewed correction path. An uploader supplies the image;

@@ -16,7 +16,10 @@ import { revokeAllUrls, revokeDroppedUrls } from "./services/objectUrls";
 import { unrealizedPnl, unrealizedReasonText } from "./services/unrealizedPnl";
 import { capitalEventsFrom, investorShare, investorsTotalByCurrency, profitEventsFrom } from "./services/investorShare";
 import { crossRate, fromUsdAsOf, rateAsOf, rateErrorText, rateOf, unpricedCurrencies, usdFromAsOf, validateRate } from "./services/currencyRate";
-import { mayEditExtraction, payeeLabel } from "./services/receiptDisplay";
+import {
+  DIRECTION_REFUSED, mayEditExtraction, mayUploadDirection,
+  recipientSummary, uploadDirectionsFor,
+} from "./services/receiptDisplay";
 import { userFacingServiceError } from "./services/userFacingError";
 import { claimSharedReceiptHandoff, finishSharedReceiptHandoff, releaseSharedReceiptHandoff, sharedReceiptMessage, validateClaimedSharedFiles } from "./services/sharedReceiptHandoff";
 import { PortalDataStatus, PortalFrame, PortalPagedList, usePortalRoute } from "./components/portal/PortalFoundation";
@@ -6103,31 +6106,55 @@ function ReceiptTotals({ rows, data, title, compact, showValuation = true }) {
   const u = showValuation ? usdConv(data) : () => null;
   const counted = (rows || []).filter((r) => r.counted !== false && r.status !== "dup" && r.status !== "error");
   const rejected = (rows || []).filter((r) => r.counted === false || r.status === "dup" || r.status === "error");
-  const gross = {}, fees = {}, net = {}, byWho = {}, byPlat = {};
+  const gross = {}, fees = {}, net = {}, byPlat = {};
   counted.forEach((r) => {
     const c = r.currency || "?";
     const g = +(r.amount) || 0, f = +(r.fee) || 0;
     const n = r.net != null ? +r.net : (r.net_amount != null ? +r.net_amount : g - f);
     gross[c] = (gross[c] || 0) + g; fees[c] = (fees[c] || 0) + f; net[c] = (net[c] || 0) + n;
-    const k = payeeLabel(r);
-    byWho[k] = byWho[k] || { n: 0, cur: {} };
-    byWho[k].n++; byWho[k].cur[c] = (byWho[k].cur[c] || 0) + n;
     const pl = r.platform || detectPlatform(r.bank) || tr("نەزانراو");
     byPlat[pl] = byPlat[pl] || { n: 0, cur: {} };
     byPlat[pl].n++; byPlat[pl].cur[c] = (byPlat[pl].cur[c] || 0) + n;
   });
   const curs = Object.keys(gross);
-  const whoList = Object.entries(byWho).sort((a, b) => b[1].n - a[1].n);
+  // Who was paid, how many times, and how much — from the tested grouping rather than a second
+  // copy of it here, so the figure on the screen and the figure under test are the same figure.
+  const { recipients } = recipientSummary(counted);
   const platList = Object.entries(byPlat).sort((a, b) => b[1].n - a[1].n);
-  const mainCur = curs[0];
+  // A headline states one number in one currency, so it may only appear when there *is* one
+  // currency. A batch holding yuan and dollars used to headline whichever came first, which
+  // read as a conversion nobody made — "I sent yuan, why does it show dollars?". Mixed sets
+  // get a plain strip instead: every currency, side by side, none of them presented as the total.
+  const soleCur = curs.length === 1 ? curs[0] : null;
 
   return (
     <>
-      {mainCur && (
+      {soleCur && (
         <div className="relative pt-3 pb-1 aura">
           <Hero label={title || tr("گەیشتوو (بێ فی)")}
-            value={fmtMoney(data, net[mainCur], mainCur)} unit={mainCur}
-            sub={`${counted.length} ${tr("فیش")}${fees[mainCur] > 0 ? ` · ${tr("فی")} ${fmtMoney(data, fees[mainCur], mainCur)}` : ""}${u(net[mainCur], mainCur) != null ? ` · ≈ ${fmt(u(net[mainCur], mainCur), 2)} $` : ""}`} />
+            value={fmtMoney(data, net[soleCur], soleCur)} unit={soleCur}
+            sub={`${counted.length} ${tr("فیش")}${fees[soleCur] > 0 ? ` · ${tr("فی")} ${fmtMoney(data, fees[soleCur], soleCur)}` : ""}${u(net[soleCur], soleCur) != null ? ` · ≈ ${fmt(u(net[soleCur], soleCur), 2)} $` : ""}`} />
+        </div>
+      )}
+
+      {curs.length > 1 && (
+        <div className="pt-3 pb-1">
+          <div className="text-[11px] mb-2 px-1" style={{ color: "var(--txt-3)" }}>
+            {title || tr("گەیشتوو (بێ فی)")} · {counted.length} {tr("فیش")} · {curs.length} {tr("دراو")}
+          </div>
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {curs.map((c) => (
+              <Card key={c} className="px-3 py-2.5 shrink-0 min-w-[132px]">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <CurBadge c={(data?.currencies || []).find((x) => x.code === c)} size="sm" />
+                  <span className="text-[11px] font-semibold" style={{ color: "var(--txt-3)" }}>{c}</span>
+                </div>
+                <div className="text-[18px] font-semibold" style={{ ...num, color: "var(--pos)" }}>
+                  {fmtMoney(data, net[c], c)}
+                </div>
+              </Card>
+            ))}
+          </div>
         </div>
       )}
 
@@ -6150,7 +6177,7 @@ function ReceiptTotals({ rows, data, title, compact, showValuation = true }) {
                 </span>
               </div>
               <div className="flex justify-between items-baseline pt-2.5 mt-1" style={{ borderTop: "1px solid var(--line)" }}>
-                <span className="text-[13px] font-semibold" style={{ color: "var(--txt)" }}>{tr("گەیشتوو")}</span>
+                <span className="text-[13px] font-semibold" style={{ color: "var(--txt)" }}>{tr("گەیشتوو (بەبێ فی)")}</span>
                 <span className="text-[20px] font-semibold" style={{ ...num, color: "var(--pos)" }}>{fmtMoney(data, net[c], c)}</span>
               </div>
             </div>
@@ -6168,13 +6195,13 @@ function ReceiptTotals({ rows, data, title, compact, showValuation = true }) {
         </Card>
       )}
 
-      {!compact && whoList.length > 0 && (
+      {!compact && recipients.length > 0 && (
         <Card className="px-4 py-2">
           <div className="pt-2"><SecLbl>{tr("بەپێی وەرگر")}</SecLbl></div>
-          {whoList.map(([name, v]) => (
-            <Row key={name} title={name} sub={`${v.n} ${tr("فیش")}`}
-              right={Object.entries(v.cur).map(([c, a]) => `${fmtMoney(data, a, c)} ${c}`).join(" / ")}
-              rightSub={Object.entries(v.cur).map(([c, a]) => u(a, c) != null ? `≈ ${fmt(u(a, c), 0)} $` : null).filter(Boolean)[0]} />
+          {recipients.map((w) => (
+            <Row key={w.name} title={w.name} sub={`${w.count} ${tr("فیش")}`}
+              right={Object.entries(w.byCurrency).map(([c, a]) => `${fmtMoney(data, a.withoutFee, c)} ${c}`).join(" / ")}
+              rightSub={Object.entries(w.byCurrency).map(([c, a]) => u(a.withoutFee, c) != null ? `≈ ${fmt(u(a.withoutFee, c), 0)} $` : null).filter(Boolean)[0]} />
           ))}
         </Card>
       )}
@@ -6324,10 +6351,15 @@ function ReceiptList({ rows, showFrom }) {
 }
 
 /* ─────────── ئەپلۆدکەری فیش ─────────── */
-function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, direction = "in", onDone, flash, data, allowDirection, simple = false, staffReview = false }) {
+function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, direction = "in", onDone, flash, data, allowDirection, simple = false, staffReview = false, role }) {
   const [rows, setRows] = useState([]);
   const rowsRef = useRef([]);
-  const [dir, setDir] = useState(direction);
+  // A customer-seller sells to the house: their evidence is always money that arrived for them.
+  // Offering them the other direction invites a receipt the house is not buying, booked the
+  // wrong way round. Staff still choose, because staff record both sides of the counter.
+  const allowedDirections = uploadDirectionsFor(role);
+  const mayChooseDirection = !!allowDirection && allowedDirections.length > 1;
+  const [dir, setDir] = useState(allowedDirections.includes(direction) ? direction : allowedDirections[0]);
   const [working, setWorking] = useState(false);
   const [prog, setProg] = useState(null);
   const [sending, setSending] = useState(false);
@@ -6975,6 +7007,9 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
     if (working || processing.length) return flash("هێشتا هەندێک فیش دەخوێندرێنەوە");
     if (review.length) return flash(`${review.length} فیش پێویستیان بە پشکنینی دەستی هەیە`);
     if (retrying.length) return flash(`${retrying.length} فیش بەهۆی کێشەی کاتی خوێندنەوە چاوەڕوانن — ڕەت نەکراونەتەوە`);
+    // The database refuses this too; refusing here means the uploader is told before the images
+    // are sent rather than after.
+    if (!mayUploadDirection(role, dir)) return flash(DIRECTION_REFUSED);
     // Rejected and unreadable items are evidence too: their image, raw OCR,
     // reason, and server verdict must be retained even when no amount exists.
     const sendRows = [...good, ...bad];
@@ -7111,7 +7146,16 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
     <div className="space-y-4">
       {!simple && <DeferredPanel compact><ReceiptLifecycle stage={lifecycleStage} lang={_lang} /></DeferredPanel>}
 
-      {allowDirection && (
+      {!mayChooseDirection && role === "customer" && (
+        <Card className="p-4">
+          <Lbl>{tr("جۆری فیشەکان")}</Lbl>
+          <div className="text-[13px] mt-1" style={{ color: "var(--txt-2)" }}>
+            {tr("فیشی فرۆشتنی خۆت — ئەو پارەیەی بۆت هاتووە.")}
+          </div>
+        </Card>
+      )}
+
+      {mayChooseDirection && (
         <Card className="p-4">
           <Lbl>{tr("جۆری فیشەکان")}</Lbl>
           <div className="flex gap-2">
@@ -7650,7 +7694,7 @@ function ReceiptsHub({ data, usr, batches, batchLoadError, reloadBatches, flash,
           </div>
           {addFor && (
             <ReceiptUploader customerId={addFor} customerName={usr(addFor).name} uploaderId={profile?.id}
-              data={data} direction={addDir} allowDirection flash={flash} staffReview
+              data={data} direction={addDir} allowDirection flash={flash} staffReview role={profile?.role}
               onDone={() => { setAddFor(""); reloadBatches(); setTab("inbox"); }} />
           )}
         </Card>
@@ -8000,7 +8044,7 @@ function WhatsAppInfo({ batches, waN }) {
 }
 
 /* ─────────── فیشەکانی شوێنێک (لای خۆم یان لای هاوبەشێک) ─────────── */
-function LocationReceipts({ partnerId, data, title, flash }) {
+function LocationReceipts({ partnerId, data, title, flash, showValuation = true }) {
   const [recs, setRecs] = useState(null);
   const [recErr, setRecErr] = useState("");
   const [mode, setMode] = useState("month");
@@ -8074,7 +8118,7 @@ function LocationReceipts({ partnerId, data, title, flash }) {
             className={`flex-1 py-2 rounded-lg text-sm ${dir === k ? "bg-slate-900 text-white font-semibold" : "text-[var(--txt-2)]"}`}>{lbl}</button>
         ))}
       </div>
-      <ReceiptTotals rows={list} data={data} />
+      <ReceiptTotals rows={list} data={data} showValuation={showValuation} />
 
       <Btn kind="gold" className="w-full flex items-center justify-center gap-2" onClick={() => setShare(true)}>
         <Share2 className="w-4 h-4" /> {tr("ناردنی خشتەی وردەکاری")}
@@ -8655,7 +8699,9 @@ function ReceiptArchive({ customerId, data, flash, simple = false }) {
 
 /* ─────────── فیشەکانی هاوبەشێک (پۆرتاڵی خۆی) ─────────── */
 function PartnerReceipts({ partnerId, data, flash }) {
-  return <LocationReceipts partnerId={partnerId} data={data} flash={flash} />;
+  // The partner's own portal: their receipts, in the currency the receipts name. A valuation in
+  // dollars is the house's bookkeeping, not theirs.
+  return <LocationReceipts partnerId={partnerId} data={data} flash={flash} showValuation={false} />;
 }
 
 /* کەشف حساب — پوختەی حیسابی کڕیارێک بۆ ناردن */
@@ -11317,11 +11363,12 @@ function CustomerPortal({ user, c, base, data, calc, cur, usr, flash, reloadBatc
           <Back onClick={() => setTab("documents")} t={tr("گەڕانەوە")} />
           <Card className="p-4">
             <div className="text-[13px] leading-relaxed" style={{ color: "var(--txt-2)" }}>
-              {tr("سەرەتا دیاری بکە پارەکە نێردراوە یان هاتووە؛ پاشان وێنەی فیشەکان هەڵبژێرە. سیستەمەکە دەیانخوێنێتەوە، کۆیان دەکاتەوە و دووبارەکان دەدۆزێتەوە.")}
+              {tr("وێنەی ئەو فیشانە هەڵبژێرە کە پارەکەیان بۆت هاتووە. سیستەمەکە دەیانخوێنێتەوە، کۆیان دەکاتەوە و دووبارەکان دەدۆزێتەوە.")}
             </div>
           </Card>
           <ReceiptUploader customerId={user.id} customerName={user.name} uploaderId={user.id} data={data}
-            simple allowDirection flash={flash} onDone={() => { reloadBatches && reloadBatches(); setTab("documents"); }} />
+            role={user.role} direction="in"
+            simple flash={flash} onDone={() => { reloadBatches && reloadBatches(); setTab("documents"); }} />
         </>
       )}
 
@@ -11428,6 +11475,9 @@ function PartnerPortal({ user, data, calc, cur, usr, flash, reloadBatches, onlin
             return signed?.signedUrl || null;
           }} /></DeferredPanel>
         <PartnerReceipts partnerId={user.id} data={data} flash={flash} />
+        {/* Their own archive: what this partner themselves sent, with the details of each
+            receipt — the same view the customer-seller gets, scoped by the server to them. */}
+        <ReceiptArchive customerId={user.id} data={data} flash={flash} simple />
       </>}
       {tab === "upload" && (
         <>
@@ -11438,7 +11488,7 @@ function PartnerPortal({ user, data, calc, cur, usr, flash, reloadBatches, onlin
             </div>
           </Card>
           <ReceiptUploader partnerId={user.id} uploaderId={user.id} data={data} direction="out" allowDirection
-            simple flash={flash} onDone={() => { reloadBatches && reloadBatches(); setTab("documents"); }} />
+            role={user.role} simple flash={flash} onDone={() => { reloadBatches && reloadBatches(); setTab("documents"); }} />
         </>
       )}
       {tab === "activity" && (

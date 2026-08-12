@@ -42,16 +42,26 @@ export async function reviewReceiptBatch(client, { batchId, decision, txId = nul
   return { result: data, commandKey: key };
 }
 
-export async function finalizeReceiptBatch(client, { batchId, finalizationReason, ownerOverride = false, commandKey }) {
+/**
+ * Finalize a reviewed batch, quoting the summary version the decision was taken against.
+ *
+ * §4.15: if the OCR verdict, the accepted set or the rate has moved since this screen read the
+ * batch, the server refuses with 409 stale_summary rather than finalizing figures nobody
+ * actually looked at. Refusing here too means the person is told before the command is sent.
+ */
+export async function finalizeReceiptBatch(client, { batchId, finalizationReason, ownerOverride = false, commandKey, summaryVersion }) {
   const why = reason(finalizationReason);
   if (!batchId) throw new Error("receipt batch is required");
   if (why.length < 8) throw new Error("an 8-character finalization reason is required");
+  const version = String(summaryVersion || "").trim();
+  if (!version) throw new Error("the summary version being finalized must be quoted");
   const key = commandKey || createReceiptReviewCommand("finalize", batchId);
   const { data, error } = await client.rpc("sarraf_finalize_receipt_batch", {
     p_batch_id: batchId,
     p_reason: why,
     p_owner_override: !!ownerOverride,
     p_command_key: key,
+    p_summary_version: version,
   });
   if (error) throw error;
   return { result: data, commandKey: key };

@@ -117,6 +117,26 @@ try {
       direction text, currency text,
       total_gross numeric, total_fee numeric, total_net numeric,
       n int, dup_n int, rejected_n int, source text,
+      decision_status text, decision_by text, policy_version bigint, matched_score numeric,
+      finalized_at timestamptz, finalized_by text, finalization_reason text,
+      created_at timestamptz not null default now());
+    -- The review-policy migration predates these and lives only in the production database;
+    -- the fixture recreates the shape the finalization command reads and writes.
+    create table if not exists public.receipt_control_policy (
+      singleton boolean primary key default true check (singleton),
+      min_match_score integer not null default 80,
+      require_finalization boolean not null default true,
+      require_separate_finalizer boolean not null default true,
+      version bigint not null default 1);
+    insert into public.receipt_control_policy(singleton) values(true) on conflict do nothing;
+    create table if not exists public.receipt_review_commands (
+      actor_id text not null, command_key text not null, batch_id text,
+      decision text not null, result jsonb not null,
+      created_at timestamptz not null default now(), primary key(actor_id, command_key));
+    create table if not exists public.receipt_audit_events (
+      id bigint generated always as identity primary key, event_type text not null,
+      batch_id text not null, receipt_id text, actor_id text not null, command_key text not null,
+      metadata jsonb not null default '{}'::jsonb,
       created_at timestamptz not null default now());
     create table if not exists public.receipts (
       id text primary key, batch_id text, customer_id text, customer_name text,
@@ -145,7 +165,7 @@ try {
   psqlFile(prereq);
 
   // The migration under test must apply to an empty database.
-  for (const m of ["202608120001_double_entry_core.sql", "202608120002_cashbox_and_debt.sql", "202608120003_accounting_commands.sql", "202608120004_partner_and_office.sql", "202608120005_receipt_state_machine.sql", "202608120006_transaction_journal.sql", "202608120007_receipt_intake_commands.sql", "202608120008_receipt_forwarding.sql", "202608120009_forwarding_guard_fix.sql", "202608130001_day_close_integrity.sql", "202608130002_ledger_journal_reconciliation.sql", "202608140001_single_currency_ratio.sql", "202608140002_receipt_conversion_moves_money.sql", "202608150001_uploader_receipt_view.sql"]) {
+  for (const m of ["202608120001_double_entry_core.sql", "202608120002_cashbox_and_debt.sql", "202608120003_accounting_commands.sql", "202608120004_partner_and_office.sql", "202608120005_receipt_state_machine.sql", "202608120006_transaction_journal.sql", "202608120007_receipt_intake_commands.sql", "202608120008_receipt_forwarding.sql", "202608120009_forwarding_guard_fix.sql", "202608130001_day_close_integrity.sql", "202608130002_ledger_journal_reconciliation.sql", "202608140001_single_currency_ratio.sql", "202608140002_receipt_conversion_moves_money.sql", "202608150001_uploader_receipt_view.sql", "202608160001_canonical_batch_summary.sql"]) {
     psqlFile(path.join(root, "supabase/migrations", m));
   }
   psql("insert into public.app_users(id,name,role) values ('u-a','A','admin') on conflict do nothing");
@@ -1323,6 +1343,167 @@ try {
     if (s.receipts.length || s.grand_total.length) {
       throw new Error(`a stranger saw ${s.receipts.length} receipts`);
     }
+  });
+
+  // ── one canonical total, computed once, on the server ──
+  // §4.13's locked example: gross 2520.41 CNY, fee 73.41 CNY, net 2447.00 CNY at 1 USD = 7.20
+  // must give exactly 350.06, 10.20 and 339.86 USD — to the administrator and to the person who
+  // sent the receipts alike, from the same read model.
+  asAdmin();
+  psql("update public.currencies set rate = 7.20, rate_updated = now() where id='cny'");
+  psql(`insert into public.receipt_batches(id,customer_id,uploaded_by,direction,currency,receipt_stage)
+        values ('b-sum','cust-s','cust-s','in','CNY','matched')`);
+  psql(`insert into public.receipts(id,batch_id,customer_id,uploaded_by,direction,amount,fee,
+          net_amount,currency,receiver,status,counted) values
+        ('r-sum1','b-sum','cust-s','cust-s','in',1000.03,29.13,970.90,'CNY','ئەحمەد','ok',true),
+        ('r-sum2','b-sum','cust-s','cust-s','in',1520.38,44.28,1476.10,'CNY','ئەحمەد','ok',true)`);
+  const summary = (who) => { who(); return JSON.parse(psql("select public.sarraf_batch_summary('b-sum')::text")); };
+  // psql prints an error's text but not its SQLSTATE, so the probe hands both back as a value.
+  psql(`create or replace function public.zeman_probe_stale(p_batch text, p_version text)
+        returns text language plpgsql as $fn$
+        begin perform public.sarraf_assert_summary_current(p_batch, p_version); return 'ok';
+        exception when others then return sqlstate || '|' || sqlerrm; end $fn$`);
+
+  check("2520.41 CNY at 1 USD = 7.20 is 350.06, its fee 10.20, its net 339.86", () => {
+    const c = summary(asAdmin).currencies[0];
+    if (c.currency_code !== "CNY") throw new Error(`currency is ${c.currency_code}`);
+    if (c.native.gross_total.amount_decimal !== "2520.41") throw new Error(`gross ${c.native.gross_total.amount_decimal}`);
+    if (c.native.fee_total.amount_decimal !== "73.41") throw new Error(`fee ${c.native.fee_total.amount_decimal}`);
+    if (c.native.net_total.amount_decimal !== "2447.00") throw new Error(`net ${c.native.net_total.amount_decimal}`);
+    if (c.usd.gross_total.amount_decimal !== "350.06") throw new Error(`gross USD ${c.usd.gross_total.amount_decimal}`);
+    if (c.usd.fee_total.amount_decimal !== "10.20") throw new Error(`fee USD ${c.usd.fee_total.amount_decimal}`);
+    if (c.usd.net_total.amount_decimal !== "339.86") throw new Error(`net USD ${c.usd.net_total.amount_decimal}`);
+  });
+
+  check("the native equation holds: 2520.41 = 2447.00 + 73.41", () => {
+    if (summary(asAdmin).currencies[0].equation_holds !== true) throw new Error("the receipts disagree with themselves");
+  });
+
+  // Adding the display-rounded USD of each row gives 350.05, not 350.06. §4.12 forbids it, and
+  // this is the drift it forbids.
+  check("the total is divided once, not added up row by row", () => {
+    const rows = Number(psql(`select round(1000.03/7.20,2) + round(1520.38/7.20,2)`).trim());
+    const once = Number(summary(asAdmin).currencies[0].usd.gross_total.amount_decimal);
+    if (rows !== 350.05) throw new Error(`the row-wise answer is ${rows}; the example no longer proves anything`);
+    if (once !== 350.06) throw new Error(`the total-wise answer is ${once}, expected 350.06`);
+  });
+
+  check("every USD figure states what it came from and what produced it", () => {
+    const c = summary(asAdmin).currencies[0];
+    if (c.usd.gross_total.source_amount.amount_decimal !== "2520.41") throw new Error("the source amount is missing");
+    if (c.usd.gross_total.source_amount.currency_code !== "CNY") throw new Error("the source currency is missing");
+    if (!c.usd.gross_total.unrounded.startsWith("350.056")) throw new Error(`unrounded is ${c.usd.gross_total.unrounded}`);
+    if (c.rate.rate_value !== "7.20000000") throw new Error(`rate is ${c.rate.rate_value}`);
+    if (!c.rate.rate_convention.includes("1 USD = 7.2 CNY")) throw new Error(`convention is ${c.rate.rate_convention}`);
+  });
+
+  check("the administrator and the sender read the very same figures", () => {
+    const admin = psql("select public.sarraf_batch_summary('b-sum')::text");
+    asSeller();
+    const sender = psql("select public.sarraf_batch_summary('b-sum')::text");
+    asAdmin();
+    const strip = (s) => s.replace(/"calculated_at": ?"[^"]*"/g, "");
+    if (strip(admin) !== strip(sender)) throw new Error("the two roles were given different summaries");
+  });
+
+  check("a stranger cannot read a batch that is not theirs", () => {
+    psql(`create or replace function auth.uid() returns uuid language sql stable
+          as $fn$ select '77777777-7777-7777-7777-777777777777'::uuid $fn$`);
+    let denied = false;
+    try { psql("select public.sarraf_batch_summary('b-sum')"); } catch { denied = true; }
+    asAdmin();
+    if (!denied) throw new Error("a stranger read the batch");
+  });
+
+  // §4.15: the version moves when, and only when, something that changes the totals changes.
+  let lockedVersion = "";
+  check("the summary version holds still while nothing changes", () => {
+    lockedVersion = summary(asAdmin).summary_version;
+    if (!lockedVersion) throw new Error("no summary version was issued");
+    if (summary(asAdmin).summary_version !== lockedVersion) throw new Error("the version moved on its own");
+  });
+
+  check("rejecting a receipt issues a new version", () => {
+    psql("update public.receipts set counted=false, status='dup' where id='r-sum2'");
+    const now = summary(asAdmin);
+    psql("update public.receipts set counted=true, status='ok' where id='r-sum2'");
+    const back = summary(asAdmin).summary_version;
+    if (now.summary_version === lockedVersion) throw new Error("the verdict changed and the version did not");
+    if (now.currencies[0].native.gross_total.amount_decimal !== "1000.03") {
+      throw new Error(`the rejected receipt is still counted: ${now.currencies[0].native.gross_total.amount_decimal}`);
+    }
+    if (back !== lockedVersion) throw new Error("restoring the verdict did not restore the version");
+  });
+
+  check("changing the ratio issues a new version", () => {
+    psql("update public.currencies set rate = 7.10, rate_updated = now() where id='cny'");
+    const moved = summary(asAdmin).summary_version;
+    if (moved === lockedVersion) throw new Error("the rate changed and the version did not");
+    psql("update public.currencies set rate = 7.20, rate_updated = now() where id='cny'");
+  });
+
+  // §4.18: a missing rate is never a zero and never yesterday's number.
+  check("a currency with no ratio reports pending_rate, never a figure", () => {
+    psql(`insert into public.receipt_batches(id,customer_id,uploaded_by,direction,currency,receipt_stage)
+          values ('b-norate','cust-s','cust-s','in','XXX','matched')`);
+    psql(`insert into public.receipts(id,batch_id,customer_id,uploaded_by,direction,amount,fee,
+            net_amount,currency,status,counted)
+          values ('r-norate','b-norate','cust-s','cust-s','in',500,0,500,'XXX','ok',true)`);
+    const s = JSON.parse(psql("select public.sarraf_batch_summary('b-norate')::text"));
+    if (s.calculation_status !== "pending_rate") throw new Error(`status is ${s.calculation_status}`);
+    const c = s.currencies[0];
+    if (c.usd.status !== "pending_rate") throw new Error("a USD figure was produced without a ratio");
+    if (c.native.gross_total.amount_decimal !== "500") throw new Error("the native breakdown was withheld");
+    if (JSON.stringify(c.usd).includes("amount_decimal")) throw new Error("a USD amount appeared anyway");
+  });
+
+  check("a batch with nothing counted says so rather than reporting zero", () => {
+    psql(`insert into public.receipt_batches(id,customer_id,uploaded_by,direction,currency,receipt_stage)
+          values ('b-empty','cust-s','cust-s','in','CNY','matched')`);
+    const s = JSON.parse(psql("select public.sarraf_batch_summary('b-empty')::text"));
+    if (s.calculation_status !== "empty") throw new Error(`status is ${s.calculation_status}`);
+    if (s.currencies.length) throw new Error("an empty batch produced a currency");
+  });
+
+  // §4.15: finalization quoting a version that has moved is refused with 409 stale_summary.
+  check("acting on the current version is allowed", () => {
+    const out = psql(`select public.zeman_probe_stale('b-sum', '${lockedVersion}')`).trim();
+    if (out !== "ok") throw new Error(`the current version was refused: ${out}`);
+  });
+
+  check("acting on a version that has moved is refused as stale, with 409", () => {
+    psql("update public.receipts set amount = 1300.20 where id='r-sum1'");
+    const out = psql(`select public.zeman_probe_stale('b-sum', '${lockedVersion}')`).trim();
+    psql("update public.receipts set amount = 1000.03 where id='r-sum1'");
+    if (out !== "PT409|stale_summary") throw new Error(`the refusal was ${out}`);
+  });
+
+  mustFail("an action that quotes no version at all is refused",
+    `select public.sarraf_assert_summary_current('b-sum', null)`);
+
+  check("finalization refuses a stale version before it writes anything", () => {
+    psql("update public.receipt_batches set decision_status='rejected', matched_score=100 where id='b-sum'");
+    psql("update public.receipt_batches set receipt_stage='matched' where id='b-sum'");
+    const stale = "0".repeat(32);
+    let denied = false;
+    try {
+      psql(`select public.sarraf_finalize_receipt_batch('b-sum','the figures were checked',false,
+              'receipt-finalize:b-sum:none:stale-attempt-0001','${stale}')`);
+    } catch { denied = true; }
+    const stage = psql("select receipt_stage from public.receipt_batches where id='b-sum'").trim();
+    if (!denied) throw new Error("a stale finalization was accepted");
+    if (stage !== "matched") throw new Error(`the batch was written anyway: ${stage}`);
+  });
+
+  check("finalization quoting the current version succeeds and records it", () => {
+    const v = JSON.parse(psql("select public.sarraf_batch_summary('b-sum')::text")).summary_version;
+    psql(`select public.sarraf_finalize_receipt_batch('b-sum','the figures were checked',false,
+            'receipt-finalize:b-sum:none:good-attempt-00001','${v}')`);
+    const stage = psql("select receipt_stage from public.receipt_batches where id='b-sum'").trim();
+    const recorded = psql(`select result->>'summary_version' from public.receipt_review_commands
+                           where command_key='receipt-finalize:b-sum:none:good-attempt-00001'`).trim();
+    if (stage !== "finalized") throw new Error(`the batch is ${stage}`);
+    if (recorded !== v) throw new Error(`the finalization recorded ${recorded}`);
   });
 
   let failed = 0;

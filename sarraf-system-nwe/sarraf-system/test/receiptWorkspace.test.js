@@ -108,8 +108,9 @@ test("moving a receipt forward needs no reason", async () => {
   assert.deepEqual(c.updates[0].patch, { state: "validated" });
 });
 
-// §11.13: totals come only from accepted receipts, and never cross currencies.
-test("batch totals count only accepted receipts and keep currencies apart", () => {
+// §11.13 with §4.14: the queue footer counts documents. The money belongs to one place only,
+// the server's canonical batch summary, so that two people cannot be shown two answers.
+test("the queue footer counts documents and never money", () => {
   const docs = [
     { id: "a", state: "accepted", counted: true },
     { id: "b", state: "accepted", counted: true },
@@ -126,11 +127,12 @@ test("batch totals count only accepted receipts and keep currencies apart", () =
   assert.equal(totals.pending, 1);
   assert.equal(totals.rejected, 1);
   assert.equal(totals.duplicate, 1);
-  assert.equal(totals.byCurrency.CNY.net, 1222);
-  assert.equal(totals.byCurrency.USD.net, 100);
-  assert.ok(!("CNYUSD" in totals.byCurrency));
-  // The pending receipt's 9999 must not appear in any total.
-  assert.equal(totals.byCurrency.CNY.gross, 1258.66);
+  assert.equal(totals.byCurrency.CNY.count, 1);
+  assert.equal(totals.byCurrency.USD.count, 1);
+  assert.ok(!("CNYUSD" in totals.byCurrency), "currencies are never merged");
+  // No amount is totalled in the browser at all — not even one that is never displayed.
+  assert.deepEqual(Object.keys(totals.byCurrency.CNY), ["count"]);
+  assert.equal(JSON.stringify(totals).includes("1258.66"), false);
 });
 
 test("a receipt still under review never contributes to a total", () => {

@@ -22,6 +22,25 @@ test("short rejection, correction, finalization and policy reasons fail before R
   await assert.rejects(() => updateReceiptPolicy(client, { policy: {}, updateReason: "too short" }), /12-character/);
 });
 
+// §4.15: finalization is an action taken against a particular set of figures, and must say
+// which. A finalization that names no version could be finalizing numbers nobody looked at.
+test("finalization must quote the summary version it was decided against", async () => {
+  const client = { rpc: async () => { throw new Error("must not call"); } };
+  await assert.rejects(
+    () => finalizeReceiptBatch(client, { batchId: "b", finalizationReason: "the figures were checked" }),
+    /summary version/);
+});
+
+test("the quoted version travels with the command", async () => {
+  const calls = [];
+  const client = { rpc: async (name, args) => { calls.push([name, args]); return { data: { finalized: true }, error: null }; } };
+  await finalizeReceiptBatch(client, {
+    batchId: "batch-123456789", finalizationReason: "the figures were checked", summaryVersion: "v-aaa",
+  });
+  assert.equal(calls[0][0], "sarraf_finalize_receipt_batch");
+  assert.equal(calls[0][1].p_summary_version, "v-aaa");
+});
+
 test("receipt policy parsing preserves explicit false controls", async () => {
   const client = { rpc: async () => ({ data: { min_match_score: 82, require_reason_below: 94, allow_reject: false, allow_correction: false, require_finalization: true, require_separate_finalizer: true, version: 3 }, error: null }) };
   const policy = await loadReceiptPolicy(client);

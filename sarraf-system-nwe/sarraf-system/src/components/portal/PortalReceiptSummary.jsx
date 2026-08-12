@@ -1,4 +1,5 @@
 import React from "react";
+import { CanonicalBatchSummary } from "../receipts/CanonicalBatchSummary";
 
 const STAGE_LABEL = {
   received: "وەرگیرا",
@@ -36,9 +37,23 @@ const num0 = (v) => (v === null || v === undefined || v === "" ? 0 : Number(v) |
  * Every figure comes from the server (sarraf_portal_receipt_summary); nothing here is totalled
  * in the browser.
  */
-export function PortalReceiptSummary({ summary, data, ui }) {
-  const { Card, Empty, Hero, Pill, fmtMoney, tr, num } = ui;
+export function PortalReceiptSummary({ summary, data, ui, loadSummary }) {
+  const { Card, Empty, Hero, Pill, tr, num } = ui;
+  const fmtMoney = ui.fmtMoney;
   const [showAll, setShowAll] = React.useState(false);
+  // §4.14: the same canonical read model the administrator sees for a batch, opened here by the
+  // person who sent it. One endpoint, one set of figures, no second implementation to disagree.
+  const [openBatch, setOpenBatch] = React.useState(null);
+  const [batchSummary, setBatchSummary] = React.useState(null);
+  const [batchError, setBatchError] = React.useState("");
+
+  const openBatchSummary = async (batchId) => {
+    if (openBatch === batchId) { setOpenBatch(null); return; }
+    setOpenBatch(batchId); setBatchSummary(null); setBatchError("");
+    if (!loadSummary) return;
+    try { setBatchSummary(await loadSummary(batchId)); }
+    catch (error) { setBatchError(error?.message || "کۆکانە بار نەبوو"); }
+  };
 
   const totals = Array.isArray(summary?.totals) ? summary.totals : [];
   const batches = Array.isArray(summary?.batches) ? summary.batches : [];
@@ -209,16 +224,31 @@ export function PortalReceiptSummary({ summary, data, ui }) {
             {tr("ناردنەکان")}
           </div>
           {batches.map((b, i) => (
-            <div key={b.id} className="flex items-center justify-between gap-3 py-3" style={i ? { borderTop: "1px solid var(--line)" } : {}}>
-              <div className="min-w-0">
-                <div className="text-[13px] font-semibold" style={{ ...num, color: "var(--txt)" }}>
-                  {fmtMoney(data, b.total_net, b.currency)} <span className="text-[11px]" style={{ color: "var(--txt-3)" }}>{b.currency}</span>
+            <div key={b.id} style={i ? { borderTop: "1px solid var(--line)" } : {}}>
+              <button type="button" onClick={() => openBatchSummary(b.id)}
+                className="w-full flex items-center justify-between gap-3 py-3 text-right tap"
+                aria-expanded={openBatch === b.id}>
+                <div className="min-w-0">
+                  <div className="text-[13px] font-semibold" style={{ ...num, color: "var(--txt)" }}>
+                    {fmtMoney(data, b.total_net, b.currency)} <span className="text-[11px]" style={{ color: "var(--txt-3)" }}>{b.currency}</span>
+                  </div>
+                  <div className="text-[11px] mt-0.5" style={{ color: "var(--txt-3)" }}>
+                    {b.n || 0} {tr("فیش")}{b.rejected_n ? ` · ${b.rejected_n} ${tr("هەژمار نەکراوە")}` : ""} · {b.created_at ? new Date(b.created_at).toLocaleDateString("en-GB") : "—"}
+                  </div>
                 </div>
-                <div className="text-[11px] mt-0.5" style={{ color: "var(--txt-3)" }}>
-                  {b.n || 0} {tr("فیش")}{b.rejected_n ? ` · ${b.rejected_n} ${tr("هەژمار نەکراوە")}` : ""} · {b.created_at ? new Date(b.created_at).toLocaleDateString("en-GB") : "—"}
+                <Pill tone={STAGE_TONE[b.receipt_stage] || "slate"}>{tr(STAGE_LABEL[b.receipt_stage] || b.receipt_stage || "—")}</Pill>
+              </button>
+              {openBatch === b.id && (
+                <div className="pb-3">
+                  {batchError
+                    ? <div className="text-[12px]" style={{ color: "var(--neg)" }}>{batchError}</div>
+                    : batchSummary
+                      // The uploader is shown the native figures only; §4 keeps the valuation
+                      // for the operator's own screen until the transaction has been made.
+                      ? <CanonicalBatchSummary summary={batchSummary} ui={ui} showUsd={false} />
+                      : <div className="text-[12px]" style={{ color: "var(--txt-3)" }}>{tr("بارکردن...")}</div>}
                 </div>
-              </div>
-              <Pill tone={STAGE_TONE[b.receipt_stage] || "slate"}>{tr(STAGE_LABEL[b.receipt_stage] || b.receipt_stage || "—")}</Pill>
+              )}
             </div>
           ))}
         </Card>

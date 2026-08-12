@@ -186,7 +186,16 @@ export async function correctExtraction(client, { documentId, base, changes, rea
   return { documentId, version: (base.version || 0) + 1 };
 }
 
-/** Batch totals for the review footer (§11.13): accepted only, and never across currencies. */
+/**
+ * How the review queue stands (§11.13): how many are accepted, waiting, rejected, duplicate.
+ *
+ * Counts of documents — never money. §4.14 puts the totals of a batch in exactly one place, the
+ * server's `sarraf_batch_summary`, so that the reviewer and the person who sent the receipts
+ * cannot be shown two different answers. This function used to add up amounts per currency as
+ * well; that made a second, browser-side set of figures which nothing displayed and which would
+ * one day have been displayed. It is gone, and the count of accepted documents per currency
+ * stays only so the footer can say what the queue holds.
+ */
 export function reviewTotals(documents, extractionByDoc = {}) {
   const out = { accepted: 0, pending: 0, rejected: 0, duplicate: 0, byCurrency: {} };
   for (const d of documents || []) {
@@ -195,14 +204,9 @@ export function reviewTotals(documents, extractionByDoc = {}) {
     const counted = d.counted || ["accepted", "finalized", "forwarded", "delivered", "seen"].includes(d.state);
     if (!counted) { out.pending += 1; continue; }
     out.accepted += 1;
-    const v = extractionByDoc[d.id];
-    const cur = upper(v?.currency);
+    const cur = upper(extractionByDoc[d.id]?.currency);
     if (!cur) continue;
-    const bucket = out.byCurrency[cur] || (out.byCurrency[cur] = { gross: 0, fee: 0, net: 0, count: 0 });
-    bucket.gross += v.grossAmount || 0;
-    bucket.fee += v.feeAmount || 0;
-    bucket.net += v.netAmount ?? Math.max(0, (v.grossAmount || 0) - (v.feeAmount || 0));
-    bucket.count += 1;
+    out.byCurrency[cur] = { count: (out.byCurrency[cur]?.count || 0) + 1 };
   }
   return out;
 }

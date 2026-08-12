@@ -8,6 +8,7 @@ import { DICT } from "./i18n/dictionary";
 import { computeInventoryPosition } from "./services/inventoryAccounting";
 import { createReceiptReviewCommand, finalizeReceiptBatch, loadReceiptPolicy, reviewReceiptBatch } from "./services/receiptReview";
 import { assignReceiptCustody, convertReceiptBatchToTransaction, loadPortalReceiptSummary } from "./services/receiptOperations";
+import { STALE_MESSAGE, isStale, loadBatchSummary, versionOf } from "./services/batchSummary";
 import { dayCloseMessage, validateDayClose } from "./services/dayClose";
 import { rehearseRestore, sealBackup, verdictText } from "./services/backupIntegrity";
 import { CommandKeyBook, runIdempotentCommand } from "./services/commandRetry";
@@ -51,6 +52,7 @@ const ReceiptReviewWorkspace = lazyNamed(() => import("./components/receipts/Rec
 const ReceiptForwardingCenter = lazyNamed(() => import("./components/receipts/ReceiptForwardingCenter"), "ReceiptForwardingCenter");
 const ForwardedReceipts = lazyNamed(() => import("./components/receipts/ForwardedReceipts"), "ForwardedReceipts");
 const BooksReconciliation = lazyNamed(() => import("./components/accounting/BooksReconciliation"), "BooksReconciliation");
+const CanonicalBatchSummary = lazyNamed(() => import("./components/receipts/CanonicalBatchSummary"), "CanonicalBatchSummary");
 
 function DeferredPanel({ children, compact = false }) {
   return <React.Suspense fallback={<section className={`animate-pulse rounded-[var(--r)] border border-[var(--line)] bg-[var(--surf)] ${compact ? "h-12" : "h-28"}`} aria-live="polite" aria-label="Loading ZEMAN module" />}>
@@ -8147,6 +8149,10 @@ function BatchDetail({ id, back, usr, data, profile, onMakeTx, flash, reloadBatc
   const [decisionBusy, setDecisionBusy] = useState(null);
   const [finalizationReason, setFinalizationReason] = useState("");
   const [finalizationBusy, setFinalizationBusy] = useState(false);
+  // §4.14: the canonical totals, computed on the server and read identically by the
+  // administrator here and by the person who sent the receipts in their own portal.
+  const [summary, setSummary] = useState(null);
+  const [summaryError, setSummaryError] = useState("");
   const [split, setSplit] = useState(false);
   const [share, setShare] = useState(false);
   const [pick, setPick] = useState({});        // {receiptId: partnerId|""}
@@ -8167,6 +8173,14 @@ function BatchDetail({ id, back, usr, data, profile, onMakeTx, flash, reloadBatc
       supabase.rpc("sarraf_receipt_match_candidates", { p_batch_id: id, p_limit: 5 }),
       loadReceiptPolicy(supabase).catch(() => null),
     ]);
+    try {
+      setSummary(await loadBatchSummary(supabase, id));
+      setSummaryError("");
+    } catch (error) {
+      console.error("batch summary", error);
+      setSummary(null);
+      setSummaryError(error?.message || "کۆکانەی سێرڤەر بار نەبوو");
+    }
     setB(bb.data || null); setRecs(rr.data || []); setIntakeItems(ii.error ? [] : (ii.data || []));
     const legacyEvents = ee.error ? [] : (ee.data || []);
     const auditedEvents = aa.error ? [] : (aa.data || []).map((event) => ({
@@ -8300,11 +8314,16 @@ function BatchDetail({ id, back, usr, data, profile, onMakeTx, flash, reloadBatc
       return flash(`هۆکاری پشکنینی کۆتایی لانیکەم ${requiredLength} پیت بێت`);
     }
     if (sameMaker && !ownerOverride) return flash("ئەدمینێکی جیاواز دەبێت پشکنینی کۆتایی ئەم بڕیارە بکات");
+    // §4.15: the decision is taken against a particular set of figures and says which. If they
+    // have moved since this screen read them, the server refuses and the screen reloads rather
+    // than finalizing numbers nobody looked at.
+    const version = versionOf(summary);
+    if (!version) return flash("کۆکانەی سێرڤەر بار نەبووە — تکایە پەڕەکە نوێ بکەرەوە");
     finalizationCommandRef.current ||= createReceiptReviewCommand("finalize", id);
     setFinalizationBusy(true);
     try {
       await finalizeReceiptBatch(supabase, { batchId: id, finalizationReason,
-        ownerOverride, commandKey: finalizationCommandRef.current });
+        ownerOverride, commandKey: finalizationCommandRef.current, summaryVersion: version });
       finalizationCommandRef.current = null;
       setFinalizationReason("");
       flash("بڕیاری فیش پشکنینی کۆتایی و تۆماری وردبینی بۆ کرا ✓");
@@ -8312,7 +8331,14 @@ function BatchDetail({ id, back, usr, data, profile, onMakeTx, flash, reloadBatc
       reloadBatches && reloadBatches();
     } catch (error) {
       console.error("receipt finalization", error);
-      flash(error?.message || "پشکنینی کۆتایی سەرکەوتوو نەبوو");
+      if (isStale(error)) {
+        // A fresh key, because the figures this one was minted against no longer exist.
+        finalizationCommandRef.current = null;
+        await load();
+        flash(STALE_MESSAGE);
+      } else {
+        flash(error?.message || "پشکنینی کۆتایی سەرکەوتوو نەبوو");
+      }
     } finally {
       setFinalizationBusy(false);
     }
@@ -8356,6 +8382,12 @@ function BatchDetail({ id, back, usr, data, profile, onMakeTx, flash, reloadBatc
                 : <Pill tone="slate">بڕیار تەواوە</Pill>}
         </div>
       </div>
+
+      {/* The canonical figures, from the server. The same read model the sender's own portal
+          shows, so the two screens can never disagree about what this batch came to. */}
+      {summaryError
+        ? <Card className="p-4"><StatePanel type="error" title={tr("کۆکانەی سێرڤەر بار نەبوو")} detail={summaryError} onRetry={load} compact /></Card>
+        : <React.Suspense fallback={null}><CanonicalBatchSummary summary={summary} ui={{ Card, Pill, tr, num }} /></React.Suspense>}
 
       <ReceiptTotals rows={recs} data={data} />
 
@@ -8655,7 +8687,8 @@ function ReceiptArchive({ customerId, data, flash, simple = false }) {
     if (portalSummary === null) return <Card><StatePanel type="loading" title={tr("بارکردن...")} compact /></Card>;
     if (portalSummaryError) return <Card><StatePanel type="error" title={tr("پوختەی فیشەکان بار نەبوو")} detail={portalSummaryError} compact /></Card>;
     return <DeferredPanel><PortalReceiptSummary summary={portalSummary} data={data}
-      ui={{ Card, Empty, Hero, Pill, fmtMoney, tr, num }} /></DeferredPanel>;
+      ui={{ Card, Empty, Hero, Pill, fmtMoney, tr, num }}
+      loadSummary={(batchId) => loadBatchSummary(supabase, batchId)} /></DeferredPanel>;
   }
 
   if (!recs) return <Card><Empty t={tr("بارکردن...")} /></Card>;

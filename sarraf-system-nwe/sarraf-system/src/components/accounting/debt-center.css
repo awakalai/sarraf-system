@@ -169,3 +169,58 @@
 }
 .recon-badge.is-bad { background: color-mix(in srgb, var(--neg) 14%, transparent); color: var(--neg); }
 .recon-note { margin: 0; font-size: 10.5px; color: var(--txt-3); }
+
+/* ── §13.C.6/7 and §13.F.1: netting, writing off, and the numbered register ── */
+.debt-row-actions { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+.debt-row-actions > button {
+  font-size: 10.5px; font-weight: 600; padding: 3px 9px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--surf-2); color: var(--txt-2); cursor: pointer;
+}
+.debt-row-actions > button:hover { color: var(--txt); border-color: var(--txt-3); }
+
+.debt-history { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+.debt-history > li {
+  font-size: 11px; color: var(--txt-2); padding: 6px 9px;
+  border-inline-start: 2px solid var(--line); background: var(--surf-2);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+}
+
+.debt-offset-bar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin-top: 12px; padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surf-2);
+  font-size: 12px; color: var(--txt);
+}
+.debt-offset-bar > button {
+  margin-inline-start: auto; font-size: 11.5px; font-weight: 700; padding: 6px 14px;
+  border-radius: var(--r-sm); border: 1px solid var(--line);
+  background: var(--surf); color: var(--txt); cursor: pointer;
+}
+.debt-offset-bar > button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.debt-action {
+  margin-top: 10px; padding: 12px; display: grid; gap: 8px;
+  border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surf-2);
+}
+.debt-action > label { font-size: 11.5px; font-weight: 600; color: var(--txt-2); }
+.debt-action > textarea {
+  width: 100%; font: inherit; font-size: 12px; padding: 8px; resize: vertical;
+  border: 1px solid var(--line); border-radius: var(--r-sm);
+  background: var(--surf); color: var(--txt);
+}
+.debt-action-buttons { display: flex; gap: 8px; justify-content: flex-end; }
+.debt-action-buttons > button {
+  font-size: 11.5px; font-weight: 700; padding: 6px 14px; border-radius: var(--r-sm);
+  border: 1px solid var(--line); background: var(--surf); color: var(--txt); cursor: pointer;
+}
+.debt-action-buttons > button:last-child { background: var(--neg); border-color: var(--neg); color: #fff; }
+.debt-action-buttons > button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.debt-vouchers { margin-top: 16px; }
+.debt-vouchers > h3 { margin: 0 0 8px; font-size: 12px; font-weight: 700; color: var(--txt-2); }
+.debt-vouchers > ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.debt-vouchers > ul > li {
+  font-size: 11.5px; color: var(--txt-2); padding: 8px 10px;
+  border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surf-2);
+}
+.debt-vouchers strong { font-family: var(--mono, monospace); direction: ltr; unicode-bidi: embed; color: var(--txt); }

@@ -4,6 +4,10 @@ import {
   AGING_BUCKETS, agingBucketOf, loadCustomerVaults, loadDebts,
   loadSubledgerReconciliation, loadTrialBalance, summarizeDebts,
 } from "../../services/accounting";
+import {
+  DEBT_EVENT_KU, OFFSET_REASON_MIN, VOUCHER_KIND_KU, WRITE_OFF_REASON_MIN,
+  loadDebtHistory, loadVoucherRegister, offsetAmount, offsetDebts, offsetObjection, writeOffDebt,
+} from "../../services/debtRegister";
 import "./debt-center.css";
 
 const COPY = {
@@ -16,6 +20,12 @@ const COPY = {
     balanced: "دەفتەر هاوسەنگە", unbalanced: "دەفتەر هاوسەنگ نییە", entries: "تۆمار",
     loading: "بارکردن...", failed: "زانیاری بار نەبوو", owes: "قەرزارە بە",
     zeman: "زیمان", buckets: { current: "ئێستا", "1-7": "١–٧ ڕۆژ", "8-30": "٨–٣٠ ڕۆژ", "31-60": "٣١–٦٠ ڕۆژ", "60+": "٦٠+ ڕۆژ" },
+    select: "هەڵبژاردن", offset: "دانانەوەی دوولایەنە", writeOff: "بەخشینی قەرز",
+    history: "مێژوو", vouchers: "پسووڵەکان", noVouchers: "هێشتا هیچ پسووڵەیەک دەرنەکراوە",
+    reason: "هۆکار", cancel: "پاشگەزبوونەوە", confirm: "جێبەجێکردن", working: "جێبەجێکردن...",
+    willCancel: "ئەمەندە دەبڕدرێتەوە", offsetDone: "دانانەوە کرا", writeOffDone: "قەرزەکە بەخشرا",
+    voucher: "پسووڵە", pickTwo: "دوو قەرز هەڵبژێرە بۆ دانانەوە",
+    reasonHint: (n) => `لانیکەم ${n} پیت`,
   },
   en: {
     title: "Debt & Cashbox Centre", subtitle: "Debts by explicit direction and currency — never netted",
@@ -27,6 +37,12 @@ const COPY = {
     loading: "Loading…", failed: "Could not load", owes: "owes",
     zeman: "ZEMAN",
     buckets: { current: "Current", "1-7": "1–7 days", "8-30": "8–30 days", "31-60": "31–60 days", "60+": "60+ days" },
+    select: "Select", offset: "Offset", writeOff: "Write off",
+    history: "History", vouchers: "Vouchers", noVouchers: "No vouchers issued yet",
+    reason: "Reason", cancel: "Cancel", confirm: "Confirm", working: "Working…",
+    willCancel: "This much cancels", offsetDone: "Offset recorded", writeOffDone: "Debt written off",
+    voucher: "Voucher", pickTwo: "Select two debts to offset",
+    reasonHint: (n) => `at least ${n} characters`,
   },
   ar: {
     title: "مركز الديون والخزنة", subtitle: "الديون باتجاه وعملة واضحين — دون دمج العملات",
@@ -38,6 +54,12 @@ const COPY = {
     loading: "جارٍ التحميل…", failed: "تعذر التحميل", owes: "مدين لـ",
     zeman: "زيمان",
     buckets: { current: "حالي", "1-7": "١–٧ أيام", "8-30": "٨–٣٠ يوم", "31-60": "٣١–٦٠ يوم", "60+": "٦٠+ يوم" },
+    select: "اختيار", offset: "مقاصّة", writeOff: "إعدام الدين",
+    history: "السجل", vouchers: "السندات", noVouchers: "لم تصدر سندات بعد",
+    reason: "السبب", cancel: "إلغاء", confirm: "تنفيذ", working: "جارٍ التنفيذ…",
+    willCancel: "المبلغ المقاصّ", offsetDone: "تمت المقاصّة", writeOffDone: "أُعدم الدين",
+    voucher: "سند", pickTwo: "اختر دينين للمقاصّة",
+    reasonHint: (n) => `${n} حرفاً على الأقل`,
   },
 };
 const localeKey = (lang) => (lang === "en" || lang === "ar" ? lang : "ku");
@@ -59,13 +81,20 @@ function CurrencyTotals({ totals, tone }) {
   );
 }
 
-export function DebtCenter({ client, lang = "ku", partyId = null, nameOf = (id) => id }) {
+export function DebtCenter({ client, lang = "ku", partyId = null, nameOf = (id) => id, canAct = false, flash }) {
   const copy = COPY[localeKey(lang)];
   const [state, setState] = useState("loading");
   const [debts, setDebts] = useState([]);
   const [vaults, setVaults] = useState([]);
   const [ledger, setLedger] = useState(null);
   const [error, setError] = useState("");
+  // §13.C.6/7: the two commands, and §13.F.1's register beside them.
+  const [picked, setPicked] = useState([]);
+  const [action, setAction] = useState(null);   // { kind: "offset" | "write_off", debtId? }
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [vouchers, setVouchers] = useState([]);
+  const [history, setHistory] = useState(null);
 
   const load = useCallback(async () => {
     setState("loading");
@@ -82,6 +111,8 @@ export function DebtCenter({ client, lang = "ku", partyId = null, nameOf = (id) 
         const [tb, sub] = await Promise.all([loadTrialBalance(client), loadSubledgerReconciliation(client)]);
         setLedger({ ...tb, subledger: sub });
       } catch { setLedger(null); }
+      try { setVouchers(await loadVoucherRegister(client, { partyId, limit: 50 })); }
+      catch { setVouchers([]); }
       setState("ready");
     } catch (e) {
       console.error("debt centre", e);
@@ -94,6 +125,48 @@ export function DebtCenter({ client, lang = "ku", partyId = null, nameOf = (id) 
 
   const summary = useMemo(() => summarizeDebts(debts), [debts]);
   const partyLabel = (type, id) => (type === "zeman" ? copy.zeman : nameOf(id) || id || "—");
+
+  const chosen = picked.map((id) => debts.find((d) => d.id === id)).filter(Boolean);
+  // The same check the database makes, shown beside the button rather than arriving afterwards.
+  const objection = chosen.length === 2 ? offsetObjection(chosen[0], chosen[1]) : copy.pickTwo;
+  const cancels = chosen.length === 2 ? offsetAmount(chosen[0], chosen[1]) : null;
+  const reasonMin = action?.kind === "write_off" ? WRITE_OFF_REASON_MIN : OFFSET_REASON_MIN;
+
+  const togglePick = (debtId) => setPicked((prev) => (
+    prev.includes(debtId) ? prev.filter((x) => x !== debtId) : [...prev.slice(-1), debtId]));
+
+  const say = (message) => (flash ? flash(message) : console.info(message));
+
+  const runAction = async () => {
+    if (busy || !action) return;
+    setBusy(true);
+    try {
+      if (action.kind === "offset") {
+        const { result } = await offsetDebts(client, {
+          leftDebtId: chosen[0].id, rightDebtId: chosen[1].id, reason,
+        });
+        say(`${copy.offsetDone} · ${copy.voucher} ${result?.voucher || ""}`);
+        setPicked([]);
+      } else {
+        const { result } = await writeOffDebt(client, { debtId: action.debtId, reason });
+        say(`${copy.writeOffDone} · ${copy.voucher} ${result?.voucher || ""}`);
+      }
+      setAction(null);
+      setReason("");
+      await load();
+    } catch (e) {
+      console.error("debt command", e);
+      say(String(e?.message || e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const openHistory = async (debtId) => {
+    if (history?.debt_id === debtId) return setHistory(null);
+    try { setHistory(await loadDebtHistory(client, debtId)); }
+    catch (e) { say(String(e?.message || e)); }
+  };
 
   if (state === "loading") return <div className="debt-panel"><div className="debt-loading">{copy.loading}</div></div>;
   if (state === "error") {
@@ -172,6 +245,7 @@ export function DebtCenter({ client, lang = "ku", partyId = null, nameOf = (id) 
           <table className="debt-table">
             <thead>
               <tr>
+                {canAct && <th scope="col">{copy.select}</th>}
                 <th scope="col">{copy.owes}</th>
                 <th scope="col">{copy.outstanding}</th>
                 <th scope="col">{copy.due}</th>
@@ -182,6 +256,13 @@ export function DebtCenter({ client, lang = "ku", partyId = null, nameOf = (id) 
                 const bucket = agingBucketOf(d.dueAt);
                 return (
                   <tr key={d.id} className={d.overdue ? "is-overdue" : ""}>
+                    {canAct && (
+                      <td>
+                        <input type="checkbox" checked={picked.includes(d.id)}
+                          onChange={() => togglePick(d.id)}
+                          aria-label={`${copy.select} ${d.id}`} />
+                      </td>
+                    )}
                     <td>
                       {/* Stated in words: who owes whom, in which currency. */}
                       <strong>{partyLabel(d.debtorType, d.debtorId)}</strong>
@@ -195,6 +276,27 @@ export function DebtCenter({ client, lang = "ku", partyId = null, nameOf = (id) 
                     <td>
                       {d.dueAt ? new Date(d.dueAt).toLocaleDateString("en-GB") : "—"}
                       {d.overdue && <span className="debt-badge">{copy.overdue} · {copy.buckets[bucket]}</span>}
+                      <span className="debt-row-actions">
+                        <button type="button" onClick={() => openHistory(d.id)}>{copy.history}</button>
+                        {canAct && (
+                          <button type="button" onClick={() => { setAction({ kind: "write_off", debtId: d.id }); setReason(""); }}>
+                            {copy.writeOff}
+                          </button>
+                        )}
+                      </span>
+                      {history?.debt_id === d.id && (
+                        <ul className="debt-history">
+                          {(history.events || []).map((e) => (
+                            <li key={e.id}>
+                              <strong>{DEBT_EVENT_KU[e.kind] || e.kind}</strong>
+                              {" "}{money(e.amount)} {e.currency}
+                              {e.voucher ? ` · ${e.voucher}` : ""}
+                              <span className="debt-muted"> {new Date(e.created_at).toLocaleDateString("en-GB")}</span>
+                              {e.reason ? <span className="debt-reason">{e.reason}</span> : null}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                     </td>
                   </tr>
                 );
@@ -203,6 +305,55 @@ export function DebtCenter({ client, lang = "ku", partyId = null, nameOf = (id) 
           </table>
         </div>
       )}
+
+      {/* §13.C.6 — netting. The objection, if there is one, is stated before the button. */}
+      {canAct && debts.length > 0 && (
+        <div className="debt-offset-bar" role="group" aria-label={copy.offset}>
+          <span className={objection ? "debt-muted" : ""}>
+            {objection || `${copy.willCancel}: ${money(cancels)} ${chosen[0]?.currency || ""}`}
+          </span>
+          <button type="button" disabled={!!objection}
+            onClick={() => { setAction({ kind: "offset" }); setReason(""); }}>
+            {copy.offset}
+          </button>
+        </div>
+      )}
+
+      {action && (
+        <div className="debt-action" role="dialog" aria-label={action.kind === "offset" ? copy.offset : copy.writeOff}>
+          <label htmlFor="debt-action-reason">
+            {copy.reason} <span className="debt-muted">({copy.reasonHint(reasonMin)})</span>
+          </label>
+          <textarea id="debt-action-reason" value={reason} rows={2}
+            onChange={(e) => setReason(e.target.value)} />
+          <div className="debt-action-buttons">
+            <button type="button" onClick={() => { setAction(null); setReason(""); }} disabled={busy}>
+              {copy.cancel}
+            </button>
+            <button type="button" onClick={runAction} disabled={busy || reason.trim().length < reasonMin}>
+              {busy ? copy.working : copy.confirm}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* §13.F.1 — the numbered register. */}
+      <div className="debt-vouchers">
+        <h3>{copy.vouchers}</h3>
+        {vouchers.length === 0 ? <p className="debt-muted">{copy.noVouchers}</p> : (
+          <ul>
+            {vouchers.map((v) => (
+              <li key={v.id}>
+                <strong>{v.reference}</strong>
+                {" · "}{VOUCHER_KIND_KU[v.kind] || v.kind}
+                {" · "}{money(v.amount)} <span className="debt-currency-code">{v.currency}</span>
+                <span className="debt-muted"> {new Date(v.issued_at).toLocaleDateString("en-GB")}</span>
+                <span className="debt-reason">{v.reason}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </section>
   );
 }

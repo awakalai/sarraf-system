@@ -165,7 +165,7 @@ try {
   psqlFile(prereq);
 
   // The migration under test must apply to an empty database.
-  for (const m of ["202608120001_double_entry_core.sql", "202608120002_cashbox_and_debt.sql", "202608120003_accounting_commands.sql", "202608120004_partner_and_office.sql", "202608120005_receipt_state_machine.sql", "202608120006_transaction_journal.sql", "202608120007_receipt_intake_commands.sql", "202608120008_receipt_forwarding.sql", "202608120009_forwarding_guard_fix.sql", "202608130001_day_close_integrity.sql", "202608130002_ledger_journal_reconciliation.sql", "202608140001_single_currency_ratio.sql", "202608140002_receipt_conversion_moves_money.sql", "202608150001_uploader_receipt_view.sql", "202608160001_canonical_batch_summary.sql"]) {
+  for (const m of ["202608120001_double_entry_core.sql", "202608120002_cashbox_and_debt.sql", "202608120003_accounting_commands.sql", "202608120004_partner_and_office.sql", "202608120005_receipt_state_machine.sql", "202608120006_transaction_journal.sql", "202608120007_receipt_intake_commands.sql", "202608120008_receipt_forwarding.sql", "202608120009_forwarding_guard_fix.sql", "202608130001_day_close_integrity.sql", "202608130002_ledger_journal_reconciliation.sql", "202608140001_single_currency_ratio.sql", "202608140002_receipt_conversion_moves_money.sql", "202608150001_uploader_receipt_view.sql", "202608160001_canonical_batch_summary.sql", "202608170001_debt_register.sql"]) {
     psqlFile(path.join(root, "supabase/migrations", m));
   }
   psql("insert into public.app_users(id,name,role) values ('u-a','A','admin') on conflict do nothing");
@@ -1506,6 +1506,199 @@ try {
     if (recorded !== v) throw new Error(`the finalization recorded ${recorded}`);
   });
 
+  // ── the debt side: vouchers, netting, writing off, and the history of a debt ──
+  psql(`update public.app_users set admin_level='owner' where id='u-a'`);
+  asAdmin();
+  psql(`create or replace function public.zeman_probe_issue() returns text language plpgsql as $fn$
+        declare v public.vouchers; begin
+          v := public.sarraf_issue_voucher('debt_offset','customer','cust-1','zeman',null,'CNY',0,'no amount','u-a');
+          return 'issued ' || v.reference;
+        exception when others then return sqlstate || '|' || sqlerrm; end $fn$`);
+
+  check("a debt records its own opening without being asked", () => {
+    psql(`insert into public.debts(id,debtor_type,debtor_id,creditor_type,creditor_id,currency,
+            original_principal,outstanding_principal,source_type,reason,created_by)
+          values ('d-ev','customer','cust-1','zeman',null,'CNY',1000,1000,'unpaid_transaction',
+                  'unpaid purchase','u-a')`);
+    const row = psql("select kind||'|'||amount||'|'||outstanding_after from public.debt_events where debt_id='d-ev'").trim();
+    if (row !== "opened|1000.0000000000|1000.0000000000") throw new Error(`the opening reads ${row}`);
+  });
+
+  check("a settlement writes itself into the debt's history", () => {
+    psql(`insert into public.debt_settlements(debt_id,amount_applied,outstanding_before,
+            outstanding_after,source_kind,actor_id,reason)
+          values ('d-ev',400,1000,600,'cash','u-a','part payment received')`);
+    const row = psql(`select kind||'|'||amount||'|'||outstanding_after from public.debt_events
+                      where debt_id='d-ev' and kind='settled'`).trim();
+    if (row !== "settled|400.0000000000|600.0000000000") throw new Error(`the settlement reads ${row}`);
+  });
+
+  mustFail("the history of a debt cannot be rewritten",
+    "update public.debt_events set amount = 1 where debt_id='d-ev'");
+  mustFail("the history of a debt cannot be destroyed",
+    "delete from public.debt_events where debt_id='d-ev'");
+
+  // §13.C.7 — giving up a debt is an expense, taken deliberately, on the record.
+  check("writing off a debt moves it out of the receivable and into expense", () => {
+    const out = JSON.parse(psql(`select public.sarraf_write_off_debt('d-ev',null,
+      'the customer has closed and cannot be reached','cmd-wo-1')::text`));
+    if (Number(out.written_off) !== 600) throw new Error(`wrote off ${out.written_off}, expected 600`);
+    if (out.status !== "written_off") throw new Error(`status is ${out.status}`);
+    const st = psql("select status||'|'||outstanding_principal from public.debts where id='d-ev'").trim();
+    if (st !== "written_off|0.0000000000") throw new Error(`the debt is ${st}`);
+    const expense = psql(`select sum(amount) from public.journal_lines
+                          where entry_id like 'je-writeoff-%' and account_id='acc-5200' and side='debit'`).trim();
+    if (Number(expense) !== 600) throw new Error(`expense carries ${expense}`);
+  });
+
+  check("a write-off issues a numbered voucher naming the debt", () => {
+    const v = psql(`select reference||'|'||kind||'|'||amount from public.vouchers where debt_id='d-ev'`).trim();
+    if (!/^V-\d{4}-\d{6}\|debt_write_off\|600/.test(v)) throw new Error(`the voucher reads ${v}`);
+  });
+
+  check("the history explains the whole life of the debt", () => {
+    const h = JSON.parse(psql("select public.sarraf_debt_history('d-ev')::text"));
+    if (h.events.map((e) => e.kind).join(",") !== "opened,settled,written_off") {
+      throw new Error(`the history reads ${h.events.map((e) => e.kind).join(",")}`);
+    }
+    if (!h.events.at(-1).voucher) throw new Error("the write-off is not tied to its voucher");
+  });
+
+  mustFail("a debt already written off cannot be written off again",
+    `select public.sarraf_write_off_debt('d-ev',null,'trying the same thing twice','cmd-wo-2')`);
+
+  check("a write-off with too short a reason is refused before anything moves", () => {
+    psql(`insert into public.debts(id,debtor_type,debtor_id,creditor_type,creditor_id,currency,
+            original_principal,outstanding_principal,source_type,reason,created_by)
+          values ('d-wo2','customer','cust-1','zeman',null,'CNY',50,50,'x','test','u-a')`);
+    let denied = false;
+    try { psql(`select public.sarraf_write_off_debt('d-wo2',null,'too short','cmd-wo-3')`); }
+    catch { denied = true; }
+    const st = psql("select status from public.debts where id='d-wo2'").trim();
+    if (!denied) throw new Error("a bare reason was accepted");
+    if (st !== "open") throw new Error(`the debt moved anyway: ${st}`);
+  });
+
+  check("only the system owner may give up a debt", () => {
+    psql(`update public.app_users set admin_level='staff' where id='u-a'`);
+    let denied = false;
+    try { psql(`select public.sarraf_write_off_debt('d-wo2',null,'a perfectly long reason here','cmd-wo-4')`); }
+    catch { denied = true; }
+    psql(`update public.app_users set admin_level='owner' where id='u-a'`);
+    if (!denied) throw new Error("an ordinary administrator wrote off a debt");
+  });
+
+  // §13.C.6 — when both parties owe each other, one entry cancels the smaller against the larger.
+  check("two debts facing opposite ways cancel against each other", () => {
+    psql(`insert into public.debts(id,debtor_type,debtor_id,creditor_type,creditor_id,currency,
+            original_principal,outstanding_principal,source_type,reason,created_by) values
+          ('d-owes-us','customer','cust-1','zeman',null,'CNY',800,800,'unpaid_transaction','they owe us','u-a'),
+          ('d-we-owe','zeman',null,'customer','cust-1','CNY',300,300,'credit_note','we owe them','u-a')`);
+    const out = JSON.parse(psql(`select public.sarraf_offset_debts('d-owes-us','d-we-owe',null,
+      'both sides agreed to net these','cmd-off-1')::text`));
+    if (Number(out.offset_amount) !== 300) throw new Error(`offset ${out.offset_amount}, expected 300`);
+    if (Number(out.left_outstanding_after) !== 500) throw new Error(`the larger debt is ${out.left_outstanding_after}`);
+    if (Number(out.right_outstanding_after) !== 0) throw new Error(`the smaller debt is ${out.right_outstanding_after}`);
+    const st = psql("select status from public.debts where id='d-we-owe'").trim();
+    if (st !== "settled") throw new Error(`the smaller debt is ${st}`);
+  });
+
+  check("an offset posts one balanced entry and issues one voucher", () => {
+    const lines = psql(`select count(*) from public.journal_lines where entry_id like 'je-offset-%'`).trim();
+    const v = psql(`select count(*) from public.vouchers where kind='debt_offset'`).trim();
+    if (lines !== "2") throw new Error(`the offset wrote ${lines} lines`);
+    if (v !== "1") throw new Error(`${v} vouchers were issued for one offset`);
+  });
+
+  check("both sides of an offset appear in both histories", () => {
+    for (const d of ["d-owes-us", "d-we-owe"]) {
+      const k = psql(`select count(*) from public.debt_events where debt_id='${d}' and kind='offset'`).trim();
+      if (k !== "1") throw new Error(`${d} has ${k} offset events`);
+    }
+  });
+
+  mustFail("debts in different currencies cannot be offset",
+    `insert into public.debts(id,debtor_type,debtor_id,creditor_type,creditor_id,currency,
+       original_principal,outstanding_principal,source_type,reason,created_by)
+     values ('d-usd','zeman',null,'customer','cust-1','USD',100,100,'x','usd side','u-a');
+     select public.sarraf_offset_debts('d-owes-us','d-usd',null,'trying to net across currencies','cmd-off-2')`);
+
+  check("two debts pointing the same way are not an offset", () => {
+    psql(`insert into public.debts(id,debtor_type,debtor_id,creditor_type,creditor_id,currency,
+            original_principal,outstanding_principal,source_type,reason,created_by)
+          values ('d-same','customer','cust-1','zeman',null,'CNY',100,100,'x','same direction','u-a')`);
+    let denied = false;
+    try { psql(`select public.sarraf_offset_debts('d-owes-us','d-same',null,'these both point one way','cmd-off-3')`); }
+    catch { denied = true; }
+    if (!denied) throw new Error("two debts in the same direction were netted");
+  });
+
+  check("a debt cannot be offset against itself", () => {
+    let denied = false;
+    try { psql(`select public.sarraf_offset_debts('d-owes-us','d-owes-us',null,'offsetting itself','cmd-off-4')`); }
+    catch { denied = true; }
+    if (!denied) throw new Error("a debt was offset against itself");
+  });
+
+  check("replaying an offset does not net it twice", () => {
+    const before = psql("select outstanding_principal from public.debts where id='d-owes-us'").trim();
+    const out = JSON.parse(psql(`select public.sarraf_offset_debts('d-owes-us','d-we-owe',null,
+      'both sides agreed to net these','cmd-off-1')::text`));
+    const after = psql("select outstanding_principal from public.debts where id='d-owes-us'").trim();
+    if (out.replayed !== true) throw new Error("the replay was not recognised");
+    if (before !== after) throw new Error(`the debt went from ${before} to ${after} on replay`);
+  });
+
+  // §13.F.1 — the register itself.
+  check("voucher numbers run without gaps and cannot be reused", () => {
+    const rows = psql(`select string_agg(number::text, ',' order by number) from public.vouchers
+                       where series = to_char(now(),'YYYY')`).trim().split(",").map(Number);
+    for (let i = 0; i < rows.length; i++) {
+      if (rows[i] !== i + 1) throw new Error(`the register jumps: ${rows.join(",")}`);
+    }
+  });
+
+  mustFail("a voucher cannot be edited", "update public.vouchers set amount = 1 where kind='debt_offset'");
+  mustFail("a voucher cannot be destroyed", "delete from public.vouchers where kind='debt_offset'");
+  // A voucher is a consequence of a movement. No signed-in user can reach the issuing function
+  // to mint one on its own — only the commands, which run as the definer.
+  check("a voucher cannot be issued on its own", () => {
+    const granted = psql(`select has_function_privilege('authenticated',
+      'public.sarraf_issue_voucher(public.voucher_kind,public.party_kind,text,public.party_kind,text,text,numeric,text,text,text,text,bigint,text,text,jsonb,text)',
+      'execute')`).trim();
+    if (granted !== "f") throw new Error("a signed-in user can mint a voucher directly");
+  });
+
+  check("a voucher can never be issued without an amount", () => {
+    const out = psql(`select public.zeman_probe_issue()`).trim();
+    if (!out.startsWith("22023|")) throw new Error(`an empty voucher was allowed: ${out}`);
+  });
+
+  check("the register lists what an administrator asks for", () => {
+    const reg = JSON.parse(psql("select public.sarraf_voucher_register(null,null,null,50)::text"));
+    if (!reg.length) throw new Error("the register came back empty");
+    if (!reg.every((v) => /^V-\d{4}-\d{6}$/.test(v.reference))) throw new Error("a voucher has no reference");
+  });
+
+  check("a customer sees only the vouchers they are named on", () => {
+    psql(`update public.app_users set auth_id='88888888-8888-8888-8888-888888888888' where id='cust-1'`);
+    psql(`create or replace function auth.uid() returns uuid language sql stable
+          as $fn$ select '88888888-8888-8888-8888-888888888888'::uuid $fn$`);
+    const mine = JSON.parse(psql("select public.sarraf_voucher_register(null,null,null,50)::text"));
+    asAdmin();
+    const all = JSON.parse(psql("select public.sarraf_voucher_register(null,null,null,50)::text"));
+    if (!mine.length) throw new Error("the customer saw none of their own vouchers");
+    if (!mine.every((v) => v.party_id === "cust-1" || v.counterparty_id === "cust-1")) {
+      throw new Error("the customer saw someone else's voucher");
+    }
+    if (mine.length > all.length) throw new Error("the customer saw more than the administrator");
+  });
+
+  check("the books still reconcile after netting and writing off", () => {
+    const out = psql("select (public.sarraf_trial_balance_check()->>'balanced')::text").trim();
+    if (out !== "true") throw new Error(psql("select public.sarraf_trial_balance_check()::text"));
+  });
+
   let failed = 0;
   for (const [ok, name] of checks) { console.log(`${ok ? "PASS" : "FAIL"}  ${name}`); if (!ok) failed++; }
   console.log(failed
@@ -1513,6 +1706,6 @@ try {
     : `\nAccounting database contracts passed across ${checks.length} checks on a clean database.`);
   process.exit(failed ? 1 : 0);
 } catch (e) {
-  console.error("Accounting DB verification could not run:", String(e.message || e).slice(0, 800));
+  console.error("Accounting DB verification could not run:", String(e.message || e).slice(0, 4000));
   process.exit(1);
 }

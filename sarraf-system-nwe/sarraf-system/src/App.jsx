@@ -3534,7 +3534,8 @@ export default function App() {
             {/* Two records of the same money are only safe while they agree. */}
             {page === "integrity" && <div className="mt-4"><DeferredPanel><BooksReconciliation client={supabase} lang={lang} flash={flash} /></DeferredPanel></div>}
             {page === "export-audit" && <DeferredPanel><ExportAuditCenter client={supabase} lang={lang} /></DeferredPanel>}
-            {page === "debt-center" && <DeferredPanel><DebtCenter client={supabase} lang={lang} nameOf={(id) => usr(id).name} /></DeferredPanel>}
+            {page === "debt-center" && <DeferredPanel><DebtCenter client={supabase} lang={lang}
+              nameOf={(id) => usr(id).name} canAct={isAdmin} flash={flash} /></DeferredPanel>}
             {page === "receipt-review" && <DeferredPanel><ReceiptReviewWorkspace client={supabase} lang={lang}
               actorId={profile?.id || null} flash={flash}
               signedUrlFor={async (path) => {

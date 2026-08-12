@@ -15,6 +15,7 @@ import { toCsv } from "./services/csvSafe";
 import { revokeAllUrls, revokeDroppedUrls } from "./services/objectUrls";
 import { unrealizedPnl, unrealizedReasonText } from "./services/unrealizedPnl";
 import { capitalEventsFrom, investorShare, investorsTotalByCurrency, profitEventsFrom } from "./services/investorShare";
+import { crossRate, fromUsdAsOf, rateAsOf, rateErrorText, rateOf, unpricedCurrencies, usdFromAsOf, validateRate } from "./services/currencyRate";
 import { userFacingServiceError } from "./services/userFacingError";
 import { claimSharedReceiptHandoff, finishSharedReceiptHandoff, releaseSharedReceiptHandoff, sharedReceiptMessage, validateClaimedSharedFiles } from "./services/sharedReceiptHandoff";
 import { PortalDataStatus, PortalFrame, PortalPagedList, usePortalRoute } from "./components/portal/PortalFoundation";
@@ -275,8 +276,8 @@ const usdConv = (data) => (amount, code) => {
   const c = (data?.currencies || []).find((x) => x.code === code);
   if (!c) return null;
   if (c.id === "usd") return amount;
-  const mid = c.buyRate && c.sellRate ? (c.buyRate + c.sellRate) / 2 : (c.buyRate || c.sellRate);
-  return mid ? amount / mid : null;
+  const ratio = rateOf(c);
+  return ratio ? amount / ratio : null;
 };
 
 /* نیشاندانی بەرامبەری دۆلار */
@@ -1892,7 +1893,7 @@ export default function App() {
         throw contractError;
       }
       const d = {
-        currencies: (c.data || []).map((r) => ({ id: r.id, code: r.code, name: r.name, symbol: r.symbol, dec: r.dec, external: !!r.external, buyRate: r.buy_rate == null ? null : +r.buy_rate, sellRate: r.sell_rate == null ? null : +r.sell_rate, rateUpdated: r.rate_updated })),
+        currencies: (c.data || []).map((r) => ({ id: r.id, code: r.code, name: r.name, symbol: r.symbol, dec: r.dec, external: !!r.external, rate: r.rate == null ? null : +r.rate, buyRate: r.buy_rate == null ? null : +r.buy_rate, sellRate: r.sell_rate == null ? null : +r.sell_rate, rateUpdated: r.rate_updated })),
         users: (u.data || []).map((r) => ({ id: r.id, authId: r.auth_id, name: r.name, role: r.role, adminLevel: r.admin_level || null, rate: +r.rate || 0, scope: Array.isArray(r.scope_curs) ? r.scope_curs : [], phone: r.phone, address: r.address, note: r.note, deleted: r.deleted })),
         ledger: (l.data || []).map((r) => ({
           id: r.id, type: r.type, owner: r.owner, investorId: r.investor_id, curId: r.cur_id,
@@ -1908,6 +1909,7 @@ export default function App() {
           amount: +r.amount, type: r.type, refId: r.ref_id, note: r.note, date: r.created_at })),
         rateHistory: (rh.data || []).map((r) => ({
           id: r.id, curId: r.cur_id,
+          rate: r.rate == null ? null : +r.rate,
           buyRate: r.buy_rate == null ? null : +r.buy_rate,
           sellRate: r.sell_rate == null ? null : +r.sell_rate,
           createdAt: r.created_at,
@@ -2333,11 +2335,11 @@ export default function App() {
     if (!amount) return 0;
     if (curId === "usd") return amount;
     const c = cur(curId);
-    const mid = c.buyRate && c.sellRate ? (c.buyRate + c.sellRate) / 2 : (c.buyRate || c.sellRate);
+    const mid = rateOf(c);
     return mid ? amount / mid : 0;
   };
   const sumUsd = (map) => (data?.currencies || []).reduce((s, c) => s + toUsd(map?.[c.id] || 0, c.id), 0);
-  const ratesReady = !!data && data.currencies.every((c) => c.id === "usd" || c.buyRate || c.sellRate);
+  const ratesReady = !!data && unpricedCurrencies(data.currencies).length === 0;
 
   /* بەشی خاوەندارێتی — هەر دراوێک بەپێی سەرمایە دابەش دەبێت */
   const owners = useMemo(() => {
@@ -2362,63 +2364,23 @@ export default function App() {
      New regular buys snapshot their USD acquisition cost into buy_total/buy_rate,
      so a CNY position bought with USD can later be sold for IQD without losing
      its cost basis. Historical rows fall back to the closest internal USD rate. */
-  const rateSnapshotAt = (curId, date) => {
-    if (curId === "usd") return { buy: 1, sell: 1, source: "usd" };
+  // One ratio per currency: 1 USD = rate units. Every valuation divides by it, and a currency
+  // with no ratio values as null so the interface says "not priced" instead of printing a
+  // number nobody set. See services/currencyRate.js.
+  const rateSnapshotAt = (curId, date) => ({
+    rate: rateAsOf(curId, date, data.rateHistory, data.currencies),
+    source: (data.rateHistory || []).some((h) => h.curId === curId) ? "history" : "current",
+  });
 
-    const when = new Date(date || now()).getTime();
-    const hist = (data.rateHistory || [])
-      .filter((h) => h.curId === curId && Number.isFinite(new Date(h.createdAt).getTime()))
-      .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+  // The mode argument is kept so call sites need not all change at once; with a single ratio
+  // there is no spread, so every mode is the same division.
+  const usdValueAt = (amount, curId, _mode = "mid", date = null) =>
+    usdFromAsOf(amount, curId, date, data.rateHistory, data.currencies);
 
-    let chosen = null;
-    for (const h of hist) {
-      if (new Date(h.createdAt).getTime() <= when) chosen = h;
-      else break;
-    }
-    // For older prototype data that predates rate-history, use the earliest
-    // available snapshot; if none exists, use the current internal rate.
-    if (!chosen && hist.length) chosen = hist[0];
-
-    const c = cur(curId);
-    const buy = Number(chosen?.buyRate) > 0 ? Number(chosen.buyRate)
-      : Number(c.buyRate) > 0 ? Number(c.buyRate)
-      : Number(c.sellRate) > 0 ? Number(c.sellRate) : null;
-    const sell = Number(chosen?.sellRate) > 0 ? Number(chosen.sellRate)
-      : Number(c.sellRate) > 0 ? Number(c.sellRate)
-      : Number(c.buyRate) > 0 ? Number(c.buyRate) : null;
-
-    return { buy, sell, source: chosen ? "history" : "current" };
-  };
-
-  // mode=spend: USD needed to obtain the currency being paid out -> sell-USD rate.
-  // mode=receive: USD realizable from currency received -> buy-USD rate.
-  const usdValueAt = (amount, curId, mode = "mid", date = null) => {
-    const value = Number(amount);
-    if (!Number.isFinite(value)) return null;
-    if (curId === "usd") return value;
-
-    const r = rateSnapshotAt(curId, date);
-    let perUsd = null;
-    if (mode === "spend") perUsd = r.sell || r.buy;
-    else if (mode === "receive") perUsd = r.buy || r.sell;
-    else if (r.buy && r.sell) perUsd = (r.buy + r.sell) / 2;
-    else perUsd = r.buy || r.sell;
-
-    return Number(perUsd) > 0 ? value / Number(perUsd) : null;
-  };
-
-  // Express a USD bookkeeping cost in the currency received on a sale.
-  // This keeps realized profit in the transaction's actual against currency,
-  // while the underlying inventory cost basis stays normalized in USD.
-  const usdToCurrencyAt = (usdAmount, curId, mode = "sell", date = null) => {
-    const value = Number(usdAmount);
-    if (!Number.isFinite(value)) return null;
-    if (curId === "usd") return value;
-
-    const r = rateSnapshotAt(curId, date);
-    const perUsd = mode === "buy" ? (r.buy || r.sell) : (r.sell || r.buy);
-    return Number(perUsd) > 0 ? value * Number(perUsd) : null;
-  };
+  // Express a USD bookkeeping cost in the currency received on a sale, so realized profit
+  // stays in the transaction's own against currency while the cost basis stays in USD.
+  const usdToCurrencyAt = (usdAmount, curId, _mode = "sell", date = null) =>
+    fromUsdAsOf(usdAmount, curId, date, data.rateHistory, data.currencies);
 
   const inventoryPosition = (curId, _againstId = null, excludeTxId = null, asOfDate = null) => {
     if (!excludeTxId && !asOfDate && Array.isArray(data?.readModel?.inventory)) {
@@ -2450,28 +2412,10 @@ export default function App() {
   const avgRate = (curId, againstId, excludeTxId = null, asOfDate = null) =>
     inventoryPosition(curId, againstId, excludeTxId, asOfDate).avgRate;
 
-  /* نرخی ئۆتۆماتیکی لە نرخی ڕۆژانەوە.
-     currencies.buyRate / sellRate واتە:
-       1 USD = X currency لە کاتی کڕین/فرۆشتنی USD.
-     بۆ pair ـێکی تر cross-rate بە USD و spread ـی دروست هەژمار دەکرێت. */
-  const autoRate = (type, curId, againstId) => {
-    if (!curId || !againstId || curId === againstId) return null;
-    const c = cur(curId), a = cur(againstId);
-    const usdBuy = (x) => x.id === "usd" ? 1 : Number(x.buyRate) || 0;
-    const usdSell = (x) => x.id === "usd" ? 1 : Number(x.sellRate) || 0;
-
-    // Buying cur: acquire cur by selling USD, fund USD by buying it with against.
-    if (type === "buy") {
-      const curPerUsd = usdSell(c);
-      const againstPerUsd = usdBuy(a);
-      return curPerUsd > 0 && againstPerUsd > 0 ? againstPerUsd / curPerUsd : null;
-    }
-
-    // Selling cur: obtain USD by buying it with cur, then sell USD for against.
-    const curPerUsd = usdBuy(c);
-    const againstPerUsd = usdSell(a);
-    return curPerUsd > 0 && againstPerUsd > 0 ? againstPerUsd / curPerUsd : null;
-  };
+  /* نرخی پێشنیارکراو لە ڕەیتیۆی ڕۆژانەوە: 1 USD = X.
+     ڕەیتیۆی نێوان دوو دراو تەنها دابەشکردنی یەکێکە بەسەر ئەوی تر — بە دەست دەپشکنرێت.
+     یەک ژمارە بۆ کڕین و فرۆشتن؛ ئەگەر بە نرخێکی تر مامەڵەت کرد، لەسەر مامەڵەکە بینووسە. */
+  const autoRate = (_type, curId, againstId) => crossRate(curId, againstId, data.currencies);
 
   /* ───────── کردارەکان ───────── */
   const addDeposit = (f) => {
@@ -2800,28 +2744,25 @@ export default function App() {
   };
 
     const saveRates = (rows) => run(async () => {
-    for (const r of rows) {
-      for (const [label, value] of [["کڕین", r.buyRate], ["فرۆشتن", r.sellRate]]) {
-        if (value !== "" && value != null && !(Number(value) > 0)) {
-          throw new Error(`${cur(r.id).code} — نرخی ${label} دەبێت لە سفر گەورەتر بێت`);
-        }
-      }
+    // One ratio per currency: 1 USD = X. Anything that is not a usable positive number is
+    // refused here rather than dividing the whole system by it.
+    const checked = rows.map((r) => ({ r, v: validateRate(r.rate) }));
+    for (const { r, v } of checked) {
+      if (!v.ok) throw new Error(`${cur(r.id).code} — ${rateErrorText(v.code)}`);
     }
-    const r6 = (v) => (v === "" || v == null ? null : Math.round(+v * 1_000_000) / 1_000_000);
-    const payload = rows.map((r) => ({ id: r.id, buy_rate: r6(r.buyRate), sell_rate: r6(r.sellRate) }));
-    const hist = rows.filter((r) => r.buyRate !== "" || r.sellRate !== "").map((r) => ({
-      id: uid(), cur_id: r.id, buy_rate: r.buyRate === "" ? null : +r.buyRate,
-      sell_rate: r.sellRate === "" ? null : +r.sellRate, changed_by: profile?.id || null,
+    const payload = checked.map(({ r, v }) => ({ id: r.id, rate: v.rate }));
+    const hist = checked.filter(({ v }) => v.rate != null).map(({ r, v }) => ({
+      id: uid(), cur_id: r.id, rate: v.rate, changed_by: profile?.id || null,
     }));
     await rpcStrict("sarraf_save_rates", {
       p_rows: payload,
       p_history: hist,
       p_command_key: commandKey("rates"),
       p_action: "گۆڕینی نرخی ڕۆژ",
-      p_detail: rows.map((r) => `${cur(r.id).code}: ${r.buyRate}/${r.sellRate}`).join("، "),
+      p_detail: rows.map((r) => `1 USD = ${r.rate} ${cur(r.id).code}`).join("، "),
     });
-    const body = rows.filter((r) => r.buyRate || r.sellRate)
-      .map((r) => `${cur(r.id).code} ${r.buyRate || "—"}/${r.sellRate || "—"}`).join(" · ");
+    const body = rows.filter((r) => r.rate)
+      .map((r) => `1 USD = ${r.rate} ${cur(r.id).code}`).join(" · ");
     for (const u of data.users.filter((x) => (x.role === "partner" || x.role === "customer") && !x.deleted)) {
       await notify(u.id, "rate", tr("نرخی ڕۆژ نوێ کرایەوە"), body);
     }
@@ -3604,7 +3545,7 @@ export default function App() {
             {page === "cashbox" && <DeferredPanel><CashboxPanel client={supabase} lang={lang} flash={flash}
               customers={(data?.users || []).filter((u) => u.role === "customer" && !u.deleted)}
               rateFor={(code) => { const c = (data?.currencies || []).find((x) => x.code === code);
-                const mid = c?.buyRate && c?.sellRate ? (c.buyRate + c.sellRate) / 2 : (c?.buyRate || c?.sellRate);
+                const mid = rateOf(c);
                 return mid > 0 ? mid : null; }} /></DeferredPanel>}
             {page === "approvals" && <ApprovalCenter
               data={data} profile={profile} isOwner={isOwner} cur={cur}
@@ -4050,7 +3991,7 @@ function Dashboard({ data, calc, cur, mySafe, profitIn, ownProfitIn, investorsPr
     ? Number(rm.today_profit_usd) : fallbackTodayProfit;
   const pendingCount = Number(rm?.counts?.pending_txs ?? data.txs.filter((t) => !t.deleted && t.status === "pending").length);
   const todayTxCount = Number(rm?.counts?.today_txs ?? todayTxs.length);
-  const noRates = data.currencies.some((c) => c.id !== "usd" && (!c.buyRate || !c.sellRate));
+  const noRates = unpricedCurrencies(data.currencies).length > 0;
   const totalBalance = ratesReady && Number.isFinite(Number(rm?.total_balance_usd))
     ? Number(rm.total_balance_usd) : (ratesReady ? sumUsd(calc.phys) : 0);
 
@@ -4170,8 +4111,8 @@ function Dashboard({ data, calc, cur, mySafe, profitIn, ownProfitIn, investorsPr
             {data.currencies.filter(c=>c.id!=="usd").slice(0,5).map(c=>(
               <div key={c.id} className="flex items-center gap-3 py-3 border-b last:border-0" style={{borderColor:"var(--line)"}}>
                 <Flag c={c}/><div className="min-w-0 flex-1"><div className="text-[13px] font-semibold">{c.code}</div><div className="text-[10px] truncate" style={{color:"var(--txt-3)"}}>{c.name}</div></div>
-                <div className="text-end" style={num}><div className="text-[12px] font-semibold">{c.buyRate?fmt(c.buyRate,3):"—"}</div><div className="text-[10px]" style={{color:"var(--txt-3)"}}>{c.sellRate?fmt(c.sellRate,3):"—"}</div></div>
-                <div className="text-[9.5px] font-semibold min-w-[42px] text-end" style={{color:c.buyRate?"var(--pos)":"var(--txt-3)"}}>{c.buyRate?tr("نرخی ئەمڕۆ"):"—"}</div>
+                <div className="text-end" style={num}><div className="text-[12px] font-semibold">{rateOf(c)?fmt(rateOf(c),3):"—"}</div><div className="text-[10px]" style={{color:"var(--txt-3)"}}>1 USD</div></div>
+                <div className="text-[9.5px] font-semibold min-w-[42px] text-end" style={{color:rateOf(c)?"var(--pos)":"var(--txt-3)"}}>{rateOf(c)?tr("ڕەیتیۆی ئەمڕۆ"):"—"}</div>
               </div>
             ))}
           </div>
@@ -4525,7 +4466,7 @@ function Rates({ data, saveRates }) {
   const [rows, setRows] = useState(
     data.currencies
       .filter((c) => c.id !== "usd")
-      .map((c) => ({ id: c.id, code: c.code, name: c.name, c, buyRate: c.buyRate ?? "", sellRate: c.sellRate ?? "" }))
+      .map((c) => ({ id: c.id, code: c.code, name: c.name, c, rate: rateOf(c) ?? "" }))
   );
   const [market, setMarket] = useState(null);
   const [marketBusy, setMarketBusy] = useState(false);
@@ -4628,29 +4569,20 @@ function Rates({ data, saveRates }) {
                 <span className="text-xs text-[var(--txt-3)] hidden sm:inline">{r.name}</span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                <div>
-                  <div className="text-[11px] font-semibold text-[var(--pos)] mb-1">
-                    کاتێک USD دەکڕیت · 1 USD = ؟ {r.code}
-                  </div>
-                  <Inp type="number" step="any" dir="ltr" value={r.buyRate}
-                    onChange={(e) => upd(r.id, "buyRate", e.target.value)}
-                    className="text-center font-bold text-base" placeholder={r.code === "IQD" ? "1410" : "7.20"} />
+              {/* One number. Everything in the system divides by it, so it is asked for once,
+                  in the one shape it is always read: 1 USD = X. */}
+              <div>
+                <div className="text-[11px] font-semibold text-[var(--txt-2)] mb-1">
+                  ١ USD چەند {r.code} دەکات؟
                 </div>
-                <div>
-                  <div className="text-[11px] font-semibold text-[var(--neg)] mb-1">
-                    کاتێک USD دەفرۆشیت · 1 USD = ؟ {r.code}
-                  </div>
-                  <Inp type="number" step="any" dir="ltr" value={r.sellRate}
-                    onChange={(e) => upd(r.id, "sellRate", e.target.value)}
-                    className="text-center font-bold text-base" placeholder={r.code === "IQD" ? "1420" : "7.25"} />
-                </div>
+                <Inp type="number" step="any" dir="ltr" value={r.rate}
+                  onChange={(e) => upd(r.id, "rate", e.target.value)}
+                  className="text-center font-bold text-lg" placeholder={r.code === "IQD" ? "1410" : "7.20"} />
               </div>
 
-              {Number(r.buyRate) > 0 && Number(r.sellRate) > 0 && (
-                <div className="text-[11px] text-[var(--txt-3)] mt-1.5 flex flex-wrap gap-x-3 gap-y-1" style={num}>
-                  <span>Spread: {fmt(Math.abs(+r.sellRate - +r.buyRate), rateDigits(Math.abs(+r.sellRate - +r.buyRate)))}</span>
-                  <span>Mid: {fmt((+r.buyRate + +r.sellRate) / 2, rateDigits((+r.buyRate + +r.sellRate) / 2))}</span>
+              {Number(r.rate) > 0 && (
+                <div className="text-[11px] text-[var(--txt-3)] mt-1.5" style={num}>
+                  1 {r.code} = {fmt(1 / Number(r.rate), 6)} USD
                 </div>
               )}
             </div>

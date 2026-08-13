@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from "react"
 import { supabase } from "./lib/supabase";
 import { createReceiptIngestionCommand, ingestReceiptBatch } from "./services/receiptIngestion";
 import { forgetSend, outcomeText, pendingSend, rememberSend, resolveSendOutcome, settleFailedSend, stageText } from "./services/receiptSendState";
-import { receiptNetFrom, unsendableReceipts, validateReceiptArithmetic } from "./services/receiptValidation";
+import { arithmeticObjection, receiptNetFrom, sendableSet, validateReceiptArithmetic } from "./services/receiptValidation";
 import { intakeReceipt, RECEIPT_FLOWS, intakeStatusText } from "./services/receiptIntake";
 import { DICT } from "./i18n/dictionary";
 import { computeInventoryPosition } from "./services/inventoryAccounting";
@@ -6409,6 +6409,10 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
       rowsRef.current = next;
       return next;
     });
+    // A refusal describes the rows as they were. Deleting or correcting one of them makes it a
+    // statement about receipts that no longer exist — the owner deleted three receipts and the
+    // red banner naming them stayed on the screen, so the remaining eight looked unsendable too.
+    setSendError(null);
   };
   useEffect(() => { rowsRef.current = rows; }, [rows]);
 
@@ -6539,16 +6543,22 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
 
     // Never trust OCR arithmetic. Validate every layout that exposes an order amount,
     // using integer minor units to avoid floating-point false mismatches.
+    // Checked whenever there is an amount to check — not only when the layout happens to carry
+    // an order amount. Guarding on the order amount is what let a receipt with a mismatched net
+    // pass as "ok" on the screen and then be refused by the send gate, which checks every row:
+    // the interface said three receipts were wrong and marked none of them.
     let arithmeticValidation = d?.validation || null;
-    if (amountV > 0 && orderAmountV != null) {
+    if (amountV > 0) {
       const checked = validateReceiptArithmetic({ amount: amountV, fee: feeV, orderAmount: orderAmountV, netAmount: netV });
       arithmeticValidation = {
         ...(arithmeticValidation || {}), type: "gross_order_fee_equation", checked: true,
         grossMatches: !checked.issues.includes("gross_order_fee_mismatch"), issues: checked.issues,
-        expectedGross: checked.orderAmount + checked.fee,
+        expectedGross: orderAmountV == null ? null : checked.orderAmount + checked.fee,
       };
-      if (!checked.valid) {
-        reviewReasons.push("کۆی گشتی، بڕی بنەڕەتی، فی و نەت یەک ناگرنەوە");
+      const objection = arithmeticObjection({ amount: amountV, fee: feeV, orderAmount: orderAmountV, netAmount: netV });
+      if (objection) {
+        // Naming the figures, because "the numbers do not agree" tells nobody which numbers.
+        reviewReasons.push(objection.reason);
         reviewCode = reviewCode || "amount_validation";
       }
     }
@@ -6840,19 +6850,27 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
     if (!(Number(r.amount) > 0) || !String(r.currency || "").trim()) {
       return flash("بڕ و دراو پێویستن پێش پشتڕاستکردنەوە");
     }
-    const arithmetic = validateReceiptArithmetic({ amount: r.amount, fee: r.fee, orderAmount: r.orderAmount, netAmount: r.net });
-    if (!arithmetic.valid) return flash("ژمارەکانی فیشەکە یەک ناگرنەوە؛ بڕ، فی، بڕی بنەڕەتی و نەت بپشکنە");
-    if (!staffReview && (r.manualEdited || r.status === "suspect")) {
+    const objection = arithmeticObjection({ amount: r.amount, fee: r.fee, orderAmount: r.orderAmount, netAmount: r.net });
+
+    // Handing a reading to the operator comes first, and is never refused for the arithmetic:
+    // this route exists precisely for figures the uploader is not allowed to put right. Refusing
+    // it here left a customer with a receipt they could neither correct, hand over, nor send —
+    // only delete, which is the one thing evidence must never invite.
+    if (!staffReview && (objection || r.manualEdited || r.status === "suspect")) {
       patchRow(id, {
         status: "error", counted: false, reviewRequired: false,
-        rejectCode: "manual_review_required",
-        rejectReason: "زانیاریی فیشەکە دەستکاری کراوە یان دڵنیایی خوێندنەوە نزمە؛ بۆ پشکنینی ئەدمین تۆمار دەکرێت",
+        rejectCode: objection ? "amount_validation" : "manual_review_required",
+        rejectReason: objection ? objection.reason
+          : "زانیاریی فیشەکە دەستکاری کراوە یان دڵنیایی خوێندنەوە نزمە؛ بۆ پشکنینی ئەدمین تۆمار دەکرێت",
         note: "بۆ پشکنینی ئەدمین تۆمار دەکرێت",
         reviewedManually: true,
       });
       setEditingId(null);
       return flash("فیشەکە بۆ پشکنینی ئەدمین ئامادە کرا");
     }
+
+    // Staff can put it right, so for them it is worth refusing — with the figures named.
+    if (objection) return flash(objection.reason);
     patchRow(id, {
       status: "ok", counted: true, reviewRequired: false,
       rejectCode: null, rejectReason: null,
@@ -7030,27 +7048,37 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
 
   const send = async () => {
     if (working || processing.length) return flash("هێشتا هەندێک فیش دەخوێندرێنەوە");
-    if (review.length) return flash(`${review.length} فیش پێویستیان بە پشکنینی دەستی هەیە`);
+    // Staff can put a reading right through the reviewed path, so for them a receipt awaiting
+    // review is worth stopping for. An uploader cannot correct anything — §2 forbids it — so
+    // stopping them leaves no way forward at all, which is how eleven receipts became three
+    // deletions. Theirs travels with the batch instead, marked, for the operator to review.
+    if (review.length && mayEditExtraction(staffReview)) {
+      return flash(`${review.length} فیش پێویستیان بە پشکنینی دەستی هەیە`);
+    }
     if (retrying.length) return flash(`${retrying.length} فیش بەهۆی کێشەی کاتی خوێندنەوە چاوەڕوانن — ڕەت نەکراونەتەوە`);
     // The database refuses this too; refusing here means the uploader is told before the images
     // are sent rather than after.
     if (!mayUploadDirection(role, dir)) return flash(DIRECTION_REFUSED);
-    // Rejected and unreadable items are evidence too: their image, raw OCR,
-    // reason, and server verdict must be retained even when no amount exists.
-    const sendRows = [...good, ...bad];
-    if (!sendRows.length) return flash("هیچ فیشێکی گونجاو بۆ ناردن نییە");
     // net_amount becomes the transaction amount when the batch is converted, so a row whose
-    // arithmetic no longer reconciles (typically after a manual edit that was never confirmed)
-    // must not reach the ingestion command.
-    const broken = unsendableReceipts(good);
-    if (broken.length) {
+    // arithmetic does not reconcile must never be counted. One rule decides that, and the same
+    // rule marked the row on the screen — the two used to disagree, so a receipt could look
+    // perfectly fine and still be refused, with nothing on the screen to act on.
+    //
+    // Rejected and unreadable items are evidence too: their image, raw OCR, reason and server
+    // verdict are retained even when no amount exists.
+    const { counted, evidence, objections, blocked } =
+      sendableSet([...good, ...review, ...bad], { mayResolve: mayEditExtraction(staffReview) });
+    if (blocked) {
       setSendError({
         code: "receipt_arithmetic",
-        message: `${broken.length} فیش ژمارەکانیان یەک ناگرنەوە (بڕ، فی، بڕی بنەڕەتی و نەت). پێش ناردن بیانپشکنە و پشتڕاست بکەرەوە.`,
+        message: `${objections.length} فیش ژمارەکانیان یەک ناگرنەوە. پێش ناردن بیانپشکنە و پشتڕاست بکەرەوە.`,
+        detail: objections.map((o) => o.reason).join(" · "),
       });
       return;
     }
-    const currencies = new Set(good.map((row) => String(row.currency || "").trim().toUpperCase()).filter(Boolean));
+    const sendRows = [...counted, ...evidence];
+    if (!sendRows.length) return flash("هیچ فیشێکی گونجاو بۆ ناردن نییە");
+    const currencies = new Set(counted.map((row) => String(row.currency || "").trim().toUpperCase()).filter(Boolean));
     if (currencies.size > 1) {
       setSendError({ code: "mixed_currency", message: "فیشەکانی هەر دراوێک بە جیا بنێرە؛ بۆ نموونە CNY و USD لە یەک ناردندا تێکەڵ مەکە." });
       return;
@@ -7571,15 +7599,20 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
             </Card>
           )}
 
+          {/* Only someone who can actually put a reading right is held up by one. An uploader
+              cannot correct anything, so a receipt awaiting review would leave them with a dead
+              button and no way forward — theirs is sent along, marked, for the operator. */}
           <Btn className={`w-full ${simple ? "!py-4 !text-[15px] sticky bottom-20 z-10" : ""}`} onClick={send}
-            disabled={sending || working || processing.length > 0 || review.length > 0 || retrying.length > 0 || (!good.length && !bad.length)}>
+            disabled={sending || working || processing.length > 0 || retrying.length > 0
+              || (review.length > 0 && mayEditExtraction(staffReview))
+              || (!good.length && !review.length && !bad.length)}>
             {sending
               ? "ناردن..."
-              : review.length
+              : review.length && mayEditExtraction(staffReview)
                 ? `${review.length} فیش پێویستی بە پشکنین هەیە`
                 : retrying.length
                   ? `${retrying.length} فیش چاوەڕوانی دووبارە خوێندنەوەن`
-                  : `ناردنی ${good.length} فیش${bad.length ? ` (+ ${bad.length} ڕەتکراو)` : ""}`}
+                  : `ناردنی ${good.length} فیش${review.length + bad.length ? ` (+ ${review.length + bad.length} بۆ پشکنینی ئەدمین)` : ""}`}
           </Btn>
         </>
       )}

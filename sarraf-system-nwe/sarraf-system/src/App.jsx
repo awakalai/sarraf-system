@@ -3822,7 +3822,8 @@ function MfaGate({ profile, onReady, onSignOut }) {
           )}
 
           {err && (
-            <div className="mt-4 p-3 rounded-xl text-sm" style={{ background: "var(--neg-bg)", color: "var(--neg)", border: "1px solid color-mix(in srgb,var(--neg) 20%,transparent)" }}>
+            <div id="zeman-login-error" role="alert"
+              className="mt-4 p-3 rounded-xl text-sm" style={{ background: "var(--neg-bg)", color: "var(--neg)", border: "1px solid color-mix(in srgb,var(--neg) 20%,transparent)" }}>
               {err}
             </div>
           )}
@@ -3936,14 +3937,23 @@ function Login() {
               onFocus={onFoc} onBlur={onBlr} />
           </div>
           <div>
-            <Lbl>{tr("وشەی نهێنی")}</Lbl>
+            {/* §12: the label is tied to the field, so a screen reader announces it and a tap on
+                the words moves the cursor into the box. The reveal control is reachable by
+                keyboard and says both what it does and which way it currently is — it used to
+                have tabIndex={-1} and no name at all, which put it out of reach entirely. */}
+            <label htmlFor="zeman-password"><Lbl>{tr("وشەی نهێنی")}</Lbl></label>
             <div className="relative">
-              <input type={show ? "text" : "password"} autoComplete="current-password" value={pw}
+              <input id="zeman-password" type={show ? "text" : "password"}
+                autoComplete="current-password" value={pw}
+                aria-describedby={err ? "zeman-login-error" : undefined}
+                aria-invalid={err ? "true" : undefined}
                 onChange={(e) => setPw(e.target.value)} onKeyDown={(e) => e.key === "Enter" && go()}
                 className="w-full ps-4 pe-12 py-3.5 text-[15px] outline-none"
                 style={fieldSty} onFocus={onFoc} onBlur={onBlr} />
-              <button type="button" onClick={() => setShow(!show)} tabIndex={-1}
-                className="absolute end-3 top-1/2 -translate-y-1/2 p-1.5 tap"
+              <button type="button" onClick={() => setShow(!show)}
+                aria-label={tr(show ? "شاردنەوەی وشەی نهێنی" : "پیشاندانی وشەی نهێنی")}
+                aria-pressed={show} aria-controls="zeman-password"
+                className="absolute end-3 top-1/2 -translate-y-1/2 p-2 tap"
                 style={{ color: "var(--txt-3)" }}>
                 {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>

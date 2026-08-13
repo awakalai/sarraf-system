@@ -192,3 +192,60 @@ test("two nettings of the same pair get different keys", () => {
   assert.notEqual(offsetCommandKey("d-1", "d-2"), offsetCommandKey("d-1", "d-2"));
   assert.notEqual(writeOffCommandKey("d-1"), writeOffCommandKey("d-1"));
 });
+
+// ── §13.C.9: finding one debt among forty ────────────────────────────────────
+
+import { debtStatementRows, filterDebts } from "../src/services/debtRegister.js";
+
+const many = [
+  { id: "d-1", currency: "CNY", status: "open", outstanding: 800, reason: "unpaid purchase",
+    debtorType: "customer", debtorId: "c-1", creditorType: "zeman", creditorId: null,
+    dueAt: "2020-01-01", overdue: true, openedAt: "2019-12-01" },
+  { id: "d-2", currency: "USD", status: "open", outstanding: 50, reason: "credit note",
+    debtorType: "zeman", debtorId: null, creditorType: "customer", creditorId: "c-2",
+    dueAt: null, overdue: false, openedAt: "2026-08-01" },
+];
+const named = { "c-1": "ئەحمەد", "c-2": "سارا" };
+const nameOf = (id) => named[id] || id;
+
+test("a debt is found by the name of the party, not only by its id", () => {
+  assert.deepEqual(filterDebts(many, { search: "ئەحمەد", nameOf }).map((d) => d.id), ["d-1"]);
+  assert.deepEqual(filterDebts(many, { search: "سارا", nameOf }).map((d) => d.id), ["d-2"]);
+});
+
+test("a debt is found by why it was opened", () => {
+  assert.deepEqual(filterDebts(many, { search: "credit", nameOf }).map((d) => d.id), ["d-2"]);
+});
+
+test("the two directions can be asked for separately", () => {
+  assert.deepEqual(filterDebts(many, { direction: "weOwe" }).map((d) => d.id), ["d-2"]);
+  assert.deepEqual(filterDebts(many, { direction: "owedToUs" }).map((d) => d.id), ["d-1"]);
+});
+
+test("currencies are never mixed by a filter either", () => {
+  assert.deepEqual(filterDebts(many, { currency: "cny" }).map((d) => d.id), ["d-1"]);
+});
+
+test("only what is late can be asked for", () => {
+  assert.deepEqual(filterDebts(many, { overdueOnly: true }).map((d) => d.id), ["d-1"]);
+});
+
+test("asking for nothing in particular returns everything", () => {
+  assert.equal(filterDebts(many, {}).length, 2);
+  assert.equal(filterDebts(many).length, 2);
+  assert.deepEqual(filterDebts(null, { search: "x" }), []);
+});
+
+test("a statement names both parties in words, not in ids", () => {
+  const [row] = debtStatementRows(many, { nameOf });
+  assert.equal(row["قەرزار"], "ئەحمەد");
+  assert.equal(row["خاوەنی قەرز"], "ZEMAN");
+  assert.equal(row["دراو"], "CNY");
+  assert.equal(row["ماوە"], 800);
+});
+
+test("a statement carries the dates as dates, not as timestamps", () => {
+  const [row] = debtStatementRows(many, { nameOf });
+  assert.equal(row["بەرواری گەڕاندنەوە"], "2020-01-01");
+  assert.equal(row["بەرواری کردنەوە"], "2019-12-01");
+});

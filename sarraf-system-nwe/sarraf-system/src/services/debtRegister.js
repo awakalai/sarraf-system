@@ -148,3 +148,53 @@ export const DEBT_EVENT_KU = Object.freeze({
   voided: "پووچ کرایەوە",
   reinstated: "گەڕێندرایەوە",
 });
+
+/**
+ * Narrowing a long list of debts to the ones being asked about.
+ *
+ * §13.C.9. The debt centre had aging buckets and nothing else — with forty open debts an
+ * operator was reading the whole table to find one. Matching is on what a person would actually
+ * type: a party's name, the reason it was opened, the currency, the id.
+ */
+export function filterDebts(debts, { search = "", currency = null, direction = null, overdueOnly = false, nameOf = (id) => id } = {}) {
+  const needle = clean(search).toLowerCase();
+  const cur = currency ? clean(currency).toUpperCase() : null;
+  return (debts || []).filter((d) => {
+    const row = face(d);
+    if (cur && row.currency !== cur) return false;
+    if (direction === "weOwe" && row.debtorType !== "zeman") return false;
+    if (direction === "owedToUs" && row.creditorType !== "zeman") return false;
+    if (overdueOnly && !(d.overdue || (d.dueAt && new Date(d.dueAt) < new Date()))) return false;
+    if (!needle) return true;
+    const haystack = [
+      row.id, d.reason, row.currency,
+      row.debtorId ? nameOf(row.debtorId) : "", row.creditorId ? nameOf(row.creditorId) : "",
+      row.debtorId, row.creditorId,
+    ].join(" ").toLowerCase();
+    return haystack.includes(needle);
+  });
+}
+
+/**
+ * A debt list as rows for a statement, in the order a person reads them.
+ *
+ * The caller turns these into CSV through csvSafe.toCsv, which is what keeps a party's name
+ * beginning with `=` from becoming a formula in someone's spreadsheet.
+ */
+export function debtStatementRows(debts, { nameOf = (id) => id } = {}) {
+  const label = (type, id) => (type === "zeman" ? "ZEMAN" : nameOf(id) || id || "—");
+  return (debts || []).map((d) => {
+    const row = face(d);
+    return {
+      "ژمارە": row.id,
+      "قەرزار": label(row.debtorType, row.debtorId),
+      "خاوەنی قەرز": label(row.creditorType, row.creditorId),
+      "دراو": row.currency,
+      "ماوە": row.outstanding,
+      "بەرواری کردنەوە": (d.openedAt || d.opened_at || "").toString().slice(0, 10),
+      "بەرواری گەڕاندنەوە": (d.dueAt || d.due_at || "").toString().slice(0, 10),
+      "دۆخ": row.status,
+      "هۆکار": d.reason || "",
+    };
+  });
+}

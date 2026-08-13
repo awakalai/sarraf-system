@@ -1950,6 +1950,111 @@ try {
     if (!denied) throw new Error("a customer read the general ledger");
   });
 
+  // ── the states an entry can be in, and the debts nobody is chasing ──
+  asAdmin();
+
+  // §13.A.8. Reversing is a correction with an opposite entry behind it; voiding is a
+  // cancellation with none. A system that cannot tell them apart cannot explain itself.
+  const statusOf = (id) => psql(`select status from public.journal_entries where id='${id}'`).trim();
+  // A draft with real lines, because an entry with none cannot be posted at all.
+  const draftEntry = (id) => {
+    psql(`insert into public.journal_entries(id,status,business_date,source_type,actor_id,description)
+          values ('${id}','draft',current_date,'transaction','u-a','awaiting a second pair of eyes')`);
+    psql(`insert into public.journal_lines(entry_id,line_no,account_id,side,currency,amount,base_amount,base_rate)
+          values ('${id}',1,'acc-1000','debit','USD',10,10,1),
+                 ('${id}',2,'acc-4000','credit','USD',10,10,1)`);
+  };
+
+  check("an entry can be approved before it is posted", () => {
+    draftEntry("je-st");
+    psql("update public.journal_entries set status='approved' where id='je-st'");
+    if (statusOf("je-st") !== "approved") throw new Error(`status is ${statusOf("je-st")}`);
+  });
+
+  check("a posted entry is never edited back into a draft", () => {
+    psql("update public.journal_entries set status='posted', posted_at=now() where id='je-st'");
+    for (const back of ["draft", "approved"]) {
+      let denied = false;
+      try { psql(`update public.journal_entries set status='${back}' where id='je-st'`); }
+      catch { denied = true; }
+      if (!denied) throw new Error(`a posted entry was moved back to ${back}`);
+    }
+  });
+
+  check("a posted entry may be settled, or reversed, and nothing else", () => {
+    psql("update public.journal_entries set status='settled' where id='je-st'");
+    if (statusOf("je-st") !== "settled") throw new Error(`status is ${statusOf("je-st")}`);
+    psql("update public.journal_entries set status='reversed' where id='je-st'");
+    let denied = false;
+    try { psql("update public.journal_entries set status='posted' where id='je-st'"); } catch { denied = true; }
+    if (!denied) throw new Error("a reversed entry was posted again");
+  });
+
+  check("a draft can be voided, which is not the same as reversed", () => {
+    draftEntry("je-void");
+    psql("update public.journal_entries set status='voided' where id='je-void'");
+    if (statusOf("je-void") !== "voided") throw new Error(`status is ${statusOf("je-void")}`);
+    if (psql("select public.sarraf_journal_transition_allowed('posted','voided')").trim() !== "f") {
+      throw new Error("a posted entry could be voided rather than reversed");
+    }
+  });
+
+  // §13.D.1: a partner's unconfirmed money was spendable.
+  check("a partner's account holds pending apart from available", () => {
+    psql(`insert into public.partner_accounts(id,partner_id,currency,available,pending)
+          values ('pa-pend','p-1','USD',100,50) on conflict (partner_id,currency)
+          do update set available = 100, pending = 50`);
+    const row = psql(`select available||'|'||pending from public.partner_accounts
+                      where partner_id='p-1' and currency='USD'`).trim();
+    if (row !== "100.0000000000|50.0000000000") throw new Error(`the partner's account reads ${row}`);
+  });
+
+  mustFail("a partner's pending balance cannot go negative",
+    "update public.partner_accounts set pending = -1 where id='pa-pend'");
+
+  // §13.C.10: an overdue debt sat in the list at the same weight as one due next month.
+  check("overdue debts are listed with how late they are", () => {
+    psql(`insert into public.debts(id,debtor_type,debtor_id,creditor_type,creditor_id,currency,
+            original_principal,outstanding_principal,source_type,reason,created_by,due_at) values
+          ('d-late','customer','cust-1','zeman',null,'CNY',900,900,'unpaid_transaction','long overdue','u-a',
+           statement_timestamp() - interval '45 days'),
+          ('d-soon','customer','cust-1','zeman',null,'CNY',300,300,'unpaid_transaction','due shortly','u-a',
+           statement_timestamp() + interval '3 days'),
+          ('d-later','customer','cust-1','zeman',null,'CNY',100,100,'unpaid_transaction','not yet','u-a',
+           statement_timestamp() + interval '90 days')`);
+    const out = JSON.parse(psql("select public.sarraf_overdue_debts(7)::text"));
+    const late = out.overdue.find((d) => d.id === "d-late");
+    if (!late) throw new Error("the overdue debt was not listed");
+    if (Number(late.days_late) < 44) throw new Error(`it is reported ${late.days_late} days late`);
+    if (!out.due_soon.some((d) => d.id === "d-soon")) throw new Error("the debt due shortly was not listed");
+    if (out.overdue.some((d) => d.id === "d-later")) throw new Error("a debt due in 90 days was called overdue");
+    if (out.due_soon.some((d) => d.id === "d-later")) throw new Error("a debt due in 90 days was called due soon");
+  });
+
+  check("overdue totals are kept per currency", () => {
+    const out = JSON.parse(psql("select public.sarraf_overdue_debts(7)::text"));
+    if (!out.overdue_totals.CNY) throw new Error("no yuan total");
+    if ("total" in out.overdue_totals) throw new Error("a combined total across currencies appeared");
+  });
+
+  check("the most overdue debt is listed first", () => {
+    const out = JSON.parse(psql("select public.sarraf_overdue_debts(7)::text"));
+    const days = out.overdue.map((d) => Number(d.days_late));
+    for (let i = 1; i < days.length; i++) {
+      if (days[i] > days[i - 1]) throw new Error(`the list is not ordered: ${days}`);
+    }
+  });
+
+  check("a customer sees only debts they are party to", () => {
+    psql(`create or replace function auth.uid() returns uuid language sql stable
+          as $fn$ select '77777777-7777-7777-7777-777777777777'::uuid $fn$`);
+    const out = JSON.parse(psql("select public.sarraf_overdue_debts(7)::text"));
+    asAdmin();
+    if (out.overdue.length || out.due_soon.length) {
+      throw new Error(`a stranger saw ${out.overdue.length + out.due_soon.length} debts`);
+    }
+  });
+
   let failed = 0;
   for (const [ok, name] of checks) { console.log(`${ok ? "PASS" : "FAIL"}  ${name}`); if (!ok) failed++; }
   console.log(failed

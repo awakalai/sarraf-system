@@ -32,7 +32,7 @@ import {
   LayoutDashboard, Vault, ArrowLeftRight, ListOrdered, Users, Handshake,
   TrendingUp, Building2, UserCog, PieChart, History, Plus, Trash2, Pencil,
   CheckCircle2, AlertTriangle, Eye, LogOut, Wallet, ChevronLeft, Coins,
-  Receipt, TrendingDown, ScanLine, Scale, Upload, XCircle, SlidersHorizontal, Search, MoreHorizontal, Zap, ArrowDownLeft, ArrowUpRight, X, Share2, Database, Download, ClipboardCheck, RotateCcw, MessageCircle, Moon, Sun, WifiOff, Wifi, EyeOff, Bell, QrCode, Camera, Fingerprint, ShieldCheck, KeyRound, Inbox, ShieldAlert, FileCheck2, Send
+  Receipt, TrendingDown, ScanLine, Scale, Upload, XCircle, SlidersHorizontal, Search, MoreHorizontal, Zap, ArrowDownLeft, ArrowUpRight, X, Share2, Database, Download, ClipboardCheck, RotateCcw, MessageCircle, Moon, Sun, WifiOff, Wifi, EyeOff, Bell, QrCode, Camera, Fingerprint, ShieldCheck, KeyRound, Inbox, ShieldAlert, FileCheck2, Send, BookOpen,
 } from "lucide-react";
 
 const lazyNamed = (loader, name) => React.lazy(() => loader().then((module) => ({ default: module[name] })));
@@ -52,6 +52,7 @@ const ReceiptReviewWorkspace = lazyNamed(() => import("./components/receipts/Rec
 const ReceiptForwardingCenter = lazyNamed(() => import("./components/receipts/ReceiptForwardingCenter"), "ReceiptForwardingCenter");
 const ForwardedReceipts = lazyNamed(() => import("./components/receipts/ForwardedReceipts"), "ForwardedReceipts");
 const BooksReconciliation = lazyNamed(() => import("./components/accounting/BooksReconciliation"), "BooksReconciliation");
+const BooksReport = lazyNamed(() => import("./components/accounting/BooksReport"), "BooksReport");
 const CanonicalBatchSummary = lazyNamed(() => import("./components/receipts/CanonicalBatchSummary"), "CanonicalBatchSummary");
 
 function DeferredPanel({ children, compact = false }) {
@@ -171,6 +172,7 @@ const ADMIN_CENTER_PAGE_IDS = new Set([
   "audit",
   "export-audit",
   "debt-center",
+  "books",
   "cashbox",
   "office-payments",
   "receipt-review",
@@ -685,6 +687,7 @@ function AdminCenterHub({ lang = "ku", onNavigate }) {
         ["office-payments", label("پارەدانی نووسینگە", "Office Payments", "مدفوعات المكتب"), label("ئەرکی پارەدان و بەڵگە", "Payment assignments and evidence", "مهام الدفع والإثباتات"), Building2],
         ["cashbox", label("قاسەی کڕیاران", "Customer Cashbox", "خزنة الزبائن"), label("دانان، دەرهێنان و تسویەی قەرز لە قاسە", "Deposit, withdraw, and settle debt from the cashbox", "إيداع وسحب وتسوية الديون"), Wallet],
         ["debt-center", label("قەرز و قاسە", "Debt & Cashbox", "الديون والخزنة"), label("قەرز بە ئاڕاستەی ڕوون، تەمەن و قاسەی کڕیاران", "Debts by explicit direction, aging, and customer cashboxes", "الديون باتجاه واضح والأعمار وخزائن الزبائن"), Scale],
+        ["books", label("دەفتەر و قازانج", "Books & profit", "الدفاتر والأرباح"), label("قازانجی مامەڵە جیا لە گۆڕانی نرخ، و هەموو تۆمارێکی دەفتەر", "Trading profit apart from revaluation, and every entry in the ledger", "أرباح التداول منفصلة عن إعادة التقييم، وكل قيد في الدفتر"), BookOpen],
         ["export-audit", label("هەناردە و وردبینی", "Export & Audit", "التصدير والتدقيق"), label("هەناردەی سنووردار، timeline و checksum", "Bounded exports, timeline, and checksum", "تصدير محدود وخط زمني وبصمة تحقق"), FileCheck2],
       ],
     },
@@ -3534,6 +3537,8 @@ export default function App() {
             {/* Two records of the same money are only safe while they agree. */}
             {page === "integrity" && <div className="mt-4"><DeferredPanel><BooksReconciliation client={supabase} lang={lang} flash={flash} /></DeferredPanel></div>}
             {page === "export-audit" && <DeferredPanel><ExportAuditCenter client={supabase} lang={lang} /></DeferredPanel>}
+            {page === "books" && <DeferredPanel><BooksReport client={supabase} lang={lang}
+              nameOf={(id) => usr(id).name} /></DeferredPanel>}
             {page === "debt-center" && <DeferredPanel><DebtCenter client={supabase} lang={lang}
               nameOf={(id) => usr(id).name} canAct={isAdmin} flash={flash} /></DeferredPanel>}
             {page === "receipt-review" && <DeferredPanel><ReceiptReviewWorkspace client={supabase} lang={lang}

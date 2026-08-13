@@ -1818,6 +1818,138 @@ try {
     if (out !== "true") throw new Error(psql("select public.sarraf_trial_balance_check()::text"));
   });
 
+  // ── a voucher for every movement, a profit and loss, and a readable ledger ──
+  asAdmin();
+
+  // §13.F.1: every movement of money is handed a number, not only the three commands that
+  // remembered to ask for one.
+  check("every posted entry carries a voucher", () => {
+    const without = psql(`select count(*) from public.journal_entries e
+      where e.status = 'posted'
+        and exists (select 1 from public.journal_lines l where l.entry_id = e.id)
+        and not exists (select 1 from public.vouchers v where v.journal_entry_id = e.id)`).trim();
+    if (without !== "0") throw new Error(`${without} movements were made without a voucher`);
+  });
+
+  check("one movement is one number, however many commands ask for it", () => {
+    const doubled = psql(`select count(*) from (
+      select journal_entry_id from public.vouchers
+      where journal_entry_id is not null
+      group by journal_entry_id having count(*) > 1) x`).trim();
+    if (doubled !== "0") throw new Error(`${doubled} movements were given two vouchers`);
+  });
+
+  check("an ordinary cashbox move is handed a number too", () => {
+    psql(`select public.sarraf_customer_vault_move('cust-1','CNY',250,'in',7.20,
+      'a deposit at the counter','cmd-v9-1')`);
+    const v = psql(`select v.reference from public.vouchers v
+      join public.journal_entries e on e.id = v.journal_entry_id
+      where e.command_key like 'cmd-v9-1%' limit 1`).trim();
+    if (!/^V-\d{4}-\d{6}$/.test(v)) throw new Error(`the deposit's voucher reads "${v}"`);
+  });
+
+  check("the voucher names the kind of movement it was", () => {
+    const kinds = psql(`select string_agg(distinct kind::text, ',' order by kind::text)
+                        from public.vouchers`).trim();
+    for (const expected of ["debt_write_off", "debt_offset", "vault_deposit"]) {
+      if (!kinds.includes(expected)) throw new Error(`no voucher was ever a ${expected}: ${kinds}`);
+    }
+  });
+
+  // §13.F.3: a rate that moved today says nothing about what a completed trade earned.
+  check("the profit and loss keeps realized apart from unrealized", () => {
+    psql(`select public.sarraf_post_simple_entry('je-pl-real', current_date, 'transaction','u-a',
+      'acc-1000','acc-4000','CNY', 720, 7.20, 'trading income','cmd-pl-1','customer','cust-1')`);
+    psql(`select public.sarraf_post_simple_entry('je-pl-unreal', current_date, 'revaluation','u-a',
+      'acc-1400','acc-4900','CNY', 360, 7.20, 'rate moved','cmd-pl-2',null,null)`);
+    const pl = JSON.parse(psql("select public.sarraf_profit_and_loss(null,null,'CNY')::text"));
+    const realized = pl.realized.find((r) => r.currency === "CNY");
+    const unrealized = pl.unrealized.find((r) => r.currency === "CNY");
+    const all = pl.by_currency.find((c) => c.currency === "CNY");
+    if (Number(unrealized?.amount) !== 360) throw new Error(`unrealized is ${unrealized?.amount}, expected 360`);
+    // The point of the report: the 360 the rate moved is not part of what trading earned.
+    if (Number(realized.net) !== Number(all.net) - 360) {
+      throw new Error(`the revaluation was left inside the trading result: ${realized.net} vs ${all.net}`);
+    }
+    if (Number(all.income) < 1080) throw new Error(`income is ${all.income}, expected at least 1080`);
+  });
+
+  check("expense is subtracted from income, and each is stated as itself", () => {
+    psql(`select public.sarraf_post_simple_entry('je-pl-exp', current_date, 'transaction','u-a',
+      'acc-5200','acc-1000','CNY', 200, 7.20, 'an operating cost','cmd-pl-3',null,null)`);
+    const pl = JSON.parse(psql("select public.sarraf_profit_and_loss(null,null,'CNY')::text"));
+    const cny = pl.by_currency.find((c) => c.currency === "CNY");
+    if (Number(cny.expense) < 200) throw new Error(`expense is ${cny.expense}`);
+    if (Number(cny.net) !== Number(cny.income) - Number(cny.expense)) {
+      throw new Error(`net ${cny.net} is not income ${cny.income} less expense ${cny.expense}`);
+    }
+  });
+
+  check("currencies are reported apart, never added together", () => {
+    psql(`select public.sarraf_post_simple_entry('je-pl-usd', current_date, 'transaction','u-a',
+      'acc-1000','acc-4000','USD', 50, 1, 'dollar income','cmd-pl-4',null,null)`);
+    const pl = JSON.parse(psql("select public.sarraf_profit_and_loss()::text"));
+    const codes = pl.by_currency.map((c) => c.currency).sort();
+    if (!codes.includes("CNY") || !codes.includes("USD")) throw new Error(`currencies: ${codes}`);
+    if (pl.by_currency.some((c) => c.currency === null)) throw new Error("a combined figure appeared");
+  });
+
+  check("the range is honoured, and a backwards range is refused", () => {
+    const empty = JSON.parse(psql(`select public.sarraf_profit_and_loss('2000-01-01','2000-01-31')::text`));
+    if (empty.by_currency.length) throw new Error("a range with nothing in it produced figures");
+    let denied = false;
+    try { psql(`select public.sarraf_profit_and_loss('2026-12-31','2026-01-01')`); } catch { denied = true; }
+    if (!denied) throw new Error("a range ending before it starts was accepted");
+  });
+
+  check("a customer cannot read the profit and loss", () => {
+    asSeller();
+    let denied = false;
+    try { psql("select public.sarraf_profit_and_loss()"); } catch { denied = true; }
+    asAdmin();
+    if (!denied) throw new Error("a customer read the profit and loss");
+  });
+
+  // §12: the ledger has always been correct and no screen could open it.
+  check("the general ledger opens, with both sides of every entry", () => {
+    asAdmin();
+    const gl = JSON.parse(psql(`select public.sarraf_general_ledger(null,null,null,null,null,null,20,0)::text`));
+    if (!gl.entries.length) throw new Error("the ledger came back empty");
+    const entry = gl.entries.find((e) => e.id === "je-pl-real");
+    if (!entry) throw new Error("a posted entry is missing from the ledger");
+    if (entry.lines.length !== 2) throw new Error(`the entry shows ${entry.lines.length} lines`);
+    if (!entry.lines.every((l) => l.account_code && l.account_name)) throw new Error("a line has no account");
+    if (!entry.voucher) throw new Error("the entry does not name its voucher");
+  });
+
+  check("the ledger can be searched and filtered", () => {
+    const byAccount = JSON.parse(psql(
+      `select public.sarraf_general_ledger(null,null,'acc-4000',null,null,null,50,0)::text`));
+    if (!byAccount.entries.length) throw new Error("filtering by account found nothing");
+    if (!byAccount.entries.every((e) => e.lines.some((l) => l.account_id === "acc-4000"))) {
+      throw new Error("an entry without that account was returned");
+    }
+    const bySearch = JSON.parse(psql(
+      `select public.sarraf_general_ledger(null,null,null,null,null,'trading income',50,0)::text`));
+    if (!bySearch.entries.some((e) => e.id === "je-pl-real")) throw new Error("the search missed its entry");
+  });
+
+  check("the ledger is bounded, and says how much it did not return", () => {
+    const page = JSON.parse(psql(`select public.sarraf_general_ledger(null,null,null,null,null,null,2,0)::text`));
+    if (page.entries.length > 2) throw new Error(`asked for 2, got ${page.entries.length}`);
+    if (!(page.total >= page.entries.length)) throw new Error("the total is smaller than the page");
+    const huge = JSON.parse(psql(`select public.sarraf_general_ledger(null,null,null,null,null,null,99999,0)::text`));
+    if (huge.limit > 500) throw new Error(`the ceiling was ignored: ${huge.limit}`);
+  });
+
+  check("a customer cannot read the general ledger", () => {
+    asSeller();
+    let denied = false;
+    try { psql("select public.sarraf_general_ledger()"); } catch { denied = true; }
+    asAdmin();
+    if (!denied) throw new Error("a customer read the general ledger");
+  });
+
   let failed = 0;
   for (const [ok, name] of checks) { console.log(`${ok ? "PASS" : "FAIL"}  ${name}`); if (!ok) failed++; }
   console.log(failed

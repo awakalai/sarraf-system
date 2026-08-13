@@ -15,6 +15,7 @@ const COPY = {
       paid_reported: "ڕاپۆرتکراو", confirmed: "پشتڕاستکراو", rejected: "ڕەتکراو", cancelled: "هەڵوەشێنراوە",
     },
     confirmNote: "پشتڕاستکردنەوە لەلایەن ئەدمینەوە دەکرێت — تۆ ناتوانیت پارەدانی خۆت پشتڕاست بکەیت",
+    confirm: "پشتڕاستکردنەوەی پارەدان", confirmed: "پارەدانەکە پشتڕاست کرایەوە",
   },
   en: {
     title: "Office payments", subtitle: "Only assignments given to you — amount and currency come from the transaction and cannot be changed",
@@ -28,6 +29,7 @@ const COPY = {
       paid_reported: "Reported", confirmed: "Confirmed", rejected: "Rejected", cancelled: "Cancelled",
     },
     confirmNote: "Confirmation is done by an administrator — you cannot confirm your own payment",
+    confirm: "Confirm payment", confirmed: "Payment confirmed",
   },
 };
 COPY.ar = COPY.en;
@@ -37,7 +39,7 @@ const money = (n) => Number(n || 0).toLocaleString("en-US", { minimumFractionDig
 const commandKey = () =>
   `office-pay:${globalThis.crypto?.randomUUID?.() || Date.now().toString(36)}`;
 
-export function OfficePayments({ client, lang = "ku", flash = () => {} }) {
+export function OfficePayments({ client, lang = "ku", flash = () => {}, canConfirm = false }) {
   const copy = COPY[localeKey(lang)];
   const [rows, setRows] = useState([]);
   const [state, setState] = useState("loading");
@@ -94,6 +96,28 @@ export function OfficePayments({ client, lang = "ku", flash = () => {} }) {
       await load();
     } catch (e) {
       console.error("office report", e);
+      flash(String(e?.message || e));
+    } finally { setBusy(false); }
+  };
+
+  // §14.8's last step: an office reports, and someone else accepts the report. Until this
+  // existed the assignment stayed open for ever and the money the office had laid out was never
+  // recognised as owed back to it.
+  const confirm = async (row) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const { data, error } = await client.rpc("sarraf_office_payment_confirm", {
+        p_assignment_id: row.id,
+        p_reason: form.note || "پارەدانەکە پشکنرا و پشتڕاست کرایەوە",
+        p_command_key: commandKey(),
+      });
+      if (error) throw error;
+      flash(`${copy.confirmed} · ${data?.voucher || ""}`);
+      setForm({ amount: "", reference: "", note: "" });
+      await load();
+    } catch (e) {
+      console.error("office confirm", e);
       flash(String(e?.message || e));
     } finally { setBusy(false); }
   };
@@ -191,8 +215,18 @@ export function OfficePayments({ client, lang = "ku", flash = () => {} }) {
               </>
             )}
 
+            {canConfirm && row.status === "paid_reported" && (
+              <div className="cashbox-actions">
+                <button type="button" className="cashbox-btn is-pos" disabled={busy}
+                        onClick={() => confirm(row)}>
+                  {busy ? <Loader2 className="spin" aria-hidden="true" /> : <CheckCircle2 aria-hidden="true" />}
+                  {" "}{copy.confirm}
+                </button>
+              </div>
+            )}
+
             {/* The office reports; only a verifier confirms. Say so, so the absence is not a puzzle. */}
-            <p className="debt-muted">{copy.confirmNote}</p>
+            {!canConfirm && <p className="debt-muted">{copy.confirmNote}</p>}
           </article>
         );
       })}

@@ -1,3 +1,9 @@
+import { limitSubject, refuseIfOverLimit } from "./_rate-limit.js";
+
+// Twenty batches a minute is far more than a person uploading from a phone.
+const INGEST_LIMIT = Number(process.env.INGEST_RATE_LIMIT || 20);
+const INGEST_WINDOW_SECONDS = Number(process.env.INGEST_RATE_WINDOW || 60);
+
 // Authenticated receipt-ingestion recovery path.
 // The SQL RPC remains the preferred atomic path. This endpoint keeps receipt
 // delivery working while an older production database is missing that RPC.
@@ -283,6 +289,13 @@ export default async function handler(req, res) {
     const service = makeClient(config.url, config.secretKey);
     const { batch, receipts, commandKey } = validateCommand(req.body || {});
     const { actor, token } = await requireActor(req, authClient, service);
+
+    // A batch is expensive: it stores images and writes rows. Counted per person, in the
+    // database, because this route is serverless and a per-process counter would not count.
+    if (await refuseIfOverLimit(res, {
+      url: config.url, key: config.secretKey, bucket: "receipt-ingestion",
+      subject: limitSubject(req, actor.id), limit: INGEST_LIMIT, windowSeconds: INGEST_WINDOW_SECONDS,
+    })) return;
     const context = await validateContext(service, actor, batch);
     const scoped = makeClient(config.url, config.publicKey, { global: { headers: { Authorization: `Bearer ${token}` } } });
     await validateStagedObjects(scoped, service, batch.id, receipts);

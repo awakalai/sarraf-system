@@ -682,8 +682,6 @@ function AdminCenterHub({ lang = "ku", onNavigate }) {
         ["insights", label("ڕەوت و شیکاری", "Trends & Insights", "الاتجاهات والتحليلات"), label("ڕەوتی قازانج، مامەڵە و دۆخی دارایی", "Profit, transaction, and financial trends", "اتجاهات الربح والمعاملات والوضع المالي"), TrendingUp],
         ["integrity", label("ناوەندی یەکپارچەیی", "Integrity Center", "مركز سلامة البيانات"), label("پشکنینی ناکۆکی، دووبارە و پەیوەندیی شکێنراو", "Checks for inconsistencies, duplicates, and broken links", "فحص التعارض والتكرار والروابط المقطوعة"), ShieldAlert],
         ["audit", label("تۆماری گۆڕانکاری", "Change Log", "سجل التغييرات"), label("مێژووی کردار و گۆڕانکارییەکانی سیستەم", "History of system actions and changes", "سجل إجراءات النظام وتغييراته"), History],
-        ["receipt-review", label("پشکنینی فیش", "Receipt Review", "مراجعة الإيصالات"), label("وێنەی ڕەسەن، ژمارەکان و مێژووی ڕاستکردنەوە", "Original image, figures, and correction history", "الصورة الأصلية والأرقام وسجل التصحيح"), ClipboardCheck],
-        ["receipt-forwarding", label("ناردنی فیش", "Receipt Forwarding", "إرسال الإيصالات"), label("ناردنی فیشی پەسەندکراو بۆ خاوەنەکەی و پێکهاتنەوەی گەیاندن", "Send accepted receipts to their owner and reconcile delivery", "إرسال الإيصالات المعتمدة إلى أصحابها ومطابقة التسليم"), Send],
         ["office-payments", label("پارەدانی نووسینگە", "Office Payments", "مدفوعات المكتب"), label("ئەرکی پارەدان و بەڵگە", "Payment assignments and evidence", "مهام الدفع والإثباتات"), Building2],
         ["cashbox", label("قاسەی کڕیاران", "Customer Cashbox", "خزنة الزبائن"), label("دانان، دەرهێنان و تسویەی قەرز لە قاسە", "Deposit, withdraw, and settle debt from the cashbox", "إيداع وسحب وتسوية الديون"), Wallet],
         ["debt-center", label("قەرز و قاسە", "Debt & Cashbox", "الديون والخزنة"), label("قەرز بە ئاڕاستەی ڕوون، تەمەن و قاسەی کڕیاران", "Debts by explicit direction, aging, and customer cashboxes", "الديون باتجاه واضح والأعمار وخزائن الزبائن"), Scale],
@@ -7222,7 +7220,7 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
         <Card className="p-4">
           <Lbl>{tr("جۆری فیشەکان")}</Lbl>
           <div className="text-[13px] mt-1" style={{ color: "var(--txt-2)" }}>
-            {tr("فیشی فرۆشتنی خۆت — ئەو پارەیەی بۆت هاتووە.")}
+            {tr("فیشی ئەو پارەیەی بۆ زیمانت ناردووە.")}
           </div>
         </Card>
       )}
@@ -11471,7 +11469,7 @@ function CustomerPortal({ user, c, base, data, calc, cur, usr, flash, reloadBatc
           <Back onClick={() => setTab("documents")} t={tr("گەڕانەوە")} />
           <Card className="p-4">
             <div className="text-[13px] leading-relaxed" style={{ color: "var(--txt-2)" }}>
-              {tr("وێنەی ئەو فیشانە هەڵبژێرە کە پارەکەیان بۆت هاتووە. سیستەمەکە دەیانخوێنێتەوە، کۆیان دەکاتەوە و دووبارەکان دەدۆزێتەوە.")}
+              {tr("وێنەی ئەو فیشانە هەڵبژێرە کە پارەکەت بۆ زیمان ناردووە. سیستەمەکە دەیانخوێنێتەوە، کۆیان دەکاتەوە و دووبارەکان دەدۆزێتەوە.")}
             </div>
           </Card>
           <ReceiptUploader customerId={user.id} customerName={user.name} uploaderId={user.id} data={data}

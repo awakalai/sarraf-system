@@ -6,8 +6,8 @@ import {
 } from "../../services/accounting";
 import {
   DEBT_EVENT_KU, OFFSET_REASON_MIN, VOUCHER_KIND_KU, WRITE_OFF_REASON_MIN,
-  debtStatementRows, filterDebts, loadDebtHistory, loadVoucherRegister,
-  offsetAmount, offsetDebts, offsetObjection, writeOffDebt,
+  debtStatementRows, filterDebts, lateness, loadDebtHistory, loadOverdueDebts,
+  loadVoucherRegister, offsetAmount, offsetDebts, offsetObjection, writeOffDebt,
 } from "../../services/debtRegister";
 import { toCsv } from "../../services/csvSafe";
 import "./debt-center.css";
@@ -30,6 +30,7 @@ const COPY = {
     reasonHint: (n) => `لانیکەم ${n} پیت`,
     search: "گەڕان بە ناو، هۆکار یان ژمارە", all: "هەمووی", overdueOnly: "تەنها بەسەرچووەکان",
     exportCsv: "داگرتنی خشتە", print: "پرینت", showing: "پیشاندانی", ofTotal: "لە",
+    lateTitle: "قەرزی بەسەرچوو", dueSoonTitle: "بەم زووانە", nothingLate: "هیچ قەرزێکی بەسەرچوو نییە",
   },
   en: {
     title: "Debt & Cashbox Centre", subtitle: "Debts by explicit direction and currency — never netted",
@@ -49,6 +50,7 @@ const COPY = {
     reasonHint: (n) => `at least ${n} characters`,
     search: "Search by name, reason or id", all: "All", overdueOnly: "Overdue only",
     exportCsv: "Download table", print: "Print", showing: "Showing", ofTotal: "of",
+    lateTitle: "Overdue", dueSoonTitle: "Due soon", nothingLate: "Nothing is overdue",
   },
   ar: {
     title: "مركز الديون والخزنة", subtitle: "الديون باتجاه وعملة واضحين — دون دمج العملات",
@@ -68,6 +70,7 @@ const COPY = {
     reasonHint: (n) => `${n} حرفاً على الأقل`,
     search: "ابحث بالاسم أو السبب أو الرقم", all: "الكل", overdueOnly: "المتأخرة فقط",
     exportCsv: "تنزيل الجدول", print: "طباعة", showing: "عرض", ofTotal: "من",
+    lateTitle: "متأخر", dueSoonTitle: "قريباً", nothingLate: "لا شيء متأخر",
   },
 };
 const localeKey = (lang) => (lang === "en" || lang === "ar" ? lang : "ku");
@@ -105,6 +108,7 @@ export function DebtCenter({ client, lang = "ku", partyId = null, nameOf = (id) 
   const [history, setHistory] = useState(null);
   // §13.C.9: with forty open debts, aging buckets alone meant reading the whole table.
   const [query, setQuery] = useState({ search: "", currency: null, direction: null, overdueOnly: false });
+  const [late, setLate] = useState(null);
 
   const load = useCallback(async () => {
     setState("loading");
@@ -123,6 +127,10 @@ export function DebtCenter({ client, lang = "ku", partyId = null, nameOf = (id) 
       } catch { setLedger(null); }
       try { setVouchers(await loadVoucherRegister(client, { partyId, limit: 50 })); }
       catch { setVouchers([]); }
+      // §13.C.10: an overdue debt used to sit in the list at the same weight as one due next
+      // month. Reading this changes nothing, so a failure here must not fail the centre.
+      try { setLate(await loadOverdueDebts(client)); }
+      catch { setLate(null); }
       setState("ready");
     } catch (e) {
       console.error("debt centre", e);
@@ -244,6 +252,38 @@ export function DebtCenter({ client, lang = "ku", partyId = null, nameOf = (id) 
           )}
         </article>
       </div>
+
+      {/* §13.C.10: what is late, before anything else on the screen. */}
+      {late && (late.overdue_count > 0 || late.due_soon_count > 0) && (
+        <div className="debt-late" role="status">
+          <div className="debt-late-head">
+            <AlertTriangle aria-hidden="true" />
+            <strong>{late.overdue_count} {copy.lateTitle}</strong>
+            {late.due_soon_count > 0 && (
+              <span className="debt-muted">· {late.due_soon_count} {copy.dueSoonTitle}</span>
+            )}
+            <span className="debt-late-totals">
+              {Object.entries(late.overdue_totals || {}).map(([c, v]) => (
+                <span key={c}>{money(v)} <span className="debt-currency-code">{c}</span></span>
+              ))}
+            </span>
+          </div>
+          <ul>
+            {(late.overdue || []).slice(0, 5).map((d) => (
+              <li key={d.id}>
+                <span>
+                  <strong>{partyLabel(d.debtor_type, d.debtor_id)}</strong> {copy.owes}{" "}
+                  <strong>{partyLabel(d.creditor_type, d.creditor_id)}</strong>
+                </span>
+                <span className="debt-amount">
+                  {money(d.outstanding_principal)} <span className="debt-currency-code">{d.currency}</span>
+                </span>
+                <span className="recon-badge is-bad">{lateness(d.days_late)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {ledger && (
         <div className={`debt-ledger ${ledger.balanced ? "is-ok" : "is-bad"}`} role="status">

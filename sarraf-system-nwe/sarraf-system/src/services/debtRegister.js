@@ -198,3 +198,25 @@ export function debtStatementRows(debts, { nameOf = (id) => id } = {}) {
     };
   });
 }
+
+/**
+ * The debts nobody is chasing (§13.C.10).
+ *
+ * Reading changes nothing, so it is safe to call whenever the centre loads and cannot fail a
+ * balance. It stops at the list: this system has no channel to send a reminder through, and
+ * inventing one nobody asked for would be worse than showing the operator what is late.
+ */
+export async function loadOverdueDebts(client, { daysAhead = 7 } = {}) {
+  const { data, error } = await client.rpc("sarraf_overdue_debts", { p_days_ahead: daysAhead });
+  if (error) throw error;
+  return data || { overdue: [], due_soon: [], overdue_totals: {}, overdue_count: 0, due_soon_count: 0 };
+}
+
+/** How late, in words, because "days_late: 45" is a number and not a sentence. */
+export function lateness(days) {
+  const n = Number(days);
+  if (!Number.isFinite(n)) return null;
+  if (n > 0) return `${n} ڕۆژ بەسەرچووە`;
+  if (n === 0) return "ئەمڕۆ کۆتا ڕۆژە";
+  return `${Math.abs(n)} ڕۆژی ماوە`;
+}

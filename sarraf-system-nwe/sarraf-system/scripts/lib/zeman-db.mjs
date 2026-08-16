@@ -35,6 +35,7 @@ export const MIGRATIONS = [
   "202608190001_office_payment_confirmation.sql",
   "202608200001_vouchers_and_reports.sql",
   "202608210001_states_pending_and_overdue.sql",
+  "202608220001_partner_pending.sql",
 ];
 
 const PORT = process.env.ZEMAN_TEST_PGPORT || "55433";

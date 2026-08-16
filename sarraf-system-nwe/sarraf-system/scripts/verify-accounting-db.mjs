@@ -1955,6 +1955,7 @@ try {
 
   // §13.A.8. Reversing is a correction with an opposite entry behind it; voiding is a
   // cancellation with none. A system that cannot tell them apart cannot explain itself.
+  const j2 = (sql) => JSON.parse(psql(`select (${sql})::text`));
   const statusOf = (id) => psql(`select status from public.journal_entries where id='${id}'`).trim();
   // A draft with real lines, because an entry with none cannot be posted at all.
   const draftEntry = (id) => {
@@ -2054,6 +2055,44 @@ try {
       throw new Error(`a stranger saw ${out.overdue.length + out.due_soon.length} debts`);
     }
   });
+
+  // ── money reported to a partner, and not yet confirmed ──
+  check("a reported partner credit is visible and spendable by nobody", () => {
+    asAdmin();
+    const out = j2(`public.sarraf_partner_pending_credit('p-1','CNY',400,'the partner says they sent it','cmd-pp-1')`);
+    if (Number(out.pending) !== 400) throw new Error(`pending is ${out.pending}`);
+    if (out.posted !== false) throw new Error("unconfirmed money was posted");
+  });
+
+  // §13.D.4 must hold for confirmed money exactly as it does for money credited directly.
+  check("confirming a partner credit settles their debt first, then the remainder", () => {
+    psql(`insert into public.debts(id,debtor_type,debtor_id,creditor_type,creditor_id,currency,
+            original_principal,outstanding_principal,source_type,reason,created_by)
+          values ('d-pp','partner','p-1','zeman',null,'CNY',250,250,'partner_over_limit','over limit','u-a')`);
+    const before = Number(psql(`select available from public.partner_accounts
+                                where partner_id='p-1' and currency='CNY'`).trim());
+    const out = j2(`public.sarraf_partner_pending_resolve('p-1','CNY',400,true,7.20,
+      'counted at the counter','cmd-pp-2')`);
+    const after = Number(psql(`select available from public.partner_accounts
+                               where partner_id='p-1' and currency='CNY'`).trim());
+    const debt = psql("select status from public.debts where id='d-pp'").trim();
+    if (Number(out.pending) !== 0) throw new Error(`pending is ${out.pending}`);
+    if (debt !== "settled") throw new Error(`the debt is ${debt}, not settled first`);
+    if (after !== before + 150) throw new Error(`the remainder is ${after - before}, expected 150`);
+  });
+
+  check("a credit that never arrived is turned away and posts nothing", () => {
+    psql(`select public.sarraf_partner_pending_credit('p-1','CNY',90,'reported by phone','cmd-pp-3')`);
+    const entriesBefore = psql("select count(*) from public.journal_entries").trim();
+    const out = j2(`public.sarraf_partner_pending_resolve('p-1','CNY',90,false,null,
+      'the money never arrived','cmd-pp-4')`);
+    const entriesAfter = psql("select count(*) from public.journal_entries").trim();
+    if (Number(out.pending) !== 0) throw new Error(`pending is ${out.pending}`);
+    if (entriesBefore !== entriesAfter) throw new Error("a credit that never arrived was posted");
+  });
+
+  mustFail("more cannot be confirmed than was ever reported",
+    `select public.sarraf_partner_pending_resolve('p-1','CNY',9999,true,null,'over confirming','cmd-pp-5')`);
 
   let failed = 0;
   for (const [ok, name] of checks) { console.log(`${ok ? "PASS" : "FAIL"}  ${name}`); if (!ok) failed++; }

@@ -137,11 +137,18 @@ export function soleCurrency(receipts) {
 }
 
 /**
- * A sale is money that came to the uploader; a purchase is money they sent out.
+ * Which way the money went, from the house's books.
  *
- * A customer-seller earns yuan in China and sells it to the house. Their evidence is always a
- * receipt of money received. Offering them the other direction invites a receipt the house
- * cannot buy and, worse, one that would be booked the wrong way round.
+ * `in` and `sell` are receipts of money arriving at ZEMAN; `out` and `buy` are money leaving it.
+ *
+ * A customer sells their yuan to ZEMAN by *transferring it* — they send the money and then send
+ * the receipt as proof of having sent it. So from the customer's side the money goes out, and
+ * from the house's books it comes in, which is why their direction is `in`. Both statements are
+ * about the same payment; only the vantage point differs, and the screens must say it from the
+ * side of whoever is reading them.
+ *
+ * Offering a customer the other direction invites a receipt for money the house paid out, which
+ * is not theirs to send and would be booked the wrong way round.
  */
 export const SALE_DIRECTIONS = Object.freeze(["in", "sell"]);
 export const PURCHASE_DIRECTIONS = Object.freeze(["out", "buy"]);

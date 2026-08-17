@@ -32,7 +32,7 @@ import {
   LayoutDashboard, Vault, ArrowLeftRight, ListOrdered, Users, Handshake,
   TrendingUp, Building2, UserCog, PieChart, History, Plus, Trash2, Pencil,
   CheckCircle2, AlertTriangle, Eye, LogOut, Wallet, ChevronLeft, Coins,
-  Receipt, TrendingDown, ScanLine, Scale, Upload, XCircle, SlidersHorizontal, Search, MoreHorizontal, Zap, ArrowDownLeft, ArrowUpRight, X, Share2, Database, Download, ClipboardCheck, RotateCcw, MessageCircle, Moon, Sun, WifiOff, Wifi, EyeOff, Bell, QrCode, Camera, Fingerprint, ShieldCheck, KeyRound, Inbox, ShieldAlert, FileCheck2, Send
+  Receipt, TrendingDown, ScanLine, Scale, Upload, XCircle, SlidersHorizontal, Search, MoreHorizontal, Zap, ArrowDownLeft, ArrowUpRight, X, Share2, Database, Download, ClipboardCheck, RotateCcw, MessageCircle, Moon, Sun, WifiOff, Wifi, EyeOff, Bell, QrCode, Camera, Fingerprint, ShieldCheck, KeyRound, Inbox, ShieldAlert, FileCheck2, Send, BookOpen,
 } from "lucide-react";
 
 const lazyNamed = (loader, name) => React.lazy(() => loader().then((module) => ({ default: module[name] })));
@@ -52,6 +52,7 @@ const ReceiptReviewWorkspace = lazyNamed(() => import("./components/receipts/Rec
 const ReceiptForwardingCenter = lazyNamed(() => import("./components/receipts/ReceiptForwardingCenter"), "ReceiptForwardingCenter");
 const ForwardedReceipts = lazyNamed(() => import("./components/receipts/ForwardedReceipts"), "ForwardedReceipts");
 const BooksReconciliation = lazyNamed(() => import("./components/accounting/BooksReconciliation"), "BooksReconciliation");
+const BooksReport = lazyNamed(() => import("./components/accounting/BooksReport"), "BooksReport");
 const CanonicalBatchSummary = lazyNamed(() => import("./components/receipts/CanonicalBatchSummary"), "CanonicalBatchSummary");
 
 function DeferredPanel({ children, compact = false }) {
@@ -171,6 +172,7 @@ const ADMIN_CENTER_PAGE_IDS = new Set([
   "audit",
   "export-audit",
   "debt-center",
+  "books",
   "cashbox",
   "office-payments",
   "receipt-review",
@@ -680,11 +682,10 @@ function AdminCenterHub({ lang = "ku", onNavigate }) {
         ["insights", label("ڕەوت و شیکاری", "Trends & Insights", "الاتجاهات والتحليلات"), label("ڕەوتی قازانج، مامەڵە و دۆخی دارایی", "Profit, transaction, and financial trends", "اتجاهات الربح والمعاملات والوضع المالي"), TrendingUp],
         ["integrity", label("ناوەندی یەکپارچەیی", "Integrity Center", "مركز سلامة البيانات"), label("پشکنینی ناکۆکی، دووبارە و پەیوەندیی شکێنراو", "Checks for inconsistencies, duplicates, and broken links", "فحص التعارض والتكرار والروابط المقطوعة"), ShieldAlert],
         ["audit", label("تۆماری گۆڕانکاری", "Change Log", "سجل التغييرات"), label("مێژووی کردار و گۆڕانکارییەکانی سیستەم", "History of system actions and changes", "سجل إجراءات النظام وتغييراته"), History],
-        ["receipt-review", label("پشکنینی فیش", "Receipt Review", "مراجعة الإيصالات"), label("وێنەی ڕەسەن، ژمارەکان و مێژووی ڕاستکردنەوە", "Original image, figures, and correction history", "الصورة الأصلية والأرقام وسجل التصحيح"), ClipboardCheck],
-        ["receipt-forwarding", label("ناردنی فیش", "Receipt Forwarding", "إرسال الإيصالات"), label("ناردنی فیشی پەسەندکراو بۆ خاوەنەکەی و پێکهاتنەوەی گەیاندن", "Send accepted receipts to their owner and reconcile delivery", "إرسال الإيصالات المعتمدة إلى أصحابها ومطابقة التسليم"), Send],
         ["office-payments", label("پارەدانی نووسینگە", "Office Payments", "مدفوعات المكتب"), label("ئەرکی پارەدان و بەڵگە", "Payment assignments and evidence", "مهام الدفع والإثباتات"), Building2],
         ["cashbox", label("قاسەی کڕیاران", "Customer Cashbox", "خزنة الزبائن"), label("دانان، دەرهێنان و تسویەی قەرز لە قاسە", "Deposit, withdraw, and settle debt from the cashbox", "إيداع وسحب وتسوية الديون"), Wallet],
         ["debt-center", label("قەرز و قاسە", "Debt & Cashbox", "الديون والخزنة"), label("قەرز بە ئاڕاستەی ڕوون، تەمەن و قاسەی کڕیاران", "Debts by explicit direction, aging, and customer cashboxes", "الديون باتجاه واضح والأعمار وخزائن الزبائن"), Scale],
+        ["books", label("دەفتەر و قازانج", "Books & profit", "الدفاتر والأرباح"), label("قازانجی مامەڵە جیا لە گۆڕانی نرخ، و هەموو تۆمارێکی دەفتەر", "Trading profit apart from revaluation, and every entry in the ledger", "أرباح التداول منفصلة عن إعادة التقييم، وكل قيد في الدفتر"), BookOpen],
         ["export-audit", label("هەناردە و وردبینی", "Export & Audit", "التصدير والتدقيق"), label("هەناردەی سنووردار، timeline و checksum", "Bounded exports, timeline, and checksum", "تصدير محدود وخط زمني وبصمة تحقق"), FileCheck2],
       ],
     },
@@ -3534,6 +3535,8 @@ export default function App() {
             {/* Two records of the same money are only safe while they agree. */}
             {page === "integrity" && <div className="mt-4"><DeferredPanel><BooksReconciliation client={supabase} lang={lang} flash={flash} /></DeferredPanel></div>}
             {page === "export-audit" && <DeferredPanel><ExportAuditCenter client={supabase} lang={lang} /></DeferredPanel>}
+            {page === "books" && <DeferredPanel><BooksReport client={supabase} lang={lang}
+              nameOf={(id) => usr(id).name} /></DeferredPanel>}
             {page === "debt-center" && <DeferredPanel><DebtCenter client={supabase} lang={lang}
               nameOf={(id) => usr(id).name} canAct={isAdmin} flash={flash} /></DeferredPanel>}
             {page === "receipt-review" && <DeferredPanel><ReceiptReviewWorkspace client={supabase} lang={lang}
@@ -3817,7 +3820,8 @@ function MfaGate({ profile, onReady, onSignOut }) {
           )}
 
           {err && (
-            <div className="mt-4 p-3 rounded-xl text-sm" style={{ background: "var(--neg-bg)", color: "var(--neg)", border: "1px solid color-mix(in srgb,var(--neg) 20%,transparent)" }}>
+            <div id="zeman-login-error" role="alert"
+              className="mt-4 p-3 rounded-xl text-sm" style={{ background: "var(--neg-bg)", color: "var(--neg)", border: "1px solid color-mix(in srgb,var(--neg) 20%,transparent)" }}>
               {err}
             </div>
           )}
@@ -3931,14 +3935,23 @@ function Login() {
               onFocus={onFoc} onBlur={onBlr} />
           </div>
           <div>
-            <Lbl>{tr("وشەی نهێنی")}</Lbl>
+            {/* §12: the label is tied to the field, so a screen reader announces it and a tap on
+                the words moves the cursor into the box. The reveal control is reachable by
+                keyboard and says both what it does and which way it currently is — it used to
+                have tabIndex={-1} and no name at all, which put it out of reach entirely. */}
+            <label htmlFor="zeman-password"><Lbl>{tr("وشەی نهێنی")}</Lbl></label>
             <div className="relative">
-              <input type={show ? "text" : "password"} autoComplete="current-password" value={pw}
+              <input id="zeman-password" type={show ? "text" : "password"}
+                autoComplete="current-password" value={pw}
+                aria-describedby={err ? "zeman-login-error" : undefined}
+                aria-invalid={err ? "true" : undefined}
                 onChange={(e) => setPw(e.target.value)} onKeyDown={(e) => e.key === "Enter" && go()}
                 className="w-full ps-4 pe-12 py-3.5 text-[15px] outline-none"
                 style={fieldSty} onFocus={onFoc} onBlur={onBlr} />
-              <button type="button" onClick={() => setShow(!show)} tabIndex={-1}
-                className="absolute end-3 top-1/2 -translate-y-1/2 p-1.5 tap"
+              <button type="button" onClick={() => setShow(!show)}
+                aria-label={tr(show ? "شاردنەوەی وشەی نهێنی" : "پیشاندانی وشەی نهێنی")}
+                aria-pressed={show} aria-controls="zeman-password"
+                className="absolute end-3 top-1/2 -translate-y-1/2 p-2 tap"
                 style={{ color: "var(--txt-3)" }}>
                 {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
@@ -7207,7 +7220,7 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
         <Card className="p-4">
           <Lbl>{tr("جۆری فیشەکان")}</Lbl>
           <div className="text-[13px] mt-1" style={{ color: "var(--txt-2)" }}>
-            {tr("فیشی فرۆشتنی خۆت — ئەو پارەیەی بۆت هاتووە.")}
+            {tr("فیشی ئەو پارەیەی بۆ زیمانت ناردووە.")}
           </div>
         </Card>
       )}
@@ -11456,7 +11469,7 @@ function CustomerPortal({ user, c, base, data, calc, cur, usr, flash, reloadBatc
           <Back onClick={() => setTab("documents")} t={tr("گەڕانەوە")} />
           <Card className="p-4">
             <div className="text-[13px] leading-relaxed" style={{ color: "var(--txt-2)" }}>
-              {tr("وێنەی ئەو فیشانە هەڵبژێرە کە پارەکەیان بۆت هاتووە. سیستەمەکە دەیانخوێنێتەوە، کۆیان دەکاتەوە و دووبارەکان دەدۆزێتەوە.")}
+              {tr("وێنەی ئەو فیشانە هەڵبژێرە کە پارەکەت بۆ زیمان ناردووە. سیستەمەکە دەیانخوێنێتەوە، کۆیان دەکاتەوە و دووبارەکان دەدۆزێتەوە.")}
             </div>
           </Card>
           <ReceiptUploader customerId={user.id} customerName={user.name} uploaderId={user.id} data={data}

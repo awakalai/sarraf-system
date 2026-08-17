@@ -1818,6 +1818,282 @@ try {
     if (out !== "true") throw new Error(psql("select public.sarraf_trial_balance_check()::text"));
   });
 
+  // ── a voucher for every movement, a profit and loss, and a readable ledger ──
+  asAdmin();
+
+  // §13.F.1: every movement of money is handed a number, not only the three commands that
+  // remembered to ask for one.
+  check("every posted entry carries a voucher", () => {
+    const without = psql(`select count(*) from public.journal_entries e
+      where e.status = 'posted'
+        and exists (select 1 from public.journal_lines l where l.entry_id = e.id)
+        and not exists (select 1 from public.vouchers v where v.journal_entry_id = e.id)`).trim();
+    if (without !== "0") throw new Error(`${without} movements were made without a voucher`);
+  });
+
+  check("one movement is one number, however many commands ask for it", () => {
+    const doubled = psql(`select count(*) from (
+      select journal_entry_id from public.vouchers
+      where journal_entry_id is not null
+      group by journal_entry_id having count(*) > 1) x`).trim();
+    if (doubled !== "0") throw new Error(`${doubled} movements were given two vouchers`);
+  });
+
+  check("an ordinary cashbox move is handed a number too", () => {
+    psql(`select public.sarraf_customer_vault_move('cust-1','CNY',250,'in',7.20,
+      'a deposit at the counter','cmd-v9-1')`);
+    const v = psql(`select v.reference from public.vouchers v
+      join public.journal_entries e on e.id = v.journal_entry_id
+      where e.command_key like 'cmd-v9-1%' limit 1`).trim();
+    if (!/^V-\d{4}-\d{6}$/.test(v)) throw new Error(`the deposit's voucher reads "${v}"`);
+  });
+
+  check("the voucher names the kind of movement it was", () => {
+    const kinds = psql(`select string_agg(distinct kind::text, ',' order by kind::text)
+                        from public.vouchers`).trim();
+    for (const expected of ["debt_write_off", "debt_offset", "vault_deposit"]) {
+      if (!kinds.includes(expected)) throw new Error(`no voucher was ever a ${expected}: ${kinds}`);
+    }
+  });
+
+  // §13.F.3: a rate that moved today says nothing about what a completed trade earned.
+  check("the profit and loss keeps realized apart from unrealized", () => {
+    psql(`select public.sarraf_post_simple_entry('je-pl-real', current_date, 'transaction','u-a',
+      'acc-1000','acc-4000','CNY', 720, 7.20, 'trading income','cmd-pl-1','customer','cust-1')`);
+    psql(`select public.sarraf_post_simple_entry('je-pl-unreal', current_date, 'revaluation','u-a',
+      'acc-1400','acc-4900','CNY', 360, 7.20, 'rate moved','cmd-pl-2',null,null)`);
+    const pl = JSON.parse(psql("select public.sarraf_profit_and_loss(null,null,'CNY')::text"));
+    const realized = pl.realized.find((r) => r.currency === "CNY");
+    const unrealized = pl.unrealized.find((r) => r.currency === "CNY");
+    const all = pl.by_currency.find((c) => c.currency === "CNY");
+    if (Number(unrealized?.amount) !== 360) throw new Error(`unrealized is ${unrealized?.amount}, expected 360`);
+    // The point of the report: the 360 the rate moved is not part of what trading earned.
+    if (Number(realized.net) !== Number(all.net) - 360) {
+      throw new Error(`the revaluation was left inside the trading result: ${realized.net} vs ${all.net}`);
+    }
+    if (Number(all.income) < 1080) throw new Error(`income is ${all.income}, expected at least 1080`);
+  });
+
+  check("expense is subtracted from income, and each is stated as itself", () => {
+    psql(`select public.sarraf_post_simple_entry('je-pl-exp', current_date, 'transaction','u-a',
+      'acc-5200','acc-1000','CNY', 200, 7.20, 'an operating cost','cmd-pl-3',null,null)`);
+    const pl = JSON.parse(psql("select public.sarraf_profit_and_loss(null,null,'CNY')::text"));
+    const cny = pl.by_currency.find((c) => c.currency === "CNY");
+    if (Number(cny.expense) < 200) throw new Error(`expense is ${cny.expense}`);
+    if (Number(cny.net) !== Number(cny.income) - Number(cny.expense)) {
+      throw new Error(`net ${cny.net} is not income ${cny.income} less expense ${cny.expense}`);
+    }
+  });
+
+  check("currencies are reported apart, never added together", () => {
+    psql(`select public.sarraf_post_simple_entry('je-pl-usd', current_date, 'transaction','u-a',
+      'acc-1000','acc-4000','USD', 50, 1, 'dollar income','cmd-pl-4',null,null)`);
+    const pl = JSON.parse(psql("select public.sarraf_profit_and_loss()::text"));
+    const codes = pl.by_currency.map((c) => c.currency).sort();
+    if (!codes.includes("CNY") || !codes.includes("USD")) throw new Error(`currencies: ${codes}`);
+    if (pl.by_currency.some((c) => c.currency === null)) throw new Error("a combined figure appeared");
+  });
+
+  check("the range is honoured, and a backwards range is refused", () => {
+    const empty = JSON.parse(psql(`select public.sarraf_profit_and_loss('2000-01-01','2000-01-31')::text`));
+    if (empty.by_currency.length) throw new Error("a range with nothing in it produced figures");
+    let denied = false;
+    try { psql(`select public.sarraf_profit_and_loss('2026-12-31','2026-01-01')`); } catch { denied = true; }
+    if (!denied) throw new Error("a range ending before it starts was accepted");
+  });
+
+  check("a customer cannot read the profit and loss", () => {
+    asSeller();
+    let denied = false;
+    try { psql("select public.sarraf_profit_and_loss()"); } catch { denied = true; }
+    asAdmin();
+    if (!denied) throw new Error("a customer read the profit and loss");
+  });
+
+  // §12: the ledger has always been correct and no screen could open it.
+  check("the general ledger opens, with both sides of every entry", () => {
+    asAdmin();
+    const gl = JSON.parse(psql(`select public.sarraf_general_ledger(null,null,null,null,null,null,20,0)::text`));
+    if (!gl.entries.length) throw new Error("the ledger came back empty");
+    const entry = gl.entries.find((e) => e.id === "je-pl-real");
+    if (!entry) throw new Error("a posted entry is missing from the ledger");
+    if (entry.lines.length !== 2) throw new Error(`the entry shows ${entry.lines.length} lines`);
+    if (!entry.lines.every((l) => l.account_code && l.account_name)) throw new Error("a line has no account");
+    if (!entry.voucher) throw new Error("the entry does not name its voucher");
+  });
+
+  check("the ledger can be searched and filtered", () => {
+    const byAccount = JSON.parse(psql(
+      `select public.sarraf_general_ledger(null,null,'acc-4000',null,null,null,50,0)::text`));
+    if (!byAccount.entries.length) throw new Error("filtering by account found nothing");
+    if (!byAccount.entries.every((e) => e.lines.some((l) => l.account_id === "acc-4000"))) {
+      throw new Error("an entry without that account was returned");
+    }
+    const bySearch = JSON.parse(psql(
+      `select public.sarraf_general_ledger(null,null,null,null,null,'trading income',50,0)::text`));
+    if (!bySearch.entries.some((e) => e.id === "je-pl-real")) throw new Error("the search missed its entry");
+  });
+
+  check("the ledger is bounded, and says how much it did not return", () => {
+    const page = JSON.parse(psql(`select public.sarraf_general_ledger(null,null,null,null,null,null,2,0)::text`));
+    if (page.entries.length > 2) throw new Error(`asked for 2, got ${page.entries.length}`);
+    if (!(page.total >= page.entries.length)) throw new Error("the total is smaller than the page");
+    const huge = JSON.parse(psql(`select public.sarraf_general_ledger(null,null,null,null,null,null,99999,0)::text`));
+    if (huge.limit > 500) throw new Error(`the ceiling was ignored: ${huge.limit}`);
+  });
+
+  check("a customer cannot read the general ledger", () => {
+    asSeller();
+    let denied = false;
+    try { psql("select public.sarraf_general_ledger()"); } catch { denied = true; }
+    asAdmin();
+    if (!denied) throw new Error("a customer read the general ledger");
+  });
+
+  // ── the states an entry can be in, and the debts nobody is chasing ──
+  asAdmin();
+
+  // §13.A.8. Reversing is a correction with an opposite entry behind it; voiding is a
+  // cancellation with none. A system that cannot tell them apart cannot explain itself.
+  const j2 = (sql) => JSON.parse(psql(`select (${sql})::text`));
+  const statusOf = (id) => psql(`select status from public.journal_entries where id='${id}'`).trim();
+  // A draft with real lines, because an entry with none cannot be posted at all.
+  const draftEntry = (id) => {
+    psql(`insert into public.journal_entries(id,status,business_date,source_type,actor_id,description)
+          values ('${id}','draft',current_date,'transaction','u-a','awaiting a second pair of eyes')`);
+    psql(`insert into public.journal_lines(entry_id,line_no,account_id,side,currency,amount,base_amount,base_rate)
+          values ('${id}',1,'acc-1000','debit','USD',10,10,1),
+                 ('${id}',2,'acc-4000','credit','USD',10,10,1)`);
+  };
+
+  check("an entry can be approved before it is posted", () => {
+    draftEntry("je-st");
+    psql("update public.journal_entries set status='approved' where id='je-st'");
+    if (statusOf("je-st") !== "approved") throw new Error(`status is ${statusOf("je-st")}`);
+  });
+
+  check("a posted entry is never edited back into a draft", () => {
+    psql("update public.journal_entries set status='posted', posted_at=now() where id='je-st'");
+    for (const back of ["draft", "approved"]) {
+      let denied = false;
+      try { psql(`update public.journal_entries set status='${back}' where id='je-st'`); }
+      catch { denied = true; }
+      if (!denied) throw new Error(`a posted entry was moved back to ${back}`);
+    }
+  });
+
+  check("a posted entry may be settled, or reversed, and nothing else", () => {
+    psql("update public.journal_entries set status='settled' where id='je-st'");
+    if (statusOf("je-st") !== "settled") throw new Error(`status is ${statusOf("je-st")}`);
+    psql("update public.journal_entries set status='reversed' where id='je-st'");
+    let denied = false;
+    try { psql("update public.journal_entries set status='posted' where id='je-st'"); } catch { denied = true; }
+    if (!denied) throw new Error("a reversed entry was posted again");
+  });
+
+  check("a draft can be voided, which is not the same as reversed", () => {
+    draftEntry("je-void");
+    psql("update public.journal_entries set status='voided' where id='je-void'");
+    if (statusOf("je-void") !== "voided") throw new Error(`status is ${statusOf("je-void")}`);
+    if (psql("select public.sarraf_journal_transition_allowed('posted','voided')").trim() !== "f") {
+      throw new Error("a posted entry could be voided rather than reversed");
+    }
+  });
+
+  // §13.D.1: a partner's unconfirmed money was spendable.
+  check("a partner's account holds pending apart from available", () => {
+    psql(`insert into public.partner_accounts(id,partner_id,currency,available,pending)
+          values ('pa-pend','p-1','USD',100,50) on conflict (partner_id,currency)
+          do update set available = 100, pending = 50`);
+    const row = psql(`select available||'|'||pending from public.partner_accounts
+                      where partner_id='p-1' and currency='USD'`).trim();
+    if (row !== "100.0000000000|50.0000000000") throw new Error(`the partner's account reads ${row}`);
+  });
+
+  mustFail("a partner's pending balance cannot go negative",
+    "update public.partner_accounts set pending = -1 where id='pa-pend'");
+
+  // §13.C.10: an overdue debt sat in the list at the same weight as one due next month.
+  check("overdue debts are listed with how late they are", () => {
+    psql(`insert into public.debts(id,debtor_type,debtor_id,creditor_type,creditor_id,currency,
+            original_principal,outstanding_principal,source_type,reason,created_by,due_at) values
+          ('d-late','customer','cust-1','zeman',null,'CNY',900,900,'unpaid_transaction','long overdue','u-a',
+           statement_timestamp() - interval '45 days'),
+          ('d-soon','customer','cust-1','zeman',null,'CNY',300,300,'unpaid_transaction','due shortly','u-a',
+           statement_timestamp() + interval '3 days'),
+          ('d-later','customer','cust-1','zeman',null,'CNY',100,100,'unpaid_transaction','not yet','u-a',
+           statement_timestamp() + interval '90 days')`);
+    const out = JSON.parse(psql("select public.sarraf_overdue_debts(7)::text"));
+    const late = out.overdue.find((d) => d.id === "d-late");
+    if (!late) throw new Error("the overdue debt was not listed");
+    if (Number(late.days_late) < 44) throw new Error(`it is reported ${late.days_late} days late`);
+    if (!out.due_soon.some((d) => d.id === "d-soon")) throw new Error("the debt due shortly was not listed");
+    if (out.overdue.some((d) => d.id === "d-later")) throw new Error("a debt due in 90 days was called overdue");
+    if (out.due_soon.some((d) => d.id === "d-later")) throw new Error("a debt due in 90 days was called due soon");
+  });
+
+  check("overdue totals are kept per currency", () => {
+    const out = JSON.parse(psql("select public.sarraf_overdue_debts(7)::text"));
+    if (!out.overdue_totals.CNY) throw new Error("no yuan total");
+    if ("total" in out.overdue_totals) throw new Error("a combined total across currencies appeared");
+  });
+
+  check("the most overdue debt is listed first", () => {
+    const out = JSON.parse(psql("select public.sarraf_overdue_debts(7)::text"));
+    const days = out.overdue.map((d) => Number(d.days_late));
+    for (let i = 1; i < days.length; i++) {
+      if (days[i] > days[i - 1]) throw new Error(`the list is not ordered: ${days}`);
+    }
+  });
+
+  check("a customer sees only debts they are party to", () => {
+    psql(`create or replace function auth.uid() returns uuid language sql stable
+          as $fn$ select '77777777-7777-7777-7777-777777777777'::uuid $fn$`);
+    const out = JSON.parse(psql("select public.sarraf_overdue_debts(7)::text"));
+    asAdmin();
+    if (out.overdue.length || out.due_soon.length) {
+      throw new Error(`a stranger saw ${out.overdue.length + out.due_soon.length} debts`);
+    }
+  });
+
+  // ── money reported to a partner, and not yet confirmed ──
+  check("a reported partner credit is visible and spendable by nobody", () => {
+    asAdmin();
+    const out = j2(`public.sarraf_partner_pending_credit('p-1','CNY',400,'the partner says they sent it','cmd-pp-1')`);
+    if (Number(out.pending) !== 400) throw new Error(`pending is ${out.pending}`);
+    if (out.posted !== false) throw new Error("unconfirmed money was posted");
+  });
+
+  // §13.D.4 must hold for confirmed money exactly as it does for money credited directly.
+  check("confirming a partner credit settles their debt first, then the remainder", () => {
+    psql(`insert into public.debts(id,debtor_type,debtor_id,creditor_type,creditor_id,currency,
+            original_principal,outstanding_principal,source_type,reason,created_by)
+          values ('d-pp','partner','p-1','zeman',null,'CNY',250,250,'partner_over_limit','over limit','u-a')`);
+    const before = Number(psql(`select available from public.partner_accounts
+                                where partner_id='p-1' and currency='CNY'`).trim());
+    const out = j2(`public.sarraf_partner_pending_resolve('p-1','CNY',400,true,7.20,
+      'counted at the counter','cmd-pp-2')`);
+    const after = Number(psql(`select available from public.partner_accounts
+                               where partner_id='p-1' and currency='CNY'`).trim());
+    const debt = psql("select status from public.debts where id='d-pp'").trim();
+    if (Number(out.pending) !== 0) throw new Error(`pending is ${out.pending}`);
+    if (debt !== "settled") throw new Error(`the debt is ${debt}, not settled first`);
+    if (after !== before + 150) throw new Error(`the remainder is ${after - before}, expected 150`);
+  });
+
+  check("a credit that never arrived is turned away and posts nothing", () => {
+    psql(`select public.sarraf_partner_pending_credit('p-1','CNY',90,'reported by phone','cmd-pp-3')`);
+    const entriesBefore = psql("select count(*) from public.journal_entries").trim();
+    const out = j2(`public.sarraf_partner_pending_resolve('p-1','CNY',90,false,null,
+      'the money never arrived','cmd-pp-4')`);
+    const entriesAfter = psql("select count(*) from public.journal_entries").trim();
+    if (Number(out.pending) !== 0) throw new Error(`pending is ${out.pending}`);
+    if (entriesBefore !== entriesAfter) throw new Error("a credit that never arrived was posted");
+  });
+
+  mustFail("more cannot be confirmed than was ever reported",
+    `select public.sarraf_partner_pending_resolve('p-1','CNY',9999,true,null,'over confirming','cmd-pp-5')`);
+
   let failed = 0;
   for (const [ok, name] of checks) { console.log(`${ok ? "PASS" : "FAIL"}  ${name}`); if (!ok) failed++; }
   console.log(failed

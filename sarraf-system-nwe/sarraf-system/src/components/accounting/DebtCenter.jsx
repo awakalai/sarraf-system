@@ -6,8 +6,10 @@ import {
 } from "../../services/accounting";
 import {
   DEBT_EVENT_KU, OFFSET_REASON_MIN, VOUCHER_KIND_KU, WRITE_OFF_REASON_MIN,
-  loadDebtHistory, loadVoucherRegister, offsetAmount, offsetDebts, offsetObjection, writeOffDebt,
+  debtStatementRows, filterDebts, lateness, loadDebtHistory, loadOverdueDebts,
+  loadVoucherRegister, offsetAmount, offsetDebts, offsetObjection, writeOffDebt,
 } from "../../services/debtRegister";
+import { toCsv } from "../../services/csvSafe";
 import "./debt-center.css";
 
 const COPY = {
@@ -26,6 +28,9 @@ const COPY = {
     willCancel: "ئەمەندە دەبڕدرێتەوە", offsetDone: "دانانەوە کرا", writeOffDone: "قەرزەکە بەخشرا",
     voucher: "پسووڵە", pickTwo: "دوو قەرز هەڵبژێرە بۆ دانانەوە",
     reasonHint: (n) => `لانیکەم ${n} پیت`,
+    search: "گەڕان بە ناو، هۆکار یان ژمارە", all: "هەمووی", overdueOnly: "تەنها بەسەرچووەکان",
+    exportCsv: "داگرتنی خشتە", print: "پرینت", showing: "پیشاندانی", ofTotal: "لە",
+    lateTitle: "قەرزی بەسەرچوو", dueSoonTitle: "بەم زووانە", nothingLate: "هیچ قەرزێکی بەسەرچوو نییە",
   },
   en: {
     title: "Debt & Cashbox Centre", subtitle: "Debts by explicit direction and currency — never netted",
@@ -43,6 +48,9 @@ const COPY = {
     willCancel: "This much cancels", offsetDone: "Offset recorded", writeOffDone: "Debt written off",
     voucher: "Voucher", pickTwo: "Select two debts to offset",
     reasonHint: (n) => `at least ${n} characters`,
+    search: "Search by name, reason or id", all: "All", overdueOnly: "Overdue only",
+    exportCsv: "Download table", print: "Print", showing: "Showing", ofTotal: "of",
+    lateTitle: "Overdue", dueSoonTitle: "Due soon", nothingLate: "Nothing is overdue",
   },
   ar: {
     title: "مركز الديون والخزنة", subtitle: "الديون باتجاه وعملة واضحين — دون دمج العملات",
@@ -60,6 +68,9 @@ const COPY = {
     willCancel: "المبلغ المقاصّ", offsetDone: "تمت المقاصّة", writeOffDone: "أُعدم الدين",
     voucher: "سند", pickTwo: "اختر دينين للمقاصّة",
     reasonHint: (n) => `${n} حرفاً على الأقل`,
+    search: "ابحث بالاسم أو السبب أو الرقم", all: "الكل", overdueOnly: "المتأخرة فقط",
+    exportCsv: "تنزيل الجدول", print: "طباعة", showing: "عرض", ofTotal: "من",
+    lateTitle: "متأخر", dueSoonTitle: "قريباً", nothingLate: "لا شيء متأخر",
   },
 };
 const localeKey = (lang) => (lang === "en" || lang === "ar" ? lang : "ku");
@@ -95,6 +106,9 @@ export function DebtCenter({ client, lang = "ku", partyId = null, nameOf = (id) 
   const [busy, setBusy] = useState(false);
   const [vouchers, setVouchers] = useState([]);
   const [history, setHistory] = useState(null);
+  // §13.C.9: with forty open debts, aging buckets alone meant reading the whole table.
+  const [query, setQuery] = useState({ search: "", currency: null, direction: null, overdueOnly: false });
+  const [late, setLate] = useState(null);
 
   const load = useCallback(async () => {
     setState("loading");
@@ -113,6 +127,10 @@ export function DebtCenter({ client, lang = "ku", partyId = null, nameOf = (id) 
       } catch { setLedger(null); }
       try { setVouchers(await loadVoucherRegister(client, { partyId, limit: 50 })); }
       catch { setVouchers([]); }
+      // §13.C.10: an overdue debt used to sit in the list at the same weight as one due next
+      // month. Reading this changes nothing, so a failure here must not fail the centre.
+      try { setLate(await loadOverdueDebts(client)); }
+      catch { setLate(null); }
       setState("ready");
     } catch (e) {
       console.error("debt centre", e);
@@ -125,6 +143,23 @@ export function DebtCenter({ client, lang = "ku", partyId = null, nameOf = (id) 
 
   const summary = useMemo(() => summarizeDebts(debts), [debts]);
   const partyLabel = (type, id) => (type === "zeman" ? copy.zeman : nameOf(id) || id || "—");
+  // The cards above stay whole: they answer "how much is outstanding", which a filter would
+  // quietly change the answer to. Only the table below narrows.
+  const shown = useMemo(() => filterDebts(debts, { ...query, nameOf }), [debts, query, nameOf]);
+  const currencies = useMemo(
+    () => [...new Set(debts.map((d) => d.currency))].filter(Boolean).sort(), [debts]);
+
+  // Through toCsv, which is what stops a party's name beginning with "=" from becoming a
+  // formula in whoever opens the file.
+  const exportCsv = () => {
+    const csv = toCsv(debtStatementRows(shown, { nameOf }));
+    const url = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `zeman-debts-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const chosen = picked.map((id) => debts.find((d) => d.id === id)).filter(Boolean);
   // The same check the database makes, shown beside the button rather than arriving afterwards.
@@ -218,6 +253,38 @@ export function DebtCenter({ client, lang = "ku", partyId = null, nameOf = (id) 
         </article>
       </div>
 
+      {/* §13.C.10: what is late, before anything else on the screen. */}
+      {late && (late.overdue_count > 0 || late.due_soon_count > 0) && (
+        <div className="debt-late" role="status">
+          <div className="debt-late-head">
+            <AlertTriangle aria-hidden="true" />
+            <strong>{late.overdue_count} {copy.lateTitle}</strong>
+            {late.due_soon_count > 0 && (
+              <span className="debt-muted">· {late.due_soon_count} {copy.dueSoonTitle}</span>
+            )}
+            <span className="debt-late-totals">
+              {Object.entries(late.overdue_totals || {}).map(([c, v]) => (
+                <span key={c}>{money(v)} <span className="debt-currency-code">{c}</span></span>
+              ))}
+            </span>
+          </div>
+          <ul>
+            {(late.overdue || []).slice(0, 5).map((d) => (
+              <li key={d.id}>
+                <span>
+                  <strong>{partyLabel(d.debtor_type, d.debtor_id)}</strong> {copy.owes}{" "}
+                  <strong>{partyLabel(d.creditor_type, d.creditor_id)}</strong>
+                </span>
+                <span className="debt-amount">
+                  {money(d.outstanding_principal)} <span className="debt-currency-code">{d.currency}</span>
+                </span>
+                <span className="recon-badge is-bad">{lateness(d.days_late)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {ledger && (
         <div className={`debt-ledger ${ledger.balanced ? "is-ok" : "is-bad"}`} role="status">
           {ledger.balanced ? copy.balanced : copy.unbalanced}
@@ -238,7 +305,33 @@ export function DebtCenter({ client, lang = "ku", partyId = null, nameOf = (id) 
         </div>
       </div>
 
-      {debts.length === 0 ? (
+      {debts.length > 0 && (
+        <div className="debt-filters" role="search">
+          <input value={query.search} placeholder={copy.search} aria-label={copy.search}
+            onChange={(e) => setQuery({ ...query, search: e.target.value })} />
+          <select value={query.currency || ""} aria-label={copy.outstanding}
+            onChange={(e) => setQuery({ ...query, currency: e.target.value || null })}>
+            <option value="">{copy.all}</option>
+            {currencies.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <select value={query.direction || ""} aria-label={copy.owes}
+            onChange={(e) => setQuery({ ...query, direction: e.target.value || null })}>
+            <option value="">{copy.all}</option>
+            <option value="weOwe">{copy.weOwe}</option>
+            <option value="owedToUs">{copy.owedToUs}</option>
+          </select>
+          <label className="debt-filter-check">
+            <input type="checkbox" checked={query.overdueOnly}
+              onChange={(e) => setQuery({ ...query, overdueOnly: e.target.checked })} />
+            {copy.overdueOnly}
+          </label>
+          <span className="debt-muted">{copy.showing} {shown.length} {copy.ofTotal} {debts.length}</span>
+          <button type="button" onClick={exportCsv}>{copy.exportCsv}</button>
+          <button type="button" onClick={() => window.print()}>{copy.print}</button>
+        </div>
+      )}
+
+      {shown.length === 0 ? (
         <p className="debt-muted debt-empty">{copy.empty}</p>
       ) : (
         <div className="debt-table-wrap">
@@ -252,7 +345,7 @@ export function DebtCenter({ client, lang = "ku", partyId = null, nameOf = (id) 
               </tr>
             </thead>
             <tbody>
-              {debts.map((d) => {
+              {shown.map((d) => {
                 const bucket = agingBucketOf(d.dueAt);
                 return (
                   <tr key={d.id} className={d.overdue ? "is-overdue" : ""}>
@@ -307,7 +400,7 @@ export function DebtCenter({ client, lang = "ku", partyId = null, nameOf = (id) 
       )}
 
       {/* §13.C.6 — netting. The objection, if there is one, is stated before the button. */}
-      {canAct && debts.length > 0 && (
+      {canAct && shown.length > 0 && (
         <div className="debt-offset-bar" role="group" aria-label={copy.offset}>
           <span className={objection ? "debt-muted" : ""}>
             {objection || `${copy.willCancel}: ${money(cancels)} ${chosen[0]?.currency || ""}`}

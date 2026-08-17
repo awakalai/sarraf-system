@@ -139,20 +139,20 @@ export function ReceiptForwardingCenter({
   const nameOf = (id) => (people || []).find((p) => p.id === id)?.name || id || "—";
 
   return (
-    <section className="fwd-panel" aria-labelledby="fwd-title">
+    <section className="fwd-panel">
       <header className="fwd-header">
-        <div className="fwd-icon"><Truck aria-hidden="true" /></div>
+        <div className="fwd-icon"><Truck /></div>
         <div>
-          <h2 id="fwd-title">{copy.title}</h2>
+          <h2>{copy.title}</h2>
           <p>{copy.subtitle}</p>
         </div>
         <button type="button" className="fwd-refresh" onClick={load} disabled={busy}>
-          <RefreshCw aria-hidden="true" /> {copy.refresh}
+          <RefreshCw /> {copy.refresh}
         </button>
       </header>
 
       {recon && (
-        <div className="fwd-recon" role="status">
+        <div className="fwd-recon">
           <h3>{copy.recon}</h3>
           <div className="fwd-recon-grid">
             <div className="fwd-recon-cell"><span>{copy.reconForwarded}</span><b>{recon.forwarded}</b></div>
@@ -168,8 +168,7 @@ export function ReceiptForwardingCenter({
       <div className="fwd-controls">
         <label className="fwd-field">
           <span>{copy.recipient}</span>
-          <select value={toActorId} onChange={(e) => setToActorId(e.target.value)}
-            aria-label={copy.recipient} required>
+          <select value={toActorId} onChange={(e) => setToActorId(e.target.value)}>
             <option value="">{copy.pickRecipient}</option>
             {recipients.map((p) => (
               <option key={p.id} value={p.id}>{p.name} — {copy.roles[p.role] || p.role}</option>
@@ -178,18 +177,17 @@ export function ReceiptForwardingCenter({
         </label>
         <label className="fwd-field fwd-field-wide">
           <span>{copy.reason}</span>
-          <input value={reason} onChange={(e) => setReason(e.target.value)} maxLength={700}
-            aria-label={copy.reason} />
+          <input value={reason} onChange={(e) => setReason(e.target.value)} maxLength={700} />
         </label>
         <button type="button" className="fwd-send" onClick={send} disabled={busy || !picked.size || !toActorId}>
-          {busy ? <Loader2 className="fwd-spin" aria-hidden="true" /> : <Send aria-hidden="true" />}
+          {busy ? <Loader2 className="fwd-spin" /> : <Send />}
           {busy ? copy.working : `${copy.send} (${picked.size})`}
         </button>
       </div>
 
       {result && (
-        <div className={`fwd-result ${result.skipped.length ? "is-mixed" : "is-ok"}`} role="status">
-          <h3><CheckCircle2 aria-hidden="true" /> {copy.result}</h3>
+        <div className={`fwd-result ${result.skipped.length ? "is-mixed" : "is-ok"}`}>
+          <h3><CheckCircle2 /> {copy.result}</h3>
           <p>{copy.sent}: <b>{result.forwarded}</b>{result.replayed ? ` — ${copy.replayed}` : ""}</p>
           {result.skipped.length > 0 && (
             <ul className="fwd-skip-list">
@@ -223,8 +221,7 @@ export function ReceiptForwardingCenter({
                   return (
                     <li key={d.id} className={picked.has(d.id) ? "is-picked" : ""}>
                       <label className="fwd-row">
-                        <input type="checkbox" checked={picked.has(d.id)} onChange={() => toggle(d.id)}
-                          aria-label={`${copy.send} ${d.id}`} />
+                        <input type="checkbox" checked={picked.has(d.id)} onChange={() => toggle(d.id)} />
                         <span className="fwd-row-main">
                           <span className="fwd-row-id">{d.id}</span>
                           <span className="fwd-row-flow">{copy.flows[d.flow] || d.flow}</span>
@@ -239,8 +236,7 @@ export function ReceiptForwardingCenter({
                         </span>
                       </label>
                       {signedUrlFor && d.storage_path && (
-                        <button type="button" className="fwd-view" onClick={() => openImage(d.storage_path)}
-                          aria-label={`${copy.view} ${d.id}`}>
+                        <button type="button" className="fwd-view" onClick={() => openImage(d.storage_path)}>
                           <Eye /> {copy.view}
                         </button>
                       )}

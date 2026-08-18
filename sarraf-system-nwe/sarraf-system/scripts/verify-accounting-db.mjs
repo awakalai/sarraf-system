@@ -2477,6 +2477,105 @@ try {
     if (d.partner_id !== null) throw new Error(`holder is ${d.partner_id}`);
   });
 
+  // ── Task B: a direct trade is the owner's own, and never touches a partner ──
+  //
+  // "these are direct buying and selling where the money does not go to any partner. All the
+  //  details, profit and funds are recorded straight to the admin's own safe — so there is no
+  //  investor share in it, and it stays entirely out of the partner-custody logic."
+
+  const directPair = (pair, buyId, sellId, buyTotal, sellTotal) => `
+    public.sarraf_commit_transactions(
+      jsonb_build_array(
+        jsonb_build_object('id','${buyId}','type','buy','cp_id','cust-1','cur_id','cny',
+          'amount',1000,'rate',0.14,'against_id','usd','total',${buyTotal},'status','completed',
+          'direct',true,'own_money',true,'pair_id','${pair}','direct_role','buy'),
+        jsonb_build_object('id','${sellId}','type','sell','cp_id','cust-1','cur_id','cny',
+          'amount',1000,'rate',0.15,'against_id','usd','total',${sellTotal},'status','completed',
+          'direct',true,'own_money',true,'pair_id','${pair}','direct_role','sell')),
+      '[]'::jsonb, null, 'cmd-${pair}', 'direct trade', 'owner funded')`;
+
+  check("a direct trade is booked as a matched owner-funded pair", () => {
+    psql(`select ${directPair("pair-d1", "tx-d1b", "tx-d1s", 140, 150)}`);
+    const both = psql(`select string_agg(id||':'||direct::text||':'||own_money::text||':'||
+      coalesce(partner_id,'-')||':'||direct_role, ',' order by id)
+      from public.txs where pair_id='pair-d1'`).trim();
+    if (both !== "tx-d1b:true:true:-:buy,tx-d1s:true:true:-:sell") {
+      throw new Error(`the pair was booked as ${both}`);
+    }
+  });
+
+  check("the profit of a direct trade is the pair's own difference", () => {
+    const profit = psql("select profit from public.txs where id='tx-d1s'").trim();
+    if (Number(profit) !== 10) throw new Error(`direct profit is ${profit}, expected 150 - 140`);
+  });
+
+  // The whole point of the type: the money never leaves the owner's hands, so no partner may be
+  // named on it and no partner balance may move because of it.
+  mustFail("a direct trade cannot name a partner",
+    `select public.sarraf_commit_transactions(
+      jsonb_build_array(
+        jsonb_build_object('id','tx-d2b','type','buy','cp_id','cust-1','cur_id','cny','amount',10,
+          'rate',0.14,'against_id','usd','total',1.4,'status','completed','direct',true,
+          'own_money',true,'pair_id','pair-d2','direct_role','buy','partner_id','p-1'),
+        jsonb_build_object('id','tx-d2s','type','sell','cp_id','cust-1','cur_id','cny','amount',10,
+          'rate',0.15,'against_id','usd','total',1.5,'status','completed','direct',true,
+          'own_money',true,'pair_id','pair-d2','direct_role','sell')),
+      '[]'::jsonb, null, 'cmd-pair-d2', 'direct trade', 'owner funded')`);
+
+  // A single leg is not a direct trade. One half of a pair would leave the owner's safe holding
+  // currency that no sale ever accounted for.
+  mustFail("half of a direct pair is refused",
+    `select public.sarraf_commit_transactions(
+      jsonb_build_array(
+        jsonb_build_object('id','tx-d3b','type','buy','cp_id','cust-1','cur_id','cny','amount',10,
+          'rate',0.14,'against_id','usd','total',1.4,'status','completed','direct',true,
+          'own_money',true,'pair_id','pair-d3','direct_role','buy')),
+      '[]'::jsonb, null, 'cmd-pair-d3', 'direct trade', 'owner funded')`);
+
+  // Money that is not the owner's own is not a direct trade, whatever it is labelled.
+  mustFail("a direct trade must be funded by the owner's own money",
+    `select public.sarraf_commit_transactions(
+      jsonb_build_array(
+        jsonb_build_object('id','tx-d4b','type','buy','cp_id','cust-1','cur_id','cny','amount',10,
+          'rate',0.14,'against_id','usd','total',1.4,'status','completed','direct',true,
+          'own_money',false,'pair_id','pair-d4','direct_role','buy'),
+        jsonb_build_object('id','tx-d4s','type','sell','cp_id','cust-1','cur_id','cny','amount',10,
+          'rate',0.15,'against_id','usd','total',1.5,'status','completed','direct',true,
+          'own_money',false,'pair_id','pair-d4','direct_role','sell')),
+      '[]'::jsonb, null, 'cmd-pair-d4', 'direct trade', 'owner funded')`);
+
+  // And the reverse, so the two types cannot blur into each other from the standard side.
+  mustFail("an ordinary trade cannot carry the fields of a direct pair",
+    `select public.sarraf_commit_transactions(
+      jsonb_build_array(
+        jsonb_build_object('id','tx-d5','type','buy','cp_id','cust-1','cur_id','cny','amount',10,
+          'rate',0.14,'against_id','usd','total',1.4,'status','completed',
+          'own_money',true,'pair_id','pair-d5')),
+      '[]'::jsonb, null, 'cmd-pair-d5', 'ordinary trade', 'not direct')`);
+
+  check("a direct trade leaves every partner balance where it was", () => {
+    const before = psql("select coalesce(sum(available),0)::text from public.partner_accounts").trim();
+    psql(`select ${directPair("pair-d6", "tx-d6b", "tx-d6s", 140, 150)}`);
+    const after = psql("select coalesce(sum(available),0)::text from public.partner_accounts").trim();
+    if (before !== after) throw new Error(`partner balances moved from ${before} to ${after}`);
+  });
+
+  // "no investor share in it". The distribution reads txs.direct, so a direct sale must carry
+  // the flag the reader keys on — otherwise the owner's own trade would be shared out.
+  check("a direct sale is excluded from anything that shares profit", () => {
+    const shared = psql(`select count(*) from public.txs
+      where type='sell' and not deleted and coalesce(direct,false) and profit is not null`).trim();
+    if (Number(shared) < 1) throw new Error("no direct sale carries a profit to exclude");
+    const leaked = psql(`select count(*) from public.txs
+      where coalesce(direct,false) and partner_id is not null`).trim();
+    if (leaked !== "0") throw new Error(`${leaked} direct trades name a partner`);
+  });
+
+  check("the books still reconcile after direct trades", () => {
+    const out = psql("select (public.sarraf_trial_balance_check()->>'balanced')::text").trim();
+    if (out !== "true") throw new Error(psql("select public.sarraf_trial_balance_check()::text"));
+  });
+
   let failed = 0;
   for (const [ok, name] of checks) { console.log(`${ok ? "PASS" : "FAIL"}  ${name}`); if (!ok) failed++; }
   console.log(failed

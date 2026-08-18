@@ -9,7 +9,7 @@ import { createHash } from "node:crypto";
 // than discovered in production.
 const source = readFileSync(new URL("../api/read-receipt.js", import.meta.url), "utf8");
 const sql = readFileSync(
-  new URL("../supabase/migrations/202608180002_ocr_attestation.sql", import.meta.url), "utf8");
+  new URL("../supabase/migrations/202608180007_ocr_attestation.sql", import.meta.url), "utf8");
 
 const sha256Hex = (v) => createHash("sha256").update(v).digest("hex");
 

@@ -1,4 +1,4 @@
--- One ratio per currency.
+-- One ratio per currency (ordered after the canonical receipt migrations).
 --
 --   rate = how many units of this currency one US dollar buys
 --

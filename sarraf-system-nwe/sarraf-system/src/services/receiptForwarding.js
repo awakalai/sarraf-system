@@ -12,14 +12,13 @@ const id = () => globalThis.crypto?.randomUUID?.() || `${Date.now().toString(36)
 export const forwardCommandKey = (subject = "batch") =>
   `receipt-forward:${String(subject).slice(0, 80)}:${id()}`;
 
-/** Only these two states may leave; everything else is evidence still under decision. */
-export const FORWARDABLE_STATES = Object.freeze(["accepted", "finalized"]);
+/** A receipt may leave only after its monetary rate snapshot has been finalized. */
+export const FORWARDABLE_STATES = Object.freeze(["finalized"]);
 
-/** Which role a flow sends to. Naming the other party is refused by the server. */
+/** Evidence follows the real flow: seller evidence goes to custody partner; partner evidence to customer. */
 export const recipientRoleFor = (flow) =>
-  flow === "customer_buys_from_zeman" ? "customer"
-    : flow === "customer_sells_to_zeman" ? "partner"
-      : null;
+  flow === "customer_sells_to_zeman" ? "partner"
+    : flow === "customer_buys_from_zeman" ? "customer" : null;
 
 export const SKIP_REASON = Object.freeze({
   not_found: "نەدۆزرایەوە",
@@ -36,6 +35,7 @@ export const SKIP_REASON = Object.freeze({
   seen: "پێشتر بینراوە",
   recipient_must_be_partner: "ئەم فیشە بۆ هاوبەش دەنێردرێت، نەک کڕیار",
   recipient_must_be_customer: "ئەم فیشە بۆ کڕیار دەنێردرێت، نەک هاوبەش",
+  unsupported_flow: "ئاڕاستەی ئەم فیشە ناسراو نییە",
 });
 
 export const skipReasonText = (reason) => SKIP_REASON[reason] || reason;
@@ -51,7 +51,7 @@ export const DELIVERY_TEXT = Object.freeze({
 export const deliveryText = (status) => DELIVERY_TEXT[status] || status;
 
 /** Documents an operator may forward right now, and why the rest cannot go. */
-export function partitionForForwarding(documents, recipientRole = null) {
+export function partitionForForwarding(documents) {
   const eligible = [];
   const blocked = [];
   for (const d of documents || []) {
@@ -59,9 +59,12 @@ export function partitionForForwarding(documents, recipientRole = null) {
       blocked.push({ ...d, blockedBy: d.state });
       continue;
     }
-    const wants = recipientRoleFor(d.flow);
-    if (recipientRole && wants && wants !== recipientRole) {
-      blocked.push({ ...d, blockedBy: wants === "partner" ? "recipient_must_be_partner" : "recipient_must_be_customer" });
+    if (!recipientRoleFor(d.flow)) {
+      blocked.push({ ...d, blockedBy: "unsupported_flow" });
+      continue;
+    }
+    if (d.flow === "customer_sells_to_zeman" && !d.partnerId) {
+      blocked.push({ ...d, blockedBy: "recipient_must_be_partner" });
       continue;
     }
     eligible.push(d);
@@ -69,33 +72,34 @@ export function partitionForForwarding(documents, recipientRole = null) {
   return { eligible, blocked };
 }
 
-export async function forwardReceipts(client, { documentIds, toActorId, transactionId = null, reason, commandKey }) {
+export async function forwardReceipts(client, { documentIds, reason, commandKey }) {
   const ids = [...new Set((documentIds || []).filter(Boolean))];
   if (!ids.length) throw new Error("هیچ فیشێک هەڵنەبژێردراوە");
-  if (!toActorId) throw new Error("وەرگر پێویستە");
   const why = String(reason ?? "").normalize("NFKC").trim();
   if (why.length < 8) throw new Error("هۆکار دەبێت لانیکەم ٨ پیت بێت");
 
-  const { data, error } = await client.rpc("sarraf_forward_receipts", {
+  const { data, error } = await client.rpc("sarraf_forward_receipts_v2", {
     p_document_ids: ids,
-    p_to_actor_id: toActorId,
-    p_transaction_id: transactionId,
     p_reason: why,
-    p_command_key: commandKey || forwardCommandKey(toActorId),
+    p_command_key: commandKey || forwardCommandKey("assigned"),
   });
   if (error) throw error;
   return {
     forwarded: Number(data?.forwarded) || 0,
     skipped: (data?.skipped || []).map((s) => ({ id: s.id, reason: s.reason, text: skipReasonText(s.reason) })),
-    toActorId: data?.to_actor_id || toActorId,
-    toRole: data?.to_role || null,
+    destinations: (data?.destinations || []).map((destination) => ({
+      documentId: destination.document_id,
+      toActorId: destination.to_actor_id,
+      toRole: destination.to_role,
+      deliveryStatus: destination.delivery_status,
+    })),
     replayed: data?.replayed === true,
   };
 }
 
 /** A recipient's own forwarded receipts — figures and status, never the internal trail. */
 export async function loadForwardedToMe(client, limit = 100) {
-  const { data, error } = await client.rpc("sarraf_my_forwarded_receipts", { p_limit: limit });
+  const { data, error } = await client.rpc("sarraf_my_forwarded_receipts_v2", { p_limit: limit });
   if (error) throw error;
   return (data || []).map((r) => ({
     documentId: r.document_id,
@@ -105,22 +109,28 @@ export async function loadForwardedToMe(client, limit = 100) {
     storagePath: r.storage_path,
     currency: r.currency,
     gross: r.gross_amount == null ? null : Number(r.gross_amount),
+    orderAmount: r.order_amount == null ? null : Number(r.order_amount),
     fee: r.fee_amount == null ? null : Number(r.fee_amount),
     net: r.net_amount == null ? null : Number(r.net_amount),
     refNo: r.ref_no,
+    merchantOrderNo: r.merchant_order_no,
+    payee: r.payee,
+    platform: r.platform,
+    hasFee: r.has_fee == null ? null : r.has_fee === true,
     txDate: r.tx_date,
     transactionId: r.transaction_id,
+    rateValue: r.rate_value == null ? null : Number(r.rate_value),
+    rateConvention: r.rate_convention,
+    rateDate: r.rate_date,
+    rateVersion: r.rate_version == null ? null : Number(r.rate_version),
+    grossUsd: r.gross_usd == null ? null : Number(r.gross_usd),
+    feeUsd: r.fee_usd == null ? null : Number(r.fee_usd),
+    netUsd: r.net_usd == null ? null : Number(r.net_usd),
   }));
 }
 
-export async function markDelivered(client, documentId) {
-  const { data, error } = await client.rpc("sarraf_receipt_mark_delivered", { p_document_id: documentId });
-  if (error) throw error;
-  return data;
-}
-
 export async function markSeen(client, documentId) {
-  const { data, error } = await client.rpc("sarraf_receipt_mark_seen", { p_document_id: documentId });
+  const { data, error } = await client.rpc("sarraf_receipt_mark_seen_v2", { p_document_id: documentId });
   if (error) throw error;
   return data;
 }

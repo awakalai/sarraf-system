@@ -1,4 +1,4 @@
--- What the reader read, attested by the server, and unrepeatable.
+-- What the reader read, attested by the server, and unrepeatable (after core hardening).
 --
 -- The owner's report, back in the first round: "there must not be an edit — the details of the
 -- images must not be changed. 1200 came to me, the image says so. How can they edit it and make

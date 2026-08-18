@@ -234,3 +234,86 @@ export async function loadSubledgerReconciliation(client) {
   if (error) throw error;
   return data || {};
 }
+
+/** Partner balance is never allowed to go negative; excess disbursement becomes explicit debt. */
+export async function disbursePartnerFunds(client, {
+  partnerId, currency, amount, rate, transactionId = null, reason: why, commandKey,
+}) {
+  const value = positive(amount);
+  if (!partnerId) throw new Error("هاوبەش پێویستە");
+  if (!value) throw new Error("بڕ دەبێت لە سفر گەورەتر بێت");
+  const text = reason(why);
+  if (text.length < 3) throw new Error("هۆکار پێویستە");
+  const key = commandKey || accountingCommandKey("partner-disburse", partnerId);
+  return {
+    result: await callCommand(client, "sarraf_partner_disburse", {
+      p_partner_id: partnerId,
+      p_currency: upper(currency),
+      p_amount: value,
+      p_rate: requireRateFor(currency, rate),
+      p_transaction_id: transactionId || null,
+      p_reason: text,
+      p_command_key: key,
+    }),
+    commandKey: key,
+  };
+}
+
+/** New partner credit clears oldest matching debt first; only the remainder becomes available. */
+export async function creditPartnerFunds(client, {
+  partnerId, currency, amount, rate, reason: why, commandKey,
+}) {
+  const value = positive(amount);
+  if (!partnerId) throw new Error("هاوبەش پێویستە");
+  if (!value) throw new Error("بڕ دەبێت لە سفر گەورەتر بێت");
+  const text = reason(why);
+  if (text.length < 3) throw new Error("هۆکار پێویستە");
+  const key = commandKey || accountingCommandKey("partner-credit", partnerId);
+  return {
+    result: await callCommand(client, "sarraf_partner_credit", {
+      p_partner_id: partnerId,
+      p_currency: upper(currency),
+      p_amount: value,
+      p_rate: requireRateFor(currency, rate),
+      p_reason: text,
+      p_command_key: key,
+    }),
+    commandKey: key,
+  };
+}
+
+export async function loadPartnerAccounts(client, partnerId = null) {
+  let query = client.from("partner_accounts").select("*").order("currency");
+  if (partnerId) query = query.eq("partner_id", partnerId);
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data || []).map((row) => ({
+    id: row.id,
+    partnerId: row.partner_id,
+    currency: row.currency,
+    available: Number(row.available) || 0,
+    reserved: Number(row.reserved) || 0,
+    lastEventAt: row.last_event_at,
+  }));
+}
+
+/** Latest immutable manual rate per currency, under the single 1 USD = X convention. */
+export async function loadDailyAccountingRates(client, effectiveDate = new Date().toISOString().slice(0, 10)) {
+  const { data, error } = await client.from("receipt_daily_rates")
+    .select("currency,effective_date,rate_value,version")
+    .lte("effective_date", effectiveDate)
+    .order("effective_date", { ascending: false })
+    .order("version", { ascending: false });
+  if (error) throw error;
+  const rates = { USD: { value: 1, effectiveDate, version: 1 } };
+  for (const row of data || []) {
+    if (rates[row.currency]) continue;
+    const value = Number(row.rate_value);
+    if (value > 0) rates[row.currency] = {
+      value,
+      effectiveDate: row.effective_date,
+      version: Number(row.version) || 1,
+    };
+  }
+  return rates;
+}

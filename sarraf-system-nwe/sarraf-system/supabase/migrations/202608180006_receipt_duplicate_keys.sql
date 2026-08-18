@@ -1,4 +1,4 @@
--- Four keys for a duplicate, not two.
+-- Four keys for a duplicate, not two (ordered after core hardening).
 --
 -- The check had two: the image, and the transaction reference. That catches the same photo sent
 -- twice and the same reference typed twice. It misses the two cases that actually happen:

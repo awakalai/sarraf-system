@@ -107,9 +107,9 @@
 1. **مایگرەیشنەکان ڕەن بکە** بە ڕیزبەندی. دوایین چوارەکە:
    ```
    202608170001_debt_register.sql
-   202608180001_receipt_duplicate_keys.sql
-   202608180002_ocr_attestation.sql
-   202608180003_rate_limit_and_pending.sql
+   202608180006_receipt_duplicate_keys.sql
+   202608180007_ocr_attestation.sql
+   202608180008_rate_limit_and_pending.sql
    202608190001_office_payment_confirmation.sql
    ```
 2. **`verified` بکە بە پشکنینێکی پێویست** لە ڕێککارەکانی پاراستنی لقی GitHub.

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CheckCheck, Eye, FileText, Inbox, Loader2, RefreshCw } from "lucide-react";
 import {
-  deliveryText, forwardedTotals, loadForwardedToMe, markDelivered, markSeen,
+  deliveryText, forwardedTotals, loadForwardedToMe, markSeen,
 } from "../../services/receiptForwarding";
 import "./receipt-forwarding.css";
 
@@ -11,8 +11,9 @@ const COPY = {
     subtitle: "بەڵگەی مامەڵەکانت — بڕەکان وەک لە فیشەکەدا نووسراون",
     empty: "هێشتا هیچ فیشێکت بۆ نەنێردراوە",
     loading: "بارکردن...", refresh: "نوێکردنەوە",
-    gross: "کۆی گشتی", fee: "فی", net: "نەت", count: "فیش",
-    ref: "ژمارەی مامەڵە", date: "بەروار", view: "بینینی فیش", ack: "بینیم",
+    gross: "کۆی گشتی", order: "بڕی بنەڕەتی", fee: "فی", net: "نەت", count: "فیش",
+    usd: "بە USD", rate: "نرخی جێگیرکراو", rateDate: "بەرواری نرخ",
+    ref: "ژمارەی مامەڵە", merchant: "ژمارەی فرۆشیار", date: "بەروار", view: "بینینی فیش", ack: "بینیم",
     acked: "بینراوە ✓", pending: "بڕەکانی نەخوێندراوەتەوە",
     totals: "کۆی گشتی بەپێی دراو",
     noSum: "دراوە جیاوازەکان تێکەڵ ناکرێن",
@@ -21,14 +22,15 @@ const COPY = {
 COPY.en = COPY.ku; COPY.ar = COPY.ku;
 
 const money = (n) => (n == null ? "—" : Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+const rateText = (row) => row.rateValue == null
+  ? "—"
+  : `1 USD = ${Number(row.rateValue).toLocaleString("en-US", { maximumFractionDigits: 8 })} ${row.currency || ""}`;
 
 export function ForwardedReceipts({ client, lang = "ku", signedUrlFor = null, flash = () => {} }) {
   const copy = COPY[lang] || COPY.ku;
   const [rows, setRows] = useState([]);
   const [state, setState] = useState("loading");
   const [busyId, setBusyId] = useState(null);
-  // Delivery is claimed once per document per mount; a re-render is not a second delivery.
-  const deliveredOnce = useRef(new Set());
   // Callers pass a fresh `flash` on every render. Holding it in a ref keeps `load` stable, so
   // the list is fetched when it needs to be — not once per render of whatever renders this.
   const flashRef = useRef(flash);
@@ -40,25 +42,6 @@ export function ForwardedReceipts({ client, lang = "ku", signedUrlFor = null, fl
       const data = await loadForwardedToMe(client);
       setRows(data);
       setState("ready");
-
-      // §7: delivery is recorded when the recipient's portal actually renders the document —
-      // not when the sender pressed send. This runs after the list is on screen, so a slow or
-      // failing acknowledgement never keeps someone from seeing their own receipt.
-      for (const r of data) {
-        if (r.deliveryStatus !== "queued" && r.deliveryStatus !== "sent") continue;
-        if (deliveredOnce.current.has(r.documentId)) continue;
-        deliveredOnce.current.add(r.documentId);
-        try {
-          await markDelivered(client, r.documentId);
-          setRows((prev) => prev.map((x) =>
-            x.documentId === r.documentId ? { ...x, deliveryStatus: "delivered" } : x));
-        } catch (e) {
-          // Leave it unrecorded rather than claiming a delivery that did not happen; the next
-          // refresh tries again.
-          console.error("mark delivered", e);
-          deliveredOnce.current.delete(r.documentId);
-        }
-      }
     } catch (e) {
       console.error("forwarded receipts", e);
       flashRef.current(String(e?.message || e));
@@ -145,12 +128,28 @@ export function ForwardedReceipts({ client, lang = "ku", signedUrlFor = null, fl
                 {r.net != null && (
                   <div className="fwd-doc-figures">
                     <span>{copy.gross} <b>{money(r.gross)}</b></span>
+                    <span>{copy.order} <b>{money(r.orderAmount)}</b></span>
                     <span>{copy.fee} <b>{money(r.fee)}</b></span>
                     <span>{copy.net} <b>{money(r.net)}</b></span>
                   </div>
                 )}
+                {r.netUsd != null && (
+                  <div className="fwd-doc-valuation">
+                    <div className="fwd-doc-figures">
+                      <span>{copy.gross} {copy.usd} <b>${money(r.grossUsd)}</b></span>
+                      <span>{copy.fee} {copy.usd} <b>${money(r.feeUsd)}</b></span>
+                      <span>{copy.net} {copy.usd} <b>${money(r.netUsd)}</b></span>
+                    </div>
+                    <small>
+                      {copy.rate}: <b dir="ltr">{rateText(r)}</b>
+                      {r.rateDate ? <> · {copy.rateDate}: <b dir="ltr">{r.rateDate}</b></> : null}
+                      {r.rateVersion != null ? <> · v{r.rateVersion}</> : null}
+                    </small>
+                  </div>
+                )}
                 <div className="fwd-doc-meta">
                   {r.refNo && <span>{copy.ref}: <code>{r.refNo}</code></span>}
+                  {r.merchantOrderNo && <span>{copy.merchant}: <code>{r.merchantOrderNo}</code></span>}
                   {r.txDate && <span>{copy.date}: {r.txDate}</span>}
                 </div>
                 <div className="fwd-doc-actions">

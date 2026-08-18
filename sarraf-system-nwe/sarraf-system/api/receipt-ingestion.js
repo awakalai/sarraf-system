@@ -167,7 +167,6 @@ async function legacyCommit(service, actor, batch, receipts, context) {
   if (existing.error) throw existing.error;
   if (existing.data?.id) {
     if (existing.data.uploaded_by !== actor.id) throw httpError(409, "batch_conflict", "receipt batch conflict");
-    return { batch_id: batch.id, receipt_count: receipts.length, replayed: true, recovery: true };
   }
 
   const totalGross = receipts.reduce((sum, row) => sum + row.amount, 0);
@@ -224,20 +223,78 @@ async function legacyCommit(service, actor, batch, receipts, context) {
     raw: row.raw && typeof row.raw === "object" ? row.raw : {},
   }));
 
-  await insertCompat(service, "receipt_batches", batchRow, ["source", "rejected_n", "dup_n", "uploaded_by", "partner_id", "customer_name"]);
-  try {
-    await insertCompat(service, "receipts", receiptRows, [
+  if (!existing.data?.id) {
+    await insertCompat(service, "receipt_batches", batchRow, ["source", "rejected_n", "dup_n", "uploaded_by", "partner_id", "customer_name"]);
+  }
+
+  // The compatibility path is intentionally resumable rather than compensating with DELETE.
+  // A bulk receipt insert is one PostgREST transaction. If it fails after the batch row was
+  // created, the same command reads what exists and fills only the missing immutable rows.
+  const stored = await service.from("receipts").select("id,batch_id").eq("batch_id", batch.id);
+  if (stored.error) throw stored.error;
+  const expectedIds = new Set(receiptRows.map((row) => row.id));
+  const storedIds = new Set((stored.data || []).map((row) => row.id));
+  if ([...storedIds].some((id) => !expectedIds.has(id))) {
+    throw httpError(409, "batch_receipt_conflict", "receipt batch contains an unexpected immutable row");
+  }
+  const missingRows = receiptRows.filter((row) => !storedIds.has(row.id));
+  if (missingRows.length) {
+    await insertCompat(service, "receipts", missingRows, [
       "fee_original", "fee_discount", "platform", "net_amount", "counted", "reject_code", "reject_reason",
       "dup_of", "dup_of_date", "dup_of_who", "raw", "uploaded_by", "image_path", "bank", "note",
     ]);
-  } catch (error) {
-    await service.from("receipt_batches").delete().eq("id", batch.id);
-    throw error;
+  }
+
+  const verified = await service.from("receipts").select("id,batch_id").eq("batch_id", batch.id);
+  if (verified.error) throw verified.error;
+  const verifiedIds = new Set((verified.data || []).map((row) => row.id));
+  if (verifiedIds.size !== expectedIds.size || [...expectedIds].some((id) => !verifiedIds.has(id))) {
+    throw httpError(503, "receipt_recovery_incomplete", "receipt recovery is incomplete; retry the same command");
+  }
+
+  // Databases that already have the assurance tables but temporarily lack the RPC also receive
+  // the canonical durable-intake mirror. A genuinely older database simply has no such table.
+  const intakeExisting = await service.from("receipt_intake_items").select("id").eq("batch_id", batch.id);
+  const intakeMissingTable = intakeExisting.error && (
+    ["42P01", "PGRST205"].includes(String(intakeExisting.error.code || "").toUpperCase())
+      || /receipt_intake_items.*(?:not find|does not exist|schema cache)/i.test(String(intakeExisting.error.message || ""))
+  );
+  if (intakeExisting.error && !intakeMissingTable) throw intakeExisting.error;
+  if (!intakeMissingTable) {
+    const intakeIds = new Set((intakeExisting.data || []).map((row) => row.id));
+    const intakeRows = receipts.filter((row) => !intakeIds.has(row.id)).map((row) => {
+      const accepted = row.status === "ok" && row.counted !== false;
+      return {
+        id: row.id,
+        batch_id: batch.id,
+        submitted_by: actor.id,
+        customer_id: context.customerId,
+        partner_id: context.partnerId,
+        direction: batch.direction,
+        image_path: row.image_path,
+        image_hash: text(row.image_hash, 256),
+        amount: row.amount,
+        fee: row.fee,
+        net_amount: row.amount - row.fee,
+        currency: row.currency,
+        ref_no: text(row.ref_no, 160),
+        source_status: row.status,
+        intake_status: accepted ? "accepted" : "rejected",
+        counted: accepted,
+        rule_code: accepted ? null : text(row.reject_code, 80) || "legacy_recovery_rejected",
+        rule_reason: accepted ? null : text(row.reject_reason, 700) || "receipt held by recovery validation",
+        raw: row.raw && typeof row.raw === "object" ? row.raw : {},
+      };
+    });
+    if (intakeRows.length) {
+      const intakeInsert = await service.from("receipt_intake_items").insert(intakeRows);
+      if (intakeInsert.error) throw intakeInsert.error;
+    }
   }
 
   // Best-effort admin notification. Receipt visibility never depends on it.
   const notice = await service.from("notes").insert({
-    id: globalThis.crypto?.randomUUID?.() || `note-${Date.now().toString(36)}`,
+    id: `note-receipt-${batch.id}`,
     user_id: null,
     kind: "receipt",
     title: "کۆمەڵەی فیشی نوێ",
@@ -245,9 +302,17 @@ async function legacyCommit(service, actor, batch, receipts, context) {
     link: "receipts",
     ref_id: batch.id,
   });
-  if (notice.error) console.warn("[receipt-ingestion] admin notification skipped", { code: notice.error.code });
+  if (notice.error && String(notice.error.code || "") !== "23505") {
+    console.warn("[receipt-ingestion] admin notification skipped", { code: notice.error.code });
+  }
 
-  return { batch_id: batch.id, receipt_count: receipts.length, replayed: false, recovery: true };
+  return {
+    batch_id: batch.id,
+    receipt_count: receipts.length,
+    replayed: !!existing.data?.id && missingRows.length === 0,
+    resumed: !!existing.data?.id && missingRows.length > 0,
+    recovery: true,
+  };
 }
 
 // sarraf_ingest_receipt_batch only executes a command this service has blessed: it deletes a

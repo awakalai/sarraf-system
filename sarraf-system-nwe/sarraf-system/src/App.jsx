@@ -3,7 +3,7 @@ import { supabase } from "./lib/supabase";
 import { createReceiptIngestionCommand, ingestReceiptBatch } from "./services/receiptIngestion";
 import { forgetSend, outcomeText, pendingSend, rememberSend, resolveSendOutcome, settleFailedSend, stageText } from "./services/receiptSendState";
 import { arithmeticObjection, receiptNetFrom, sendableSet, validateReceiptArithmetic } from "./services/receiptValidation";
-import { intakeReceipt, RECEIPT_FLOWS, intakeStatusText } from "./services/receiptIntake";
+import { intakeReceipt, intakeStatusText, requestStoredReceiptOcr } from "./services/receiptIntake";
 import { DICT } from "./i18n/dictionary";
 import { computeInventoryPosition } from "./services/inventoryAccounting";
 import { createReceiptReviewCommand, finalizeReceiptBatch, loadReceiptPolicy, reviewReceiptBatch } from "./services/receiptReview";
@@ -23,6 +23,9 @@ import {
 } from "./services/receiptDisplay";
 import { userFacingServiceError } from "./services/userFacingError";
 import { claimSharedReceiptHandoff, finishSharedReceiptHandoff, releaseSharedReceiptHandoff, sharedReceiptMessage, validateClaimedSharedFiles } from "./services/sharedReceiptHandoff";
+import {
+  isOwnerCashboxFlow, normalizeTransactionBusinessFlow, transactionBusinessFlowOf,
+} from "./services/transactionFlow";
 import { PortalDataStatus, PortalFrame, PortalPagedList, usePortalRoute } from "./components/portal/PortalFoundation";
 import { separatedCurrencySummary } from "./components/portal/portalModel";
 import { BRAND } from "./brand/brand";
@@ -48,6 +51,7 @@ const ExportAuditCenter = lazyNamed(() => import("./components/operations/Export
 const DebtCenter = lazyNamed(() => import("./components/accounting/DebtCenter"), "DebtCenter");
 const CashboxPanel = lazyNamed(() => import("./components/accounting/CashboxPanel"), "CashboxPanel");
 const OfficePayments = lazyNamed(() => import("./components/accounting/OfficePayments"), "OfficePayments");
+const PartnerAccounts = lazyNamed(() => import("./components/accounting/PartnerAccounts"), "PartnerAccounts");
 const ReceiptReviewWorkspace = lazyNamed(() => import("./components/receipts/ReceiptReviewWorkspace"), "ReceiptReviewWorkspace");
 const ReceiptForwardingCenter = lazyNamed(() => import("./components/receipts/ReceiptForwardingCenter"), "ReceiptForwardingCenter");
 const ForwardedReceipts = lazyNamed(() => import("./components/receipts/ForwardedReceipts"), "ForwardedReceipts");
@@ -173,6 +177,7 @@ const ADMIN_CENTER_PAGE_IDS = new Set([
   "debt-center",
   "cashbox",
   "office-payments",
+  "partner-accounts",
   "receipt-review",
   "receipt-forwarding",
   "backup",
@@ -683,6 +688,7 @@ function AdminCenterHub({ lang = "ku", onNavigate }) {
         ["receipt-review", label("پشکنینی فیش", "Receipt Review", "مراجعة الإيصالات"), label("وێنەی ڕەسەن، ژمارەکان و مێژووی ڕاستکردنەوە", "Original image, figures, and correction history", "الصورة الأصلية والأرقام وسجل التصحيح"), ClipboardCheck],
         ["receipt-forwarding", label("ناردنی فیش", "Receipt Forwarding", "إرسال الإيصالات"), label("ناردنی فیشی پەسەندکراو بۆ خاوەنەکەی و پێکهاتنەوەی گەیاندن", "Send accepted receipts to their owner and reconcile delivery", "إرسال الإيصالات المعتمدة إلى أصحابها ومطابقة التسليم"), Send],
         ["office-payments", label("پارەدانی نووسینگە", "Office Payments", "مدفوعات المكتب"), label("ئەرکی پارەدان و بەڵگە", "Payment assignments and evidence", "مهام الدفع والإثباتات"), Building2],
+        ["partner-accounts", label("حسابی هاوبەشان", "Partner Accounts", "حسابات الشركاء"), label("کریدیت، دابەشکردن و waterfall ـی قەرز", "Credit, disbursement, and debt waterfall", "الائتمان والصرف وتسوية الديون"), Handshake],
         ["cashbox", label("قاسەی کڕیاران", "Customer Cashbox", "خزنة الزبائن"), label("دانان، دەرهێنان و تسویەی قەرز لە قاسە", "Deposit, withdraw, and settle debt from the cashbox", "إيداع وسحب وتسوية الديون"), Wallet],
         ["debt-center", label("قەرز و قاسە", "Debt & Cashbox", "الديون والخزنة"), label("قەرز بە ئاڕاستەی ڕوون، تەمەن و قاسەی کڕیاران", "Debts by explicit direction, aging, and customer cashboxes", "الديون باتجاه واضح والأعمار وخزائن الزبائن"), Scale],
         ["export-audit", label("هەناردە و وردبینی", "Export & Audit", "التصدير والتدقيق"), label("هەناردەی سنووردار، timeline و checksum", "Bounded exports, timeline, and checksum", "تصدير محدود وخط زمني وبصمة تحقق"), FileCheck2],
@@ -1686,6 +1692,7 @@ body{
 const mapTxRecord = (r) => ({
   id: r.id, code: r.code, type: r.type, direct: !!r.direct,
   pairId: r.pair_id, directRole: r.direct_role, ownMoney: !!r.own_money,
+  businessFlow: r.business_flow || transactionBusinessFlowOf(r),
   buyRate: r.buy_rate == null ? null : +r.buy_rate,
   buyTotal: r.buy_total == null ? null : +r.buy_total,
   costBasisUsd: r.cost_basis_usd == null ? null : +r.cost_basis_usd,
@@ -1796,9 +1803,15 @@ export default function App() {
     try {
       setBatchLoadError("");
       if (profile?.role === "admin") {
-        const reconciled = await supabase.rpc("sarraf_reconcile_receipt_conversions");
-        if (reconciled.error && !/could not find the function|schema cache/i.test(String(reconciled.error.message || ""))) {
-          console.warn("receipt conversion reconciliation", reconciled.error);
+        const [receiptReconciled, officeReconciled] = await Promise.all([
+          supabase.rpc("sarraf_reconcile_receipt_conversions"),
+          supabase.rpc("sarraf_reconcile_pending_office_assignments"),
+        ]);
+        if (receiptReconciled.error && !/could not find the function|schema cache/i.test(String(receiptReconciled.error.message || ""))) {
+          console.warn("receipt conversion reconciliation", receiptReconciled.error);
+        }
+        if (officeReconciled.error && !/could not find the function|schema cache/i.test(String(officeReconciled.error.message || ""))) {
+          console.warn("office assignment reconciliation", officeReconciled.error);
         }
       }
       const { data: b, error } = await supabase.from("receipt_batches").select("*").order("created_at", { ascending: false }).limit(200);
@@ -2033,11 +2046,14 @@ export default function App() {
     return () => { cancelled = true; };
   }, [session?.access_token, accessEpoch]);
 
-  const A = (action, detail) => supabase.from("audit").insert({ id: uid(), date: now(), action, detail });
   const LR = (e) => ({ id: e.id, type: e.type, owner: e.owner || null, investor_id: e.investorId || null, cur_id: e.curId, amount: e.amount, partner_id: e.partnerId || null, tx_id: e.txId || null, note: e.note || null, date: e.date });
-  const TR = (t) => ({ id: t.id, code: t.code || null, type: t.type, direct: !!t.direct,
-    pair_id: t.pairId ?? null, direct_role: t.directRole ?? null, own_money: !!t.ownMoney,
-    buy_rate: t.buyRate ?? null, buy_total: t.buyTotal ?? null, cp_id: t.cpId, cp_name: t.cpName, cur_id: t.curId, amount: t.amount, rate: t.rate, against_id: t.againstId, total: t.total, partner_id: t.partnerId, status: t.status, paid_at: t.paidAt, profit: t.profit, profit_cur_id: t.profitCurId, note: t.note || null, date: t.date, edited: !!t.edited, deleted: !!t.deleted });
+  const TR = (transaction) => {
+    const t = normalizeTransactionBusinessFlow(transaction);
+    return { id: t.id, code: t.code || null, type: t.type, direct: !!t.direct,
+      pair_id: t.pairId ?? null, direct_role: t.directRole ?? null, own_money: !!t.ownMoney,
+      business_flow: t.businessFlow,
+      buy_rate: t.buyRate ?? null, buy_total: t.buyTotal ?? null, cp_id: t.cpId, cp_name: t.cpName, cur_id: t.curId, amount: t.amount, rate: t.rate, against_id: t.againstId, total: t.total, partner_id: t.partnerId, status: t.status, paid_at: t.paidAt, profit: t.profit, profit_cur_id: t.profitCurId, note: t.note || null, date: t.date, edited: !!t.edited, deleted: !!t.deleted };
+  };
 
   // One key per intent, kept until the outcome is actually known. A key minted fresh on each
   // attempt would make every retry a second real command — which is exactly what the server's
@@ -2257,7 +2273,7 @@ export default function App() {
   const profitIn = (from, to) => {
     const m = {};
     for (const t of data.txs) {
-      if (t.deleted || t.profit == null || t.direct) continue;
+      if (t.deleted || t.profit == null || isOwnerCashboxFlow(t)) continue;
       if (t.type !== "sell") continue;
       const d = dOnly(t.date);
       if (from && d < from) continue;
@@ -2270,7 +2286,7 @@ export default function App() {
   const ownProfitIn = (from, to) => {
     const m = {};
     for (const t of data.txs) {
-      if (t.deleted || t.profit == null || !t.direct) continue;
+      if (t.deleted || t.profit == null || !isOwnerCashboxFlow(t)) continue;
       const d = dOnly(t.date);
       if (from && d < from) continue;
       if (to && d > to) continue;
@@ -2442,36 +2458,6 @@ export default function App() {
     }, `cash:${entryId}`);
   };
 
-    /* دروستکردنی تۆمارەکانی دەفتەر بۆ مامەڵەیەک */
-  const buildEntries = (t) => {
-    const es = [];
-    // ── مامەڵەی ڕاستەوخۆ: کڕین و فرۆشتن پێکەوە، تەنها خێرەکەی دەمێنێتەوە ──
-    if (t.direct) {
-      // دراوەکە دێت و دەڕوات (لە قاسەدا نامێنێتەوە)
-      es.push({ id: uid(), type: "buy", curId: t.curId, amount: +t.amount, partnerId: null, txId: t.id, date: t.date });
-      es.push({ id: uid(), type: "sell", curId: t.curId, amount: -t.amount, partnerId: null, txId: t.id, date: t.date });
-      // پارەی کڕین دەڕوات (گەر خۆم دابێتم)
-      if (t.status === "completed" && t.buyTotal) es.push({ id: uid(), type: "buy", curId: t.againstId, amount: -t.buyTotal, partnerId: null, txId: t.id, date: t.date });
-      // پارەی فرۆشتن دێت (گەر وەرمگرتبێت)
-      if (t.status === "completed" && t.total) es.push({ id: uid(), type: "sell", curId: t.againstId, amount: +t.total, partnerId: null, txId: t.id, date: t.date });
-      return es;
-    }
-    // مامەڵەی ئاسایی
-    const feeRate = (!t.direct && t.partnerId) ? (usr(t.partnerId).rate || 0) : 0;
-    if (t.type === "buy") {
-      // دراوی کڕدراو دێتە ژوورەوە (لای خۆم یان لای هاوبەش)
-      es.push({ id: uid(), type: "buy", curId: t.curId, amount: +t.amount, partnerId: t.partnerId || null, txId: t.id, date: t.date });
-      // عمولەی هاوبەش دەستبەجێ کەم دەکرێتەوە
-      if (feeRate > 0) es.push({ id: uid(), type: "partner_fee", curId: t.curId, amount: -roundMoney(data, t.amount * feeRate / 100, t.curId), partnerId: t.partnerId, txId: t.id, note: `عمولەی ${feeRate}٪`, date: t.date });
-      // بەرامبەرەکەی لە قاسەی گشتی دەردەچێت (گەر خۆم پارەم دابێت)
-      if (t.status === "completed") es.push({ id: uid(), type: "buy", curId: t.againstId, amount: -t.total, partnerId: null, txId: t.id, date: t.date });
-    } else {
-      es.push({ id: uid(), type: "sell", curId: t.curId, amount: -t.amount, partnerId: t.partnerId || null, txId: t.id, date: t.date });
-      if (t.status === "completed") es.push({ id: uid(), type: "sell", curId: t.againstId, amount: +t.total, partnerId: null, txId: t.id, date: t.date });
-    }
-    return es;
-  };
-
   const saveTx = async (f, existing) => {
     if (existing?.deleted) {
       flash("ئەم مامەڵەیە هەڵوەشێندراوەتەوە و ناتوانرێت دەستکاری بکرێت");
@@ -2480,6 +2466,27 @@ export default function App() {
     if (existing?.paidAt) {
       flash("پێش دەستکاری، پارەدانەکە هەڵبوەشێنەرەوە");
       return false;
+    }
+    // A posted trade is an accounting fact. Editing its amount/rate/currencies/party would
+    // silently detach it from the journal, WAC and debt history. The edit surface is therefore
+    // metadata-only; an economic correction uses the visible void/reversal + new-trade path.
+    // This early branch is especially important for Type B: the old form treated editing one
+    // half as a request to create an entirely new direct pair.
+    if (existing) {
+      return await run(async () => {
+        const updated = { ...existing, note: String(f.note ?? existing.note ?? ""), edited: true };
+        const result = await rpcStrict("sarraf_edit_transaction", {
+          p_tx: TR(updated),
+          p_ledger: [],
+          p_command_key: commandKey("edit"),
+          p_action: "دەستکاری تێبینی مامەڵە",
+          p_detail: `#${existing.code || "—"} — metadata only`,
+        });
+        if (approvalQueued(result, "دەستکاری مامەڵە")) return result;
+        setEditTx(null);
+        flash("تێبینی مامەڵە نوێ کرایەوە ✓");
+        return result;
+      }, `edit:${existing.id}`);
     }
     const roundCur = (value, curId) => {
       const dec = Math.max(0, Math.min(6, Number(cur(curId).dec) || 0));
@@ -2496,6 +2503,14 @@ export default function App() {
       if (!(+f.sellQuote > 0)) { flash("ڕەیتی فرۆشتن پێویستە"); return false; }
       if (!f.fromId && !f.fromName) { flash("لە کێ دەیکڕیت؟"); return false; }
       if (!f.toId && !f.toName) { flash("بە کێ دەیفرۆشیت؟"); return false; }
+      if (f.buyStatus === "pending") {
+        flash("کڕینی چاوەڕوان لە مامەڵەی ڕاستەوخۆدا ڕێگەپێدراو نییە؛ وەک کڕینی ئاسایی تۆماری بکە و نووسینگەی پارەدان دیاری بکە");
+        return false;
+      }
+      if (f.sellStatus === "pending" && !f.toId) {
+        flash("فرۆشتنی چاوەڕوان دەبێت بە کڕیارێکی تۆمارکراو ببەسترێتەوە تا قەرزەکە خاوەنێکی ڕوونی هەبێت");
+        return false;
+      }
 
       return await run(async () => {
         const bq = +f.buyQuote;
@@ -2524,13 +2539,6 @@ export default function App() {
           profit, profitCurId: f.againstId, note: f.note || "", date: at, edited: false,
         };
 
-        const es = [
-          { id: uid(), type: "buy", curId: t1.curId, amount: +amount, partnerId: null, txId: t1.id, date: t1.date },
-          ...(t1.status === "completed" ? [{ id: uid(), type: "direct_buy", curId: t1.againstId, amount: -buyTotal, partnerId: null, txId: t1.id, note: "بە پارەی خۆم", date: t1.date }] : []),
-          { id: uid(), type: "sell", curId: t2.curId, amount: -amount, partnerId: null, txId: t2.id, date: t2.date },
-          ...(t2.status === "completed" ? [{ id: uid(), type: "direct_sell", curId: t2.againstId, amount: +sellTotal, partnerId: null, txId: t2.id, note: "بۆ پارەی خۆم", date: t2.date }] : []),
-        ];
-
         const detail = `${fmt(amount)} ${cur(f.curId).code} · خێر ${fmt(profit)} ${cur(f.againstId).code}`;
         const result = await rpcStrict("sarraf_commit_transactions", {
           p_txs: [TR(t1), TR(t2)],
@@ -2553,15 +2561,23 @@ export default function App() {
     if (!(rate > 0)) { flash("نرخ دەبێت لە سفر گەورەتر بێت"); return false; }
     if (!f.cpId && !f.cpName) { flash("لایەنی بەرامبەر دیاری بکە"); return false; }
     if (!(total > 0)) { flash("کۆی گشتی ناتوانێت سفر بێت"); return false; }
+    if (f.status === "pending" && !f.cpId) {
+      flash("مامەڵەی چاوەڕوان دەبێت بە کڕیارێکی تۆمارکراو ببەسترێتەوە تا قەرزەکە خاوەن و ئاڕاستەی ڕوونی هەبێت");
+      return false;
+    }
+    if (f.type === "buy" && f.status === "pending" && !f.officeId) {
+      flash("بۆ کڕینی پارەنەدراو دەبێت نووسینگەی بەرپرسی پارەدان دیاری بکرێت");
+      return false;
+    }
     // دراوی دەرەوە: دەبێت لای تەرەفێک بێت
     if (cur(f.curId).external && !f.partnerId) { flash(`${cur(f.curId).name} دەبێت لای تەرەفێک دابنرێت`); return false; }
 
     // The transaction's identity is fixed before the first attempt, so a retry after a lost
     // response saves the same transaction rather than a second one.
-    const txId = existing ? existing.id : uid();
+    const txId = uid();
 
     return await run(async () => {
-      const txDate = existing ? existing.date : now();
+      const txDate = now();
       let profit = null, profitCurId = null, bookBuyRate = null, bookBuyTotal = null;
 
       if (f.type === "buy") {
@@ -2571,7 +2587,7 @@ export default function App() {
           bookBuyRate = amount > 0 ? costUsd / amount : null;
         }
       } else if (f.type === "sell") {
-        const pos = inventoryPosition(f.curId, f.againstId, existing?.id || null, txDate);
+        const pos = inventoryPosition(f.curId, f.againstId, null, txDate);
         if (pos.avgRate !== null && amount <= pos.qty + 1e-9) {
           const costBasisUsd = pos.avgRate * amount;
           const costInAgainst = usdToCurrencyAt(costBasisUsd, f.againstId, "sell", txDate);
@@ -2585,32 +2601,33 @@ export default function App() {
       }
 
       const t = {
-        id: txId, code: existing ? existing.code : null, type: f.type,
+        id: txId, code: null, type: f.type,
         cpId: f.cpId || null, cpName: f.cpId ? null : f.cpName,
         curId: f.curId, amount, rate, againstId: f.againstId, total,
         buyRate: bookBuyRate, buyTotal: bookBuyTotal,
         partnerId: f.partnerId || null, direct: false, status: f.status || "completed",
-        paidAt: existing ? existing.paidAt : null, profit, profitCurId, note: f.note || "",
-        date: txDate, edited: !!existing,
+        paidAt: null, profit, profitCurId, note: f.note || "",
+        date: txDate, edited: false,
       };
 
-      const entries = buildEntries(t).map(LR);
-      const detail = `${fmt(amount)} ${cur(f.curId).code} — ${t.cpId ? usr(t.cpId).name : t.cpName}`;
+      const detail = `${fmt(amount)} ${cur(f.curId).code} — ${t.cpId ? (usr(t.cpId).name || t.cpName) : t.cpName}`;
       let result;
-      if (existing) {
-        result = await rpcStrict("sarraf_edit_transaction", {
-          p_tx: TR(t),
-          p_ledger: [],
-          p_command_key: commandKey("edit"),
-          p_action: "دەستکاری مامەڵە",
-          p_detail: detail,
-        });
-      } else if (f.batchId) {
+      if (f.batchId) {
         result = await convertReceiptBatchToTransaction(supabase, {
           batchId: f.batchId,
           receiptIds: f.receiptIds,
           transaction: TR(t),
+          officeId: f.officeId || null,
           reason: String(f.note || "").trim() || "پشتڕاستکردنەوە و گۆڕینی فیشە پەسەندکراوەکان بۆ مامەڵە",
+        });
+      } else if (t.type === "buy" && t.status === "pending") {
+        result = await rpcStrict("sarraf_commit_pending_purchase_with_office", {
+          p_tx: TR(t),
+          p_office_id: f.officeId,
+          p_due_at: null,
+          p_command_key: commandKey("pending-office-purchase"),
+          p_action: "کڕینی چاوەڕوان و ئەرکی پارەدان",
+          p_detail: detail,
         });
       } else {
         result = await rpcStrict("sarraf_commit_transactions", {
@@ -2626,27 +2643,27 @@ export default function App() {
       if (f.batchId) setPendingBatch(null);
       reloadBatches();
       setEditTx(null);
-      if (approvalQueued(result, existing ? "دەستکاری مامەڵە" : "مامەڵە")) return result;
+      if (approvalQueued(result, "مامەڵە")) return result;
 
       const saved = Array.isArray(result?.transactions) ? result.transactions[0] : result?.transaction;
       if (saved?.code) t.code = saved.code;
 
-      if (!existing) {
-        const who = t.cpId ? usr(t.cpId).name : t.cpName;
-        const line = `${fmt(amount, cur(f.curId).dec ?? 0)} ${cur(f.curId).code} = ${fmt(t.total, cur(f.againstId).dec ?? 0)} ${cur(f.againstId).code}`;
-        if (t.cpId) await notify(t.cpId, "tx",
-          t.type === "buy" ? tr("فرۆشتنێکی نوێ") : tr("کڕینێکی نوێ"), line, null, t.id);
-        if (t.partnerId) await notify(t.partnerId, "tx",
-          t.type === "buy" ? tr("پارە خرایە ئەکاونتەکەت") : tr("پارە لە ئەکاونتەکەت دەرچوو"),
-          `${line} · ${who}`, null, t.id);
-        if (t.status === "pending" && t.type === "buy") {
-          const off = data.users.find((u) => u.role === "office" && !u.deleted);
-          if (off) await notify(off.id, "payment", tr("پارەدانێکی نوێ چاوەڕوانە"),
-            `${who} · ${fmt(t.total, cur(f.againstId).dec ?? 0)} ${cur(f.againstId).code}`, null, t.id);
-        }
+      // Both ordinary and receipt-backed pending purchases commit (or queue) the exact office
+      // assignment inside their database wrapper, including the maker-checker path.
+      const who = t.cpId ? (usr(t.cpId).name || t.cpName) : t.cpName;
+      const line = `${fmt(amount, cur(f.curId).dec ?? 0)} ${cur(f.curId).code} = ${fmt(t.total, cur(f.againstId).dec ?? 0)} ${cur(f.againstId).code}`;
+      if (t.cpId) await notify(t.cpId, "tx",
+        t.type === "buy" ? tr("فرۆشتنێکی نوێ") : tr("کڕینێکی نوێ"), line, null, t.id);
+      if (t.partnerId) await notify(t.partnerId, "tx",
+        t.type === "buy" ? tr("پارە خرایە ئەکاونتەکەت") : tr("پارە لە ئەکاونتەکەت دەرچوو"),
+        `${line} · ${who}`, null, t.id);
+      if (t.status === "pending" && t.type === "buy") {
+        const off = data.users.find((u) => u.id === f.officeId && u.role === "office" && !u.deleted);
+        if (off) await notify(off.id, "payment", tr("پارەدانێکی نوێ چاوەڕوانە"),
+          `${who} · ${fmt(t.total, cur(f.againstId).dec ?? 0)} ${cur(f.againstId).code}`, null, t.id);
       }
-      flash(existing ? "دەستکاری پاشەکەوت کرا ✓" : `مامەڵە تۆمار کرا ✓${t.code ? ` — #${t.code}` : ""}`);
-    }, `${existing ? "edit" : "tx"}:${txId}`);
+      flash(`مامەڵە تۆمار کرا ✓${t.code ? ` — #${t.code}` : ""}`);
+    }, `tx:${txId}`);
   };
 
   const delTx = (t) => {
@@ -2668,7 +2685,7 @@ export default function App() {
     }, `void:${t.id}`);
   };
 
-  const settle = (t, byOffice) => {
+  const settle = (t) => {
     if (!t || t.deleted) {
       flash("ئەم مامەڵەیە هەڵوەشێندراوەتەوە و ناتوانرێت تەسویە بکرێت");
       return false;
@@ -2685,20 +2702,32 @@ export default function App() {
       const isBuy = t.type === "buy";
       await rpcStrict("sarraf_settle_transaction", {
         p_tx_id: t.id,
-        p_by_office: !!byOffice,
+        p_by_office: false,
         p_command_key: commandKey("settle"),
-        p_action: isBuy ? (byOffice ? "پارەدانی نووسینگە" : "پارە درا") : "پارە وەرگیرا",
+        p_action: isBuy ? "پارە درا" : "پارە وەرگیرا",
         p_detail: `#${t.code || "—"} — ${fmt(t.total)} ${cur(t.againstId).code}`,
       });
       if (t.cpId) await notify(t.cpId, "payment",
         isBuy ? tr("پارەکەت درا") : tr("پارەکەت وەرگیرا"),
         `${fmt(t.total, cur(t.againstId).dec ?? 0)} ${cur(t.againstId).code}`, null, t.id);
-      if (byOffice) await notify(null, "payment", tr("نووسینگە پارەی دا"),
-        `#${t.code || "—"} · ${fmt(t.total, cur(t.againstId).dec ?? 0)} ${cur(t.againstId).code}`, "txs", t.id);
       flash(isBuy ? "پارەدان تۆمار کرا ✓" : "وەرگرتن تۆمار کرا ✓");
-    }, `settle:${t.id}:${byOffice ? "office" : "self"}`);
+    }, `settle:${t.id}:direct`);
   };
-  const officePay = (t) => settle(t, true);
+  const officePay = (t, officeId) => {
+    if (!officeId) return flash("نووسینگەی بەرپرسی پارەدان هەڵبژێرە");
+    return run(async () => {
+      await rpcStrict("sarraf_create_office_payment_assignment", {
+        p_transaction_id: t.id,
+        p_office_id: officeId,
+        p_due_at: null,
+        p_reason: `ئەرکی پارەدان بۆ مامەڵەی #${t.code || t.id}`,
+        p_command_key: commandKey("office-assign"),
+      });
+      await notify(officeId, "payment", tr("پارەدانێکی نوێ بۆ تۆ دیاریکرا"),
+        `#${t.code || "—"} · ${fmt(t.total, cur(t.againstId).dec ?? 0)} ${cur(t.againstId).code}`, null, t.id);
+      flash("ئەرکی پارەدان بۆ نووسینگە نێردرا ✓");
+    }, `office-assign:${t.id}:${officeId}`);
+  };
 
   const addExpense = (f) => {
     const amt = roundMoney(data, Math.abs(+f.amount), f.curId);
@@ -2737,7 +2766,7 @@ export default function App() {
            { ...base, id: inId, type: "transfer", amount: +amt, partnerId: f.partnerId }]
         : [{ ...base, id: outId, type: "transfer", amount: +amt, partnerId: null },
            { ...base, id: inId, type: "transfer", amount: -amt, partnerId: f.partnerId }];
-      // Partner commission is calculated and frozen by Phase 13C on the server.
+      // The database validates this as one balanced main↔partner custody movement.
       const result = await rpcStrict("sarraf_post_ledger_command", {
         p_ledger: es.map(LR),
         p_command_key: commandKey("partner-transfer"),
@@ -2941,7 +2970,6 @@ export default function App() {
     }, `account-transfer:${ref}`);
   };
 
-    /* ── بەستنی ڕۆژ ── */
   /* ── بەستنی ڕۆژ ── */
   const closeDay = (lines, note, adjust) => {
     // Fixed before the first attempt, so a retry closes the same day once, not twice.
@@ -2952,18 +2980,12 @@ export default function App() {
     const verdict = validateDayClose({ lines, note });
     if (!verdict.ok) { flash(dayCloseMessage(verdict.code)); return false; }
     const hasDiff = lines.some((l) => Math.abs(Number(l.diff) || 0) > 1e-9);
-    const totalDiffUsd = sumUsd(Object.fromEntries(lines.map((l) => [l.cur, Number(l.diff) || 0])));
     const closePayload = {
-      id: closeId, close_date: new Date().toISOString().slice(0, 10),
-      lines, total_diff: totalDiffUsd, has_diff: hasDiff, note: note || null,
+      id: closeId, close_date: data.control?.business_date || new Date().toISOString().slice(0, 10),
+      // The server re-reads the ledger and derives expected/diff/USD exposure from counted.
+      lines, note: note || null,
       adjust: !!adjust, closed_by: profile?.id || null,
     };
-    const es = adjust
-      ? lines.filter((l) => l.diff).map((l) => LR({
-          id: uid(), type: "adjustment", curId: l.cur, amount: roundMoney(data, l.diff, l.cur),
-          note: `ڕاستکردنەوەی بەستنی ڕۆژ${note ? " — " + note : ""}`, date: now(),
-        }))
-      : [];
 
     const result = await rpcStrict("sarraf_close_day", {
       p_close: closePayload,
@@ -3179,10 +3201,10 @@ export default function App() {
     // Exporting the whole database is a privileged act and is recorded as one. A failure to
     // record it must not silently discard the export the owner already has.
     try {
-      await supabase.from("audit").insert({
-        id: uid(), date: now(), user_id: profile?.id || null,
-        action: "هەناردەی تەواوی داتا",
-        detail: `${Object.keys(payload.counts).length} خشتە · checksum ${String(payload.integrity?.checksum || "—").slice(0, 16)}`,
+      await rpcStrict("sarraf_record_audit_event", {
+        p_action: "هەناردەی تەواوی داتا",
+        p_detail: `${Object.keys(payload.counts).length} خشتە · checksum ${String(payload.integrity?.checksum || "—").slice(0, 16)}`,
+        p_command_key: commandKey("audit-export"),
       });
     } catch (e) { console.error("backup audit", e); }
     flash("export ـی داتا ئامادە کرا ✓");
@@ -3550,6 +3572,8 @@ export default function App() {
               }} /></DeferredPanel>}
             {page === "office-payments" && <DeferredPanel><OfficePayments client={supabase} lang={lang}
               flash={flash} canConfirm={isAdmin} /></DeferredPanel>}
+            {page === "partner-accounts" && <DeferredPanel><PartnerAccounts client={supabase} lang={lang} flash={flash}
+              partners={(data?.users || []).filter((u) => u.role === "partner" && !u.deleted)} /></DeferredPanel>}
             {page === "cashbox" && <DeferredPanel><CashboxPanel client={supabase} lang={lang} flash={flash}
               customers={(data?.users || []).filter((u) => u.role === "customer" && !u.deleted)}
               rateFor={(code) => { const c = (data?.currencies || []).find((x) => x.code === code);
@@ -3599,7 +3623,8 @@ export default function App() {
                 <div className="w-10 h-1 rounded-full mx-auto mb-4" style={{ background: "var(--line)" }} />
                 <div className="flex items-center justify-between mb-3">
                   <div className="font-bold text-[var(--txt)]">{tr("بەشەکانی تر")}</div>
-                  <button onClick={() => setMore(false)} className="p-1.5 text-[var(--txt-3)]"><X className="w-5 h-5" /></button>
+                  <button onClick={() => setMore(false)} aria-label={tr("داخستنی بەشەکانی تر")}
+                    className="p-1.5 text-[var(--txt-3)]"><X className="w-5 h-5" /></button>
                 </div>
                 {NAV.slice(4).map(([id, t, Ic]) => (
                   <button key={id} onClick={() => { setPage(id); setDetailId(null); setEditTx(null); setMore(false); }}
@@ -3631,7 +3656,8 @@ function ViewAsPicker({ users, onPick, compact }) {
     .filter((u) => !q || (u.name || "").includes(q) || (u.phone || "").includes(q) || (ROLE_KU[u.role] || "").includes(q));
   return (
     <div>
-      <Inp value={q} onChange={(e) => setQ(e.target.value)} placeholder={tr("گەڕان بە ناو، ژمارە، یان ڕۆڵ...")}
+      <Inp value={q} onChange={(e) => setQ(e.target.value)} aria-label={tr("گەڕان بە ناو، ژمارە، یان ڕۆڵ")}
+        placeholder={tr("گەڕان بە ناو، ژمارە، یان ڕۆڵ...")}
         className={compact ? "text-xs py-2" : ""} />
       <div className={`mt-1.5 space-y-1 overflow-y-auto ${compact ? "max-h-44" : "max-h-64"}`}>
         {list.length === 0 ? <div className="text-xs text-[var(--txt-3)] py-2 text-center">{tr("هیچ نەدۆزرایەوە")}</div> :
@@ -4078,7 +4104,8 @@ function Dashboard({ data, calc, cur, mySafe, profitIn, ownProfitIn, investorsPr
               <div className="mt-2 text-[34px] md:text-[40px] font-semibold tracking-[-.04em]" style={num}>{ratesReady ? fmt(totalBalance,0) : "—"} <span className="text-[13px] font-medium">USD</span></div>
               <div className="mt-1 text-[11px] muted">{ratesReady ? `${weekProfit >= 0 ? "+" : "−"}${fmt(Math.abs(weekProfit),0)} USD · ${tr("ئەم هەفتەیە")}` : tr("نرخەکان دابنێ")}</div>
             </div>
-            <button onClick={()=>go("safes")} className="w-10 h-10 rounded-full flex items-center justify-center bg-white/90 text-black tap shadow-sm"><Plus className="w-5 h-5"/></button>
+            <button onClick={()=>go("safes")} aria-label={tr("کردنەوەی قاسەی گشتی")}
+              className="w-10 h-10 rounded-full flex items-center justify-center bg-white/90 text-black tap shadow-sm"><Plus className="w-5 h-5"/></button>
           </div>
           <svg viewBox="0 0 420 100" preserveAspectRatio="none" className="absolute bottom-0 inset-x-0 w-full h-[82px] opacity-90">
             <path d="M0 76 C45 70 60 55 100 62 S150 75 190 50 S240 26 285 42 S330 18 365 28 S400 18 420 12 L420 100 L0 100 Z" fill="rgba(255,255,255,.14)"/>
@@ -4911,11 +4938,13 @@ function TxForm({ data, cur, calc, usr, avgRate, inventoryPosition, usdValueAt, 
     fromId: "", fromName: "", toId: "", toName: "",
     buyStatus: "completed", sellStatus: "completed",
     status: e ? e.status : "completed",
+    officeId: "",
     note: e ? e.note : "",
   });
 
   const customers = data.users.filter((u) => u.role === "customer" && !u.deleted);
   const partners = data.users.filter((u) => u.role === "partner" && !u.deleted);
+  const offices = data.users.filter((u) => u.role === "office" && !u.deleted);
 
   const roundByCurrency = (value, curId) => {
     const dec = Math.max(0, Math.min(6, Number(cur(curId).dec) || 0));
@@ -5036,7 +5065,7 @@ function TxForm({ data, cur, calc, usr, avgRate, inventoryPosition, usdValueAt, 
   const blank = {
     type: f.type, curId: f.curId, amount: "", againstId: f.againstId, rateBaseId: f.rateBaseId, quote: f.quote,
     manualRate: f.manualRate, cpMode: "acc", cpId: lockCp || "", cpName: "",
-    partnerId: "", status: "completed", note: "",
+    partnerId: "", status: "completed", officeId: "", note: "",
     direct: f.direct, buyQuote: f.buyQuote, sellQuote: f.sellQuote,
   };
 
@@ -5051,6 +5080,54 @@ function TxForm({ data, cur, calc, usr, avgRate, inventoryPosition, usdValueAt, 
       setTimeout(() => setSending(false), 400);
     }
   };
+
+  if (e) {
+    const counterparty = e.cpId ? (usr(e.cpId).name || e.cpName) : e.cpName;
+    const flowLabel = e.businessFlow === "partner_custody"
+      ? "A · پارە لای هاوبەش"
+      : e.businessFlow === "owner_cashbox"
+        ? "B · قاسەی خۆم / ڕاستەوخۆ"
+        : "C · مامەڵەی ئاسایی";
+    return (
+      <div className="space-y-4 pb-4">
+        <H sub="بڕ، نرخ، دراو، لایەن و custody دوای journal ناگۆڕدرێن">
+          {tr("ئیدیت")} #{e.code}
+        </H>
+        <Card className="p-4" style={{ background: "var(--warn-bg)", borderColor: "color-mix(in srgb,var(--warn) 32%,var(--line))" }}>
+          <div className="flex items-start gap-2.5">
+            <ShieldAlert className="w-5 h-5 shrink-0 mt-0.5" style={{ color: "var(--warn)" }} />
+            <div>
+              <div className="text-[13px] font-semibold" style={{ color: "var(--txt)" }}>دەستکاریی پارێزراوی مامەڵە</div>
+              <p className="text-[11.5px] leading-6 mt-1" style={{ color: "var(--txt-2)" }}>
+                تەنها تێبینی دەگۆڕدرێت. بۆ ڕاستکردنەوەی بڕ، نرخ، دراو یان لایەن، مامەڵەکە بە
+                تۆماری پێچەوانە هەڵبوەشێنەرەوە و مامەڵەی دروست تۆمار بکە؛ مێژووی دارایی دەمێنێتەوە.
+              </p>
+            </div>
+          </div>
+        </Card>
+        <Card className="p-5 space-y-3">
+          <div className="flex items-center justify-between gap-3"><span className="text-[11px] text-[var(--txt-3)]">جۆری لۆجیک</span><Pill>{flowLabel}</Pill></div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><div className="text-[10.5px] text-[var(--txt-3)]">مامەڵە</div><div className="text-[14px] font-semibold mt-1">{e.type === "buy" ? "کڕین" : "فرۆشتن"} · {counterparty || "—"}</div></div>
+            <div><div className="text-[10.5px] text-[var(--txt-3)]">بڕ</div><div className="text-[14px] font-semibold mt-1" style={num}>{fmtMoney(data, e.amount, e.curId)} {cur(e.curId).code}</div></div>
+            <div><div className="text-[10.5px] text-[var(--txt-3)]">نرخ</div><div className="text-[14px] font-semibold mt-1" style={num}>{fmt(e.rate, rateDigits(e.rate))}</div></div>
+            <div><div className="text-[10.5px] text-[var(--txt-3)]">کۆ</div><div className="text-[14px] font-semibold mt-1" style={num}>{fmtMoney(data, e.total, e.againstId)} {cur(e.againstId).code}</div></div>
+          </div>
+          {e.partnerId && <div className="pt-3 border-t border-[var(--line)] text-[11.5px] text-[var(--txt-2)]">هاوبەشی custody: <b>{usr(e.partnerId).name}</b></div>}
+        </Card>
+        <Card className="p-5">
+          <Lbl>{tr("تێبینی")}</Lbl>
+          <Inp value={f.note} onChange={(ev) => setF({ ...f, note: ev.target.value })} placeholder="تێبینییەکی ڕوون و audit-friendly..." />
+        </Card>
+        <div className="flex gap-2 sticky bottom-24 md:bottom-4">
+          <Btn kind="primary" onClick={submit} disabled={sending || busy} className="flex-1 !py-4 !text-[15px]">
+            {sending || busy ? "..." : "پاشەکەوتکردنی تێبینی"}
+          </Btn>
+          <Btn kind="ghost" onClick={onCancel} className="!py-4">{tr("پاشگەزبوونەوە")}</Btn>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4 pb-4">
@@ -5382,7 +5459,7 @@ function TxForm({ data, cur, calc, usr, avgRate, inventoryPosition, usdValueAt, 
                   ? [["completed", tr("پارەم داوە")], ["pending", tr("چاوەڕوانی پارە")]]
                   : [["completed", tr("پارەم وەرگرتووە")], ["pending", tr("چاوەڕوانی وەرگرتن")]]
                 ).map(([k, l]) => (
-                  <button key={k} onClick={() => setF({ ...f, status: k })}
+                  <button key={k} onClick={() => setF({ ...f, status: k, officeId: k === "pending" ? f.officeId : "" })}
                     className="flex-1 py-2.5 rounded-[var(--r-sm)] text-[12.5px] font-medium tap"
                     style={f.status === k
                       ? { background: "var(--surf-3)", color: "var(--txt)", border: "1px solid var(--line-2)" }
@@ -5390,6 +5467,22 @@ function TxForm({ data, cur, calc, usr, avgRate, inventoryPosition, usdValueAt, 
                 ))}
               </div>
             </div>
+
+            {f.type === "buy" && f.status === "pending" && (
+              <div>
+                <Lbl>{tr("نووسینگەی بەرپرسی پارەدان")}</Lbl>
+                <Sel value={f.officeId} onChange={(ev) => setF({ ...f, officeId: ev.target.value })}>
+                  <option value="">{tr("هەڵبژێرە...")}</option>
+                  {offices.map((office) => <option key={office.id} value={office.id}>{office.name}</option>)}
+                </Sel>
+                {!offices.length && (
+                  <div className="text-[11.5px] mt-2 flex items-center gap-1.5" style={{ color: "var(--neg)" }}>
+                    <AlertTriangle className="w-3.5 h-3.5" />
+                    {tr("هیچ نووسینگەیەکی چالاک نییە؛ کڕینی پارەنەدراو ناتوانرێت تۆمار بکرێت")}
+                  </div>
+                )}
+              </div>
+            )}
 
             {batch ? (
               <div>
@@ -5589,7 +5682,7 @@ function TxList({ data, cur, usr, onEdit, onDel, settle, unsettle, loadTxHistory
 
   const groups = {};
   list.forEach((t) => { const k = dOnly(t.date); (groups[k] = groups[k] || []).push(t); });
-  const today = new Date().toISOString().slice(0, 10);
+  const today = data.control?.business_date || new Date().toISOString().slice(0, 10);
   const yest = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
   const dayLabel = (k) => k === today ? tr("ئەمڕۆ") : k === yest ? tr("دوێنێ")
     : new Date(k).toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short" });
@@ -5651,7 +5744,7 @@ function TxList({ data, cur, usr, onEdit, onDel, settle, unsettle, loadTxHistory
 function TxRow({ t, cur, usr, onEdit, onDel, flip, lite, settle, unsettle }) {
   const [open, setOpen] = useState(false);
   const [qr, setQr] = useState(false);
-  const name = t.cpId ? usr(t.cpId).name : t.cpName;
+  const name = t.cpId ? (usr(t.cpId).name || t.cpName) : t.cpName;
   const shown = flip ? (t.type === "buy" ? "sell" : "buy") : t.type;
   const pend = t.status === "pending";
   const isBuy = shown === "buy";
@@ -5777,7 +5870,7 @@ function TxRow({ t, cur, usr, onEdit, onDel, flip, lite, settle, unsettle }) {
 
 /* وەسڵی مامەڵە — بۆ پیشاندان بە کڕیار */
 function TxReceipt({ t, cur, usr, onClose }) {
-  const name = t.cpId ? usr(t.cpId).name : t.cpName;
+  const name = t.cpId ? (usr(t.cpId).name || t.cpName) : t.cpName;
   const payload = JSON.stringify({
     c: t.code, t: t.type, a: t.amount, cu: cur(t.curId).code,
     v: t.total, ag: cur(t.againstId).code, d: dOnly(t.date),
@@ -5979,74 +6072,6 @@ const ocrRetryNote = (e, prefix = "خزمەتگوزاری خوێندنەوە ک�
   return `${prefix} — فیشەکە ڕەت نەکراوەتەوە${sec > 0 ? `؛ نزیکەی ${Math.ceil(sec)} چرکەی تر دووبارە هەوڵ بدە` : "؛ کەمێک دواتر دووبارە هەوڵ بدە"}`;
 };
 
-async function readReceiptAI(image, mediaType = "image/jpeg", retryNetwork = true) {
-  if (!image || image.length > OCR_MAX_BASE64_CHARS) {
-    throw new Error("قەبارەی وێنەکە بۆ خوێندنەوە زۆر گەورەیە");
-  }
-  const controller = new AbortController();
-  // The server owns upstream retry logic. Keep the browser timeout long enough
-  // for one controlled server retry, but never automatically retry a timed-out AI call.
-  const timer = setTimeout(() => controller.abort(), 50000);
-  try {
-    const { data: authData } = await supabase.auth.getSession();
-    const accessToken = authData?.session?.access_token;
-    if (!accessToken) throw new Error("پێویستە دووبارە بچیتە ژوورەوە");
-    const resp = await fetch("/api/read-receipt", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "authorization": `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify({ image, mediaType }),
-      signal: controller.signal,
-    });
-    const raw = await resp.text();
-
-    const fail = (message, status = resp.status, extra = {}) => {
-      const err = new Error(message);
-      err.status = status;
-      Object.assign(err, extra || {});
-      throw err;
-    };
-
-    // Vercel may return HTML/plain text for gateway/payload errors, so inspect
-    // status before attempting JSON parsing.
-    if (resp.status === 404) fail("خزمەتگوزاری خوێندنەوە بەردەست نییە", 404);
-    if (resp.status === 413) fail("قەبارەی وێنەکە زۆر گەورەیە — دووبارە بە وێنەیەکی بچووکتر هەوڵ بدە", 413);
-
-    let data = {};
-    if (raw) {
-      try { data = JSON.parse(raw); }
-      catch { fail(`وەڵامی نەناسراو (${resp.status})`, resp.status); }
-    }
-
-    if (!resp.ok || data?.error) {
-      fail(
-        data?.error || `هەڵەی خوێندنەوە (${resp.status})`,
-        resp.status,
-        {
-          retryable: !!data?.retryable,
-          retryAfterSeconds: Number(data?.retryAfterSeconds) || null,
-        }
-      );
-    }
-    return data;
-  } catch (e) {
-    if (e?.name === "AbortError") {
-      throw new Error("خوێندنەوە زۆر درێژەی کێشا — کەمێک دواتر دووبارە هەوڵ بدەوە");
-    }
-    // Retry only a browser/network transport failure. HTTP/API failures are
-    // already retried once on the server where rate limits can be controlled.
-    const networkOnly = retryNetwork && e instanceof TypeError && !e?.status;
-    if (networkOnly) {
-      await waitMs(700);
-      return readReceiptAI(image, mediaType, false);
-    }
-    throw e;
-  } finally {
-    clearTimeout(timer);
-  }
-}
 const normRef = (r) => String(r || "").replace(/[\s\-_.]/g, "").toUpperCase();
 const DIR_KU = { in: "پارە هاتووە", out: "پارە نێردراوە" };
 const PLATFORMS = {
@@ -6625,41 +6650,22 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
     };
   };
 
-  /**
-   * Durable intake: claim a slot, store the image, then read it.
-   *
-   * Falls back to the legacy read-only path when the intake commands are not present, so a
-   * deployment that runs ahead of its migration degrades to the previous behaviour instead of
-   * refusing receipts outright.
-   */
+  /** Durable intake: the transaction assignment supplies every business field. */
   const durableIntake = async ({ id, img, patchRow }) => {
-    const flow = partnerId ? RECEIPT_FLOWS.customerBuys : RECEIPT_FLOWS.customerSells;
-    try {
-      const result = await intakeReceipt({
-        client: supabase,
-        documentId: id,
-        blob: img.blob,
-        mediaType: img.mediaType || "image/jpeg",
-        sha256: img.hash,
-        flow,
-        customerId: customerId || null,
-        partnerId: partnerId || null,
-        batchId: receiptCommandRef.current?.batchId || null,
-        readImage: () => readReceiptAI(img.b64, img.mediaType),
-        onStage: (stage, info) => patchRow(id, { note: intakeStatusText(info?.state) || stage }),
-      });
-      return { stored: true, ...result };
-    } catch (e) {
-      const code = String(e?.code || e?.cause?.code || "").toUpperCase();
-      const message = String(e?.cause?.message || e?.message || "");
-      const notDeployed = code === "PGRST202" || /could not find the function|schema cache/i.test(message);
-      if (notDeployed) return { stored: false };
-      // A refused claim or a failed upload is a real failure: the image never arrived.
-      throw e;
-    }
+    return intakeReceipt({
+      client: supabase,
+      documentId: id,
+      blob: img.blob,
+      mediaType: img.mediaType || "image/jpeg",
+      transactionId,
+      batchId: receiptCommandRef.current?.batchId || null,
+      adminOverrideReason: staffReview ? adminOverrideReason : null,
+      onStage: (stage, info) => patchRow(id, { note: intakeStatusText(info?.state) || stage }),
+    });
   };
 
   const onFiles = async (files, source = "gallery") => {
+    if (!transactionId) return flash("سەرەتا مامەڵەی دیاریکراو هەڵبژێرە");
     const list = Array.from(files || []).filter((f) => f.type?.startsWith("image/"));
     if (!list.length) return flash("تەنها وێنە هەڵبژێرە");
     if (working) return;
@@ -6668,7 +6674,7 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
     setWorking(true);
     // Created up front, not at send time: the durable intake and the later ingest must agree
     // on the batch id so both resolve to one storage path per receipt.
-    receiptCommandRef.current ||= createReceiptIngestionCommand();
+    receiptCommandRef.current ||= { batchId: `receipt-batch-${uid()}` };
     const tasks = list.map((file) => ({ id: uid(), file }));
     setInspectorId((current) => current || tasks[0]?.id || null);
     commitRows((xs) => [
@@ -6679,7 +6685,6 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
       })),
     ]);
 
-    const seen = new Map(rowsRef.current.filter((r) => r.hash).map((r) => [r.hash, r.id]));
     let done = 0;
     let cooldownUntil = 0;
 
@@ -6698,47 +6703,36 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
       try {
           patchRow(id, { note: "ئامادەکردنی وێنە...", status: "processing" });
           const img = await prepImage(file);
-          patchRow(id, { url: img.url, blob: img.blob, hash: img.hash, ocrImage: img.b64, mediaType: img.mediaType, note: "پشکنینی دووبارەبوونەوە..." });
-
-          const localId = seen.get(img.hash);
-          if (localId && localId !== id) {
-            const reason = "هەمان وێنە لەم کۆمەڵەیەدا دووبارە بووەتەوە";
-            patchRow(id, {
-              status: "dup", counted: false, reviewRequired: false,
-              rejectCode: "same_batch", rejectReason: reason, note: reason, dupOf: localId,
-            });
-            continue;
-          }
-          seen.set(img.hash, id);
-
-          let old = null;
-          try {
-            const { data: hit } = await supabase.rpc("check_receipt_dupe", { p_hash: img.hash, p_ref: null });
-            if (hit?.length) old = hit[0];
-          } catch {}
-          if (old) {
-            const reason = `هەمان وێنە پێشتر ناردراوە لە ${old?.d ? new Date(old.d).toLocaleString("en-GB") : "پێشتر"}${old?.who ? ` لەلایەن ${old.who}` : ""}${old?.ref ? ` — ژمارەی مامەڵە ${old.ref}` : ""}`;
-            patchRow(id, {
-              status: "dup", counted: false, reviewRequired: false,
-              rejectCode: "same_image", rejectReason: reason, note: reason,
-              dupOf: old?.id || null, dupOfDate: old?.d || null, dupOfWho: old?.who || null,
-            });
-            continue;
-          }
+          patchRow(id, { url: img.url, blob: img.blob, hash: img.hash, ocrImage: img.b64, mediaType: img.mediaType, note: "پاراستنی بەڵگە..." });
 
           // Store the evidence BEFORE reading it. Past this point an OCR failure degrades the
           // reading but can no longer lose the receipt.
           patchRow(id, { note: "ناردنی وێنە...", status: "processing" });
           const intake = await durableIntake({ id, img, patchRow });
-          patchRow(id, { note: intake.stored ? "وێنە گەیشت — دەخوێندرێتەوە..." : "فیشەکە دەخوێندرێتەوە...", status: "processing" });
-          const d = intake.stored
-            ? intake.extraction
-            : await readReceiptAI(img.b64, img.mediaType);
-          if (intake.stored && intake.readError) throw intake.readError;
-          patchRow(id, { documentId: intake.documentId || null, intakeState: intake.state || null,
-                         stagedPath: intake.storagePath || undefined, note: "پشتڕاستکردنەوەی زانیاری..." });
+          // Preserve the durable identity before interpreting or retrying OCR. Even an exact
+          // duplicate remains an immutable, discoverable document; only the server may decide
+          // whether it is counted.
+          patchRow(id, { documentId: intake.documentId || id, intakeState: intake.state || null,
+                         stagedPath: intake.storagePath || undefined,
+                         note: intakeStatusText(intake.state), status: "processing" });
+          const d = intake.extraction;
+          if (intake.readError || !d) throw intake.readError || new Error("خوێندنەوەکە چاوەڕوانە");
           const ready = await classifyParsed(id, img, d);
-          patchRow(id, ready);
+          const serverVerdicts = {
+            duplicate: { status: "dup", counted: false, reviewRequired: false, rejectCode: "server_duplicate" },
+            currency_mismatch: { status: "suspect", counted: false, reviewRequired: true, rejectCode: "currency_mismatch" },
+            tamper_suspected: { status: "suspect", counted: false, reviewRequired: true, rejectCode: "tamper_suspected" },
+            rejected: { status: "error", counted: false, reviewRequired: false, rejectCode: "server_rejected" },
+          };
+          const verdict = serverVerdicts[intake.state] || null;
+          patchRow(id, {
+            ...ready,
+            ...(verdict || {}),
+            documentId: intake.documentId || id,
+            intakeState: intake.state || null,
+            stagedPath: intake.storagePath || undefined,
+            ...(verdict ? { note: intakeStatusText(intake.state), rejectReason: intakeStatusText(intake.state) } : {}),
+          });
 
           // Respect the provider's token reset window before the next image.
           if (pos < tasks.length - 1) {
@@ -6808,12 +6802,23 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
 
   const retryRow = async (id) => {
     const r = rowsRef.current.find((x) => x.id === id);
-    if (!r?.ocrImage) return flash("وێنەکە بۆ دووبارە خوێندنەوە بەردەست نییە");
+    if (!r?.documentId) return flash("ناسنامەی فیشە پارێزراوەکە بەردەست نییە");
     patchRow(id, { status: "processing", counted: false, reviewRequired: false, note: "دووبارە دەخوێندرێتەوە..." });
     try {
-      const d = await readReceiptAI(r.ocrImage, r.mediaType || "image/jpeg");
+      const serverResult = await requestStoredReceiptOcr(supabase, r.documentId);
+      const d = serverResult.extraction;
+      if (!d) {
+        patchRow(id, {
+          status: serverResult.state === "ocr_failed_retryable" ? "retry" : "suspect",
+          counted: false,
+          reviewRequired: serverResult.state !== "ocr_failed_retryable",
+          note: intakeStatusText(serverResult.state),
+          intakeState: serverResult.state,
+        });
+        return;
+      }
       const ready = await classifyParsed(id, r, d);
-      patchRow(id, ready);
+      patchRow(id, { ...ready, intakeState: serverResult.state });
     } catch (e) {
       const temporary = isTemporaryOcrError(e);
       const reason = temporary
@@ -6989,7 +6994,7 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
     // Never re-read receipts that are already confirmed unless the user explicitly
     // changed their status. This keeps quota focused on failed / review rows.
     const ids = selectedActual
-      .filter((r) => ["retry", "suspect", "error"].includes(r.status) && r.status !== "dup" && r.ocrImage)
+      .filter((r) => ["retry", "suspect", "error"].includes(r.status) && r.status !== "dup" && r.documentId)
       .map((r) => r.id);
 
     if (!ids.length) return flash("هەڵبژاردراوەکان پێویستیان بە دووبارە خوێندنەوە نییە");
@@ -7021,7 +7026,7 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
   };
 
   const retryWaitingRows = async () => {
-    const ids = rowsRef.current.filter((r) => r.status === "retry" && r.ocrImage).map((r) => r.id);
+    const ids = rowsRef.current.filter((r) => r.status === "retry" && r.documentId).map((r) => r.id);
     if (!ids.length) return flash("هیچ فیشێکی چاوەڕوانی خوێندنەوە نییە");
     setSelectedRows(ids);
     // Run directly because React state selection is asynchronous.
@@ -7248,7 +7253,7 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
               style={{ background: "var(--surf-2)", color: "var(--txt-2)", border: "1px solid var(--line)" }}>
               <Camera className="w-4 h-4" /> وێنەگرتن بە کامێرا
             </button>
-            <p className="text-[11px] leading-relaxed text-center" style={{ color: "var(--txt-3)" }}>سیستەمەکە فیشەکە دەخوێنێتەوە؛ تۆ تەنها بڕ و دراو پشتڕاست دەکەیت.</p>
+            <p className="text-[11px] leading-relaxed text-center" style={{ color: "var(--txt-3)" }}>وێنەی بنەڕەتی یەکسەر پارێزراو دەبێت؛ خوێندنەوەکە پێشبینینە و بڕیاری کۆتایی لەلایەن ئەدمینەوە دەدرێت.</p>
           </div>
         ) : <>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
@@ -7397,8 +7402,10 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
               <div className="flex items-start gap-2 text-sm text-[var(--warn)]">
                 <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
                 <div>
-                  <div className="font-semibold">{review.length} فیش پێویستیان بە پشکنینی تۆ هەیە</div>
-                  <div className="text-xs mt-1 opacity-90">بڕ، دراو، ژمارەی مامەڵە و ناوی وەرگر بپشکنە؛ پاشان پشتڕاستی بکەرەوە. تا ئەو کاتە هەژمار ناکرێن.</div>
+                  <div className="font-semibold">{review.length} فیش پێویستیان بە پشکنین هەیە</div>
+                  <div className="text-xs mt-1 opacity-90">{simple
+                    ? "وێنە بنەڕەتییەکە پارێزراوە؛ ئەدمین بڕ، دراو و ناسنامەی مامەڵە پشکنین دەکات. تا بڕیاری کۆتایی هەژمار ناکرێت."
+                    : "بڕ، دراو، ژمارەی مامەڵە و ناوی وەرگر بپشکنە؛ پاشان بە فەرمانی تۆمارکراو بڕیار بدە. تا ئەو کاتە هەژمار ناکرێت."}</div>
                 </div>
               </div>
             </Card>
@@ -7441,10 +7448,13 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
                       </label>}
                       <div className="text-[10px] w-5 pt-1 text-center shrink-0" style={{ ...num, color: "var(--txt-3)" }}>{i + 1}</div>
                       {r.url
-                        ? <button type="button" onClick={() => simple ? setEditingId(editing ? null : r.id) : setInspectorId(r.id)} className="shrink-0 rounded-xl" aria-label="پشکنینی فیش">
-                            <img src={r.url} alt="" className="w-14 h-14 md:w-16 md:h-16 object-cover rounded-xl shrink-0"
-                              style={{ border: inspectorId === r.id ? "2px solid var(--ac)" : "1px solid var(--line)" }} />
-                          </button>
+                        ? simple
+                          ? <img src={r.url} alt="وێنەی فیشی پارێزراو" className="w-14 h-14 md:w-16 md:h-16 object-cover rounded-xl shrink-0"
+                              style={{ border: "1px solid var(--line)" }} />
+                          : <button type="button" onClick={() => setInspectorId(r.id)} className="shrink-0 rounded-xl" aria-label="پشکنینی فیش">
+                              <img src={r.url} alt="" className="w-14 h-14 md:w-16 md:h-16 object-cover rounded-xl shrink-0"
+                                style={{ border: inspectorId === r.id ? "2px solid var(--ac)" : "1px solid var(--line)" }} />
+                            </button>
                         : <div className="w-14 h-14 md:w-16 md:h-16 rounded-xl shrink-0 flex items-center justify-center" style={{ background: "var(--surf-3)" }}>
                             {r.status === "processing" ? <RotateCcw className="w-4 h-4 animate-spin text-[var(--txt-3)]" /> : <Receipt className="w-4 h-4 text-[var(--txt-3)]" />}
                           </div>}
@@ -7453,7 +7463,7 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
                           <span className="font-bold text-[var(--txt)] text-[15px]" style={num}>{Number(r.amount) > 0 ? fmtMoney(data, r.amount, r.currency) : "—"}</span>
                           <span className="text-xs text-[var(--txt-2)]">{r.currency || "—"}</span>
                           {Number(r.fee) > 0 && !Number(r.orderAmount) && <span className="text-[10px]" style={{ ...num, color: "var(--txt-3)" }}>فی {fmtMoney(data, r.fee, r.currency)} · نەت {fmtMoney(data, r.net, r.currency)}</span>}
-                          <Pill tone={st.tone}>{st.t}</Pill>
+                          <Pill tone={st.tone}>{simple && r.status === "ok" ? "OCR خوێندرایەوە" : st.t}</Pill>
                         </div>
                         {Number(r.orderAmount) > 0 && (
                           <div className="text-[10.5px] mt-1 flex flex-wrap gap-x-2 gap-y-0.5" style={{ ...num, color: "var(--txt-3)" }}>
@@ -7496,8 +7506,8 @@ function ReceiptUploader({ customerId, customerName, partnerId, uploaderId, dire
                           <button title="دووبارە خوێندنەوە" onClick={() => retryRow(r.id)}
                             className="p-2 rounded-lg hover:bg-[var(--surf-3)] text-[var(--txt-2)]"><RotateCcw className="w-3.5 h-3.5" /></button>
                         )}
-                        <button title="سڕینەوە" onClick={() => { commitRows((xs) => xs.filter((x) => x.id !== r.id)); if (editingId === r.id) setEditingId(null); if (inspectorId === r.id) setInspectorId(null); }}
-                          className="p-2 rounded-lg hover:bg-[color-mix(in_srgb,var(--neg)_9%,transparent)] text-[var(--txt-3)] hover:text-[var(--neg)]"><Trash2 className="w-3.5 h-3.5" /></button>
+                        {!simple && <button title="سڕینەوە" onClick={() => { commitRows((xs) => xs.filter((x) => x.id !== r.id)); if (editingId === r.id) setEditingId(null); if (inspectorId === r.id) setInspectorId(null); }}
+                          className="p-2 rounded-lg hover:bg-[color-mix(in_srgb,var(--neg)_9%,transparent)] text-[var(--txt-3)] hover:text-[var(--neg)]"><Trash2 className="w-3.5 h-3.5" /></button>}
                       </div>
                     </div>
 
@@ -7627,13 +7637,16 @@ function ReceiptsHub({ data, usr, batches, batchLoadError, reloadBatches, flash,
   const [sel, setSel] = useState(null);
   const [loc, setLoc] = useState("me");
   const [addFor, setAddFor] = useState("");
-  const [addDir, setAddDir] = useState("in");
+  const [addTxId, setAddTxId] = useState("");
+  const [addReason, setAddReason] = useState("");
   const [batchSearch, setBatchSearch] = useState(initialReceiptQuery.get("receiptSearch") || "");
   const [stageFilter, setStageFilter] = useState(initialReceiptQuery.get("receiptStage") || "all");
   const [batchSort, setBatchSort] = useState(initialReceiptQuery.get("receiptSort") || "newest");
   const [batchPage, setBatchPage] = useState(1);
   const customers = data.users.filter((u) => u.role === "customer" && !u.deleted);
   const partners = data.users.filter((u) => u.role === "partner" && !u.deleted);
+  const addTransactions = data.txs.filter((tx) => !tx.deleted && tx.cpId === addFor
+    && (tx.type === "buy" || (tx.type === "sell" && tx.partnerId)));
   const u = usdConv(data);
 
   const newN = (batches || []).filter((b) => b.status === "new").length;
@@ -7748,10 +7761,25 @@ function ReceiptsHub({ data, usr, batches, batchLoadError, reloadBatches, flash,
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
             <div>
               <Lbl>{tr("کڕیار")}</Lbl>
-              <Sel value={addFor} onChange={(e) => setAddFor(e.target.value)}>
+              <Sel value={addFor} onChange={(e) => { setAddFor(e.target.value); setAddTxId(""); }}>
                 <option value="">{tr("هەڵبژێرە...")}</option>
                 {customers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
               </Sel>
+            </div>
+            <div>
+              <Lbl>{tr("مامەڵەی دیاریکراو")}</Lbl>
+              <Sel value={addTxId} onChange={(event) => setAddTxId(event.target.value)} disabled={!addFor}>
+                <option value="">{tr("هەڵبژێرە...")}</option>
+                {addTransactions.map((tx) => (
+                  <option key={tx.id} value={tx.id}>
+                    {tx.id} · {tx.type === "buy" ? tr("کڕیار فرۆشتوویەتی") : tr("کڕیار کڕیویەتی")}
+                  </option>
+                ))}
+              </Sel>
+            </div>
+            <div className="md:col-span-2">
+              <Lbl>{tr("هۆکاری ناردن لە جیاتی بەکارهێنەر (لانیکەم ٨ پیت)")}</Lbl>
+              <Inp value={addReason} onChange={(event) => setAddReason(event.target.value)} maxLength={700} />
             </div>
           </div>
           {addFor && (
@@ -9582,11 +9610,11 @@ function Office({ data, cur, usr, officePay, calc, accountMove, accountTransfer,
           pending.map((t) => (
             <Card key={t.id} className="p-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm portal-list-card">
               {t.code && <span className="text-[11px] font-bold text-[var(--txt-3)] bg-[var(--line)] px-2 py-0.5 rounded" style={num}>#{t.code}</span>}
-              <span className="font-semibold text-[var(--txt)]">{t.cpId ? usr(t.cpId).name : t.cpName}</span>
+              <span className="font-semibold text-[var(--txt)]">{t.cpId ? (usr(t.cpId).name || t.cpName) : t.cpName}</span>
               <span>{tr("بدرێتێ:")} <Money v={t.total} dec={0} /> {cur(t.againstId).code}</span>
               <span className="text-[11px] text-[var(--txt-3)]" style={num}>{new Date(t.date).toLocaleString("en-GB")}</span>
-              <Btn className="mr-auto flex items-center gap-1.5" onClick={() => officePay(t)}>
-                <CheckCircle2 className="w-4 h-4" /> {tr("پارەم دا")}
+              <Btn className="mr-auto flex items-center gap-1.5" onClick={() => officePay(t, officeId)}>
+                <Send className="w-4 h-4" /> {tr("ئەرک بدە بە نووسینگە")}
               </Btn>
             </Card>
           ))
@@ -9621,7 +9649,7 @@ function Office({ data, cur, usr, officePay, calc, accountMove, accountTransfer,
               <Card key={t.id} className="p-3.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm portal-list-card">
                 {t.code && <span className="text-[11px] font-bold text-[var(--txt-3)]" style={num}>#{t.code}</span>}
                 <Pill tone="green">{tr("دراوە")}</Pill>
-                <span className="font-semibold text-[var(--txt)]">{t.cpId ? usr(t.cpId).name : t.cpName}</span>
+                <span className="font-semibold text-[var(--txt)]">{t.cpId ? (usr(t.cpId).name || t.cpName) : t.cpName}</span>
                 <span className="font-bold" style={num}>{fmt(t.total, cur(t.againstId).dec ?? 0)} {cur(t.againstId).code}</span>
                 <span className="text-[11px] text-[var(--txt-3)] mr-auto" style={num}>{new Date(t.paidAt).toLocaleString("en-GB")}</span>
               </Card>
@@ -9796,7 +9824,7 @@ function Report({ data, calc, cur, usr, profitIn, investorsProfitIn, invShare, s
   const exportCsv = () => {
     const head = ["کۆد", tr("جۆر"), "بەروار", "لایەن", tr("دراو"), tr("بڕ"), "ڕەیت", "بەرامبەر", "کۆ", "شوێن", tr("دۆخ"), tr("خێر")];
     const rows = txs.map((t) => [t.code || "", t.type === "buy" ? "کڕین" : "فرۆشتن", new Date(t.date).toLocaleString("en-GB"),
-      t.cpId ? usr(t.cpId).name : t.cpName, cur(t.curId).code, t.amount,
+      t.cpId ? (usr(t.cpId).name || t.cpName) : t.cpName, cur(t.curId).code, t.amount,
       (() => { const b = preferredRateBaseId(t.curId, t.againstId); const r = storedRateToDisplay(t.rate, t.curId, t.againstId, b); return r ? +r.toFixed(6) : ""; })(),
       cur(t.againstId).code, t.total,
       t.partnerId ? "لای " + usr(t.partnerId).name : "قاسەی گشتی", t.status === "pending" ? "چاوەڕوان" : "تەواو", t.profit ?? ""]);
@@ -11371,6 +11399,13 @@ function CustomerPortal({ user, c, base, data, calc, cur, usr, flash, reloadBatc
   const list = base;
   const customerRoutes = useMemo(() => ["home", "activity", "documents", "account", "upload"], []);
   const [tab, setTab] = usePortalRoute("customer", customerRoutes, "home");
+  // Customer uploads are tied only to transactions where the customer sold currency to ZEMAN.
+  // Purchases from ZEMAN stay visible, but only the assigned partner may upload their receipt.
+  const uploadTransactions = useMemo(
+    () => base.filter((tx) => !tx.deleted && tx.type === "buy"),
+    [base],
+  );
+  const [uploadTxId, setUploadTxId] = useState("");
   const owe = Object.entries(c.owe).filter(([, v]) => v);
   const due = Object.entries(c.due).filter(([, v]) => v);
   const summary = separatedCurrencySummary(c.owe, c.due);
@@ -11405,9 +11440,9 @@ function CustomerPortal({ user, c, base, data, calc, cur, usr, flash, reloadBatc
           </div>
 
           {/* کرداری خێرا */}
-          <div className="portal-actions-grid is-single">
-            <PortalAction icon={Upload} label={tr("ناردنی فیش")} hint={tr("فیشەکان")} onClick={() => setTab("upload")} primary />
-          </div>
+          {uploadTransactions.length > 0 && <div className="portal-actions-grid is-single">
+            <PortalAction icon={Upload} label={tr("ناردنی فیش")} hint={tr("بۆ مامەڵەی فرۆشتن بە زەمان")} onClick={() => setTab("upload")} primary />
+          </div>}
 
           {/* دوو باڵانس */}
           {(owe.length > 0 || due.length > 0) && (
@@ -11473,7 +11508,8 @@ function CustomerPortal({ user, c, base, data, calc, cur, usr, flash, reloadBatc
 
       {tab === "documents" && (
         <>
-          <PortalAction icon={Upload} label={tr("ناردنی فیش")} hint={tr("فیشەکان")} onClick={() => setTab("upload")} primary />
+          {uploadTransactions.length > 0 && <PortalAction icon={Upload} label={tr("ناردنی فیش")}
+            hint={tr("تەنها بۆ فرۆشتن بە زەمان")} onClick={() => setTab("upload")} primary />}
           <DeferredPanel><ForwardedReceipts client={supabase} flash={flash}
             signedUrlFor={async (path) => {
               const { data: signed } = await supabase.storage.from("receipts").createSignedUrl(path, 3600);
@@ -11503,6 +11539,12 @@ function CustomerPortal({ user, c, base, data, calc, cur, usr, flash, reloadBatc
 function PartnerPortal({ user, data, calc, cur, usr, flash, reloadBatches, online, stale, refreshing, refreshedAt, refresh }) {
   const partnerRoutes = useMemo(() => ["home", "activity", "documents", "account", "upload"], []);
   const [tab, setTab] = usePortalRoute("partner", partnerRoutes, "home");
+  // A partner can upload only for customer-purchase transactions explicitly assigned to them.
+  const uploadTransactions = useMemo(
+    () => data.txs.filter((tx) => !tx.deleted && tx.type === "sell" && tx.partnerId === user.id),
+    [data.txs, user.id],
+  );
+  const [uploadTxId, setUploadTxId] = useState("");
   const bal = calc.partner[user.id] || {};
   const hist = data.ledger.filter((e) => e.partnerId === user.id).slice().reverse();
   const fees = {};
@@ -11534,9 +11576,9 @@ function PartnerPortal({ user, data, calc, cur, usr, flash, reloadBatches, onlin
               sub={rows.length > 1 ? tr("دراوەکان تێکەڵ ناکرێن") : main && main.v < 0 ? tr("· قەرز") : null} />
           </div>
 
-          <div className="portal-actions-grid is-single">
+          {uploadTransactions.length > 0 && <div className="portal-actions-grid is-single">
             <PortalAction icon={Upload} label={tr("ناردنی فیش")} hint={tr("فیشەکان")} onClick={() => setTab("upload")} primary />
-          </div>
+          </div>}
 
           {rows.length > 1 && (
             <Card className="px-4 py-2 portal-list-card">
@@ -11561,7 +11603,8 @@ function PartnerPortal({ user, data, calc, cur, usr, flash, reloadBatches, onlin
 
       {tab === "account" && <AccountSafe userId={user.id} data={data} calc={calc} cur={cur} usr={usr} flash={flash} readOnly />}
       {tab === "documents" && <>
-        <PortalAction icon={Upload} label={tr("ناردنی فیش")} hint={tr("فیشەکان")} onClick={() => setTab("upload")} primary />
+        {uploadTransactions.length > 0 && <PortalAction icon={Upload} label={tr("ناردنی فیش")}
+          hint={tr("بۆ مامەڵەی دیاریکراو") } onClick={() => setTab("upload")} primary />}
         <DeferredPanel><ForwardedReceipts client={supabase} flash={flash}
           signedUrlFor={async (path) => {
             const { data: signed } = await supabase.storage.from("receipts").createSignedUrl(path, 3600);
@@ -11577,7 +11620,7 @@ function PartnerPortal({ user, data, calc, cur, usr, flash, reloadBatches, onlin
           <Back onClick={() => setTab("documents")} t={tr("گەڕانەوە")} />
           <Card className="p-4">
             <div className="text-[13px] leading-relaxed" style={{ color: "var(--txt-2)" }}>
-              {tr("فیشی ئەو پارەیە بنێرە کە لە ئەکاونتی تۆوە نێردراوە یان بۆ تۆ هاتووە.")}
+              {tr("تەنها فیشی ئەو کڕینەی کڕیار بنێرە کە زەمان بە ڕوونی بە تۆی سپاردووە.")}
             </div>
           </Card>
           <ReceiptUploader partnerId={user.id} uploaderId={user.id} data={data} direction="out" allowDirection
@@ -11608,7 +11651,11 @@ function PartnerPortal({ user, data, calc, cur, usr, flash, reloadBatches, onlin
 
 /* ══════════════════ پۆرتاڵی ڕۆڵەکانی تر ══════════════════ */
 function Portal({ user, data, calc, cur, usr, officePay, settle, invUnpaid, flash, reloadBatches, accountMove, accountTransfer, ...portalState }) {
-  if (user.role === "office") return <Office data={data} cur={cur} usr={usr} officePay={officePay} calc={calc} officeId={user.id} flash={flash} readOnlyUser />;
+  if (user.role === "office") return (
+    <div className="portal-frame"><section className="portal-main" id="portal-content">
+      <DeferredPanel><OfficePayments client={supabase} lang={portalState.lang || "ku"} flash={flash} /></DeferredPanel>
+    </section></div>
+  );
 
   if (user.role === "customer") {
     const c = calc.cust[user.id] || { owe: {}, due: {} };

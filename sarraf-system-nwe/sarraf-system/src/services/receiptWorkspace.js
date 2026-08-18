@@ -8,11 +8,23 @@
  */
 
 const upper = (v) => String(v ?? "").trim().toUpperCase();
-const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : null; };
+const num = (v) => {
+  if (v == null || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
+const commandId = () => globalThis.crypto?.randomUUID?.()
+  || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+export const reviewCommandKey = (action, documentId) =>
+  `receipt-review:${String(action).slice(0, 16)}:${String(documentId).slice(0, 70)}:${commandId()}`;
+export const rateCommandKey = (currency, effectiveDate) =>
+  `receipt-rate:${upper(currency).slice(0, 8)}:${String(effectiveDate).slice(0, 10)}:${commandId()}`;
+export const finalizeCommandKey = (documentId) =>
+  `receipt-finalize:${String(documentId).slice(0, 70)}:${commandId()}`;
 
 export const RECEIPT_REVIEW_STATES = [
   "needs_manual_review", "parsed", "validated", "submitted",
-  "duplicate", "currency_mismatch", "tamper_suspected",
+  "duplicate", "currency_mismatch", "tamper_suspected", "accepted",
 ];
 
 export async function loadReviewQueue(client, { states = RECEIPT_REVIEW_STATES, limit = 100 } = {}) {
@@ -47,14 +59,16 @@ const mapDocument = (d) => ({
 });
 
 export async function loadDocumentDetail(client, documentId) {
-  const [doc, extractions, transitions] = await Promise.all([
+  const [doc, extractions, transitions, summary] = await Promise.all([
     client.from("receipt_documents").select("*").eq("id", documentId).maybeSingle(),
     client.from("receipt_extractions").select("*").eq("document_id", documentId).order("version"),
     client.from("receipt_state_transitions").select("*").eq("document_id", documentId).order("created_at"),
+    client.rpc("sarraf_receipt_summary", { p_document_id: documentId }),
   ]);
   if (doc.error) throw doc.error;
   if (extractions.error) throw extractions.error;
   if (transitions.error) throw transitions.error;
+  if (summary.error) throw summary.error;
   if (!doc.data) throw new Error("receipt document not found");
 
   const versions = (extractions.data || []).map((e) => ({
@@ -71,6 +85,10 @@ export async function loadDocumentDetail(client, documentId) {
     refNo: e.ref_no,
     merchantOrderNo: e.merchant_order_no,
     payee: e.payee,
+    platform: e.platform || e.raw?.platform || null,
+    hasFee: e.has_fee == null
+      ? (e.fee_amount == null ? null : Number(e.fee_amount) > 0)
+      : e.has_fee === true,
     txDate: e.tx_date,
     txTime: e.tx_time,
     confidence: num(e.confidence),
@@ -85,11 +103,78 @@ export async function loadDocumentDetail(client, documentId) {
     original: versions.find((v) => v.isOriginal) || versions[0] || null,
     current: versions[versions.length - 1] || null,
     versions,
+    summary: mapSummary(summary.data),
     history: (transitions.data || []).map((t) => ({
       from: t.from_state, to: t.to_state, actorId: t.actor_id,
       reason: t.reason, at: t.created_at,
     })),
   };
+}
+
+const mapSummary = (s) => s ? ({
+  documentId: s.document_id,
+  transactionId: s.transaction_id,
+  flow: s.flow,
+  state: s.state,
+  counted: s.counted === true,
+  currency: s.currency,
+  businessDate: s.business_date,
+  rateValue: num(s.rate_value),
+  rateConvention: s.rate_convention,
+  rateDate: s.rate_date,
+  rateVersion: s.rate_version == null ? null : Number(s.rate_version),
+  rateKind: s.rate_kind,
+  rateCapturedAt: s.rate_captured_at,
+  availableRateValue: num(s.available_rate_value),
+  availableRateVersion: s.available_rate_version == null ? null : Number(s.available_rate_version),
+  grossUsd: num(s.gross_usd),
+  feeUsd: num(s.fee_usd),
+  netUsd: num(s.net_usd),
+  valuationStatus: s.valuation_status,
+  summaryVersion: s.summary_version == null ? null : Number(s.summary_version),
+}) : null;
+
+export async function loadReceiptSummary(client, documentId) {
+  const { data, error } = await client.rpc("sarraf_receipt_summary", { p_document_id: documentId });
+  if (error) throw error;
+  return mapSummary(data);
+}
+
+/** Create a versioned daily rate. The immutable convention is always 1 USD = X currency. */
+export async function setReceiptDailyRate(client, {
+  currency, effectiveDate, rate, reason, commandKey,
+}) {
+  const code = upper(currency);
+  const day = String(effectiveDate ?? "").trim();
+  const value = Number(rate);
+  const why = String(reason ?? "").normalize("NFKC").trim();
+  if (!/^[A-Z]{3,8}$/.test(code)) throw new Error("دراوی نرخ دروست نییە");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new Error("بەرواری کاری نرخ دروست نییە");
+  if (!Number.isFinite(value) || value <= 0) throw new Error("نرخ دەبێت ژمارەیەکی گەورەتر لە سفر بێت");
+  if (why.length < 8) throw new Error("هۆکاری دانانی نرخ دەبێت لانیکەم ٨ پیت بێت");
+  const { data, error } = await client.rpc("sarraf_set_receipt_daily_rate", {
+    p_currency: code,
+    p_effective_date: day,
+    p_rate: value,
+    p_reason: why.slice(0, 700),
+    p_command_key: commandKey || rateCommandKey(code, day),
+  });
+  if (error) throw error;
+  return data;
+}
+
+/** Freeze the latest rate for this receipt. The server derives its business date and currency. */
+export async function finalizeReceipt(client, { documentId, reason, commandKey }) {
+  const why = String(reason ?? "").normalize("NFKC").trim();
+  if (!documentId) throw new Error("فیش هەڵنەبژێردراوە");
+  if (why.length < 8) throw new Error("هۆکاری کۆتایی‌کردن دەبێت لانیکەم ٨ پیت بێت");
+  const { data, error } = await client.rpc("sarraf_receipt_finalize_command", {
+    p_document_id: documentId,
+    p_reason: why.slice(0, 700),
+    p_command_key: commandKey || finalizeCommandKey(documentId),
+  });
+  if (error) throw error;
+  return data;
 }
 
 /**
@@ -102,7 +187,8 @@ export function diffVersions(before, after) {
     ["grossAmount", "کۆی گشتی"], ["orderAmount", "بڕی بنەڕەتی"], ["feeAmount", "فی"],
     ["feeTreatment", "شێوازی فی"], ["netAmount", "نەت"], ["currency", "دراو"],
     ["refNo", "ژمارەی مامەڵە"], ["merchantOrderNo", "ژمارەی فرۆشیار"],
-    ["payee", "وەرگر"], ["txDate", "بەروار"], ["txTime", "کات"],
+    ["payee", "وەرگر"], ["platform", "پلاتفۆرم"], ["hasFee", "دۆخی فی"],
+    ["txDate", "بەروار"], ["txTime", "کات"],
   ];
   return fields
     .filter(([k]) => String(before[k] ?? "") !== String(after[k] ?? ""))
@@ -138,52 +224,47 @@ export function reviewEquation(v) {
   };
 }
 
-/** Move a document through the state machine. The database rejects an illegal transition. */
-export async function transitionDocument(client, { documentId, toState, reason }) {
-  const patch = { state: toState };
-  if (toState === "rejected") {
-    if (!reason || String(reason).trim().length < 8) {
-      throw new Error("ڕەتکردنەوە پێویستی بە هۆکارێکی ٨ پیتی هەیە");
-    }
-    patch.rule_code = "manual_reject";
-    patch.rule_reason = String(reason).trim().slice(0, 700);
-  }
-  const { error } = await client.from("receipt_documents").update(patch).eq("id", documentId);
+/** Run one bounded, MFA-protected review decision; direct table updates are never used. */
+export async function transitionDocument(client, { documentId, toState, reason, commandKey }) {
+  const action = ({ accepted: "accept", validated: "accept", rejected: "reject", needs_manual_review: "reopen" })[toState];
+  if (!action) throw new Error("بڕیاری پشکنین ناسراو نییە");
+  const why = String(reason ?? "").normalize("NFKC").trim();
+  if (why.length < 8) throw new Error("بڕیارەکە پێویستی بە هۆکارێکی لانیکەم ٨ پیتی هەیە");
+  const { data, error } = await client.rpc("sarraf_receipt_review_command", {
+    p_document_id: documentId,
+    p_action: action,
+    p_changes: {},
+    p_reason: why.slice(0, 700),
+    p_command_key: commandKey || reviewCommandKey(action, documentId),
+  });
   if (error) throw error;
-  return { documentId, state: toState };
+  return data;
 }
 
 /**
  * Record a correction as a NEW extraction version. The original stays readable; the database
  * refuses an in-place edit and refuses a correction with no author or reason.
  */
-export async function correctExtraction(client, { documentId, base, changes, reason, correctedBy }) {
-  const why = String(reason ?? "").trim();
+export async function correctExtraction(client, { documentId, base, changes, reason, commandKey }) {
+  const why = String(reason ?? "").normalize("NFKC").trim();
   if (why.length < 8) throw new Error("هۆکاری ڕاستکردنەوە دەبێت لانیکەم ٨ پیت بێت");
   if (!base) throw new Error("وەشانی بنەڕەتی نەدۆزرایەوە");
   if (!changes || Object.keys(changes).length === 0) throw new Error("هیچ گۆڕانکارییەک نییە");
 
-  const { error } = await client.from("receipt_extractions").insert({
-    document_id: documentId,
-    version: (base.version || 0) + 1,
-    is_original: false,
-    gross_amount: changes.grossAmount ?? base.grossAmount,
-    order_amount: changes.orderAmount ?? base.orderAmount,
-    fee_amount: changes.feeAmount ?? base.feeAmount,
-    fee_treatment: changes.feeTreatment ?? base.feeTreatment,
-    net_amount: changes.netAmount ?? base.netAmount,
-    currency: upper(changes.currency ?? base.currency) || null,
-    ref_no: changes.refNo ?? base.refNo,
-    merchant_order_no: changes.merchantOrderNo ?? base.merchantOrderNo,
-    payee: changes.payee ?? base.payee,
-    tx_date: changes.txDate ?? base.txDate,
-    tx_time: changes.txTime ?? base.txTime,
-    corrected_by: correctedBy,
-    correction_reason: why,
-    corrected_at: new Date().toISOString(),
+  const allowed = new Set([
+    "grossAmount", "orderAmount", "feeAmount", "feeTreatment", "netAmount", "currency",
+    "refNo", "merchantOrderNo", "payee", "platform", "txDate", "txTime",
+  ]);
+  if (Object.keys(changes).some((key) => !allowed.has(key))) throw new Error("خانەی ڕاستکردنەوە ناسراو نییە");
+  const { data, error } = await client.rpc("sarraf_receipt_review_command", {
+    p_document_id: documentId,
+    p_action: "correct",
+    p_changes: changes,
+    p_reason: why.slice(0, 700),
+    p_command_key: commandKey || reviewCommandKey("correct", documentId),
   });
   if (error) throw error;
-  return { documentId, version: (base.version || 0) + 1 };
+  return data;
 }
 
 /**

@@ -12,18 +12,30 @@
 import { PG_HINT, postgresAvailable, startDatabase } from "./lib/zeman-db.mjs";
 
 if (!postgresAvailable()) {
+  if (process.env.CI === "true" || process.env.ZEMAN_DB_STRICT === "1") {
+    console.error(`FAIL: ${PG_HINT} A required database gate cannot be skipped.`);
+    process.exit(1);
+  }
   console.log(`SKIP: ${PG_HINT}`);
+  console.log("Set ZEMAN_DB_STRICT=1 to make this a failure.");
   process.exit(0);
 }
 
 try {
   const { psql, psqlAsRole } = startDatabase();
 
-
   const checks = [];
+  const errorDetail = (e) => {
+    const stderr = e?.stderr?.toString?.() || "";
+    const message = String(e?.message || e || "");
+    const diagnostic = `${stderr}\n${message}`.split("\n")
+      .map((line) => line.trim())
+      .find((line) => /^(ERROR|DETAIL|HINT):/.test(line));
+    return diagnostic || message.split("\n").find(Boolean) || "unknown error";
+  };
   const check = (name, fn) => {
     try { fn(); checks.push([true, name]); }
-    catch (e) { checks.push([false, `${name} — ${String(e.message || e).split("\n").find((l) => l.includes("ERROR")) || e}`]); }
+    catch (e) { checks.push([false, `${name} — ${errorDetail(e)}`]); }
   };
   const mustFail = (name, sql) => {
     let threw = false;
@@ -212,6 +224,16 @@ try {
     if (Number(avail) !== 7200) throw new Error(`balance moved twice: ${avail}`);
   });
 
+  check("a forged client rate cannot change journal value or rate metadata", () => {
+    psql(`select public.sarraf_customer_vault_move(
+      'cust-2','CNY',720,'in',999,'server snapshot must win','cmd-dep-forged-rate')`);
+    const row = psql(`select base_amount||'|'||base_rate||'|'||rate_source
+      from journal_lines where entry_id='je-vault-'||md5('u-a:cmd-dep-forged-rate')
+      order by line_no limit 1`).trim();
+    if (row !== "100.0000000000|7.2000000000|manual_daily_snapshot")
+      throw new Error(`forged rate leaked into journal metadata: ${row}`);
+  });
+
   mustFail("a withdrawal beyond the cashbox is refused by the command",
     `select public.sarraf_customer_vault_move('cust-2','CNY',999999,'out',7.2,'زۆرە','cmd-wd-x')`);
 
@@ -225,7 +247,8 @@ try {
     const st = psql("select status from debts where id='d-c2'").trim();
     if (st !== "settled") throw new Error(`debt is ${st}`);
     const avail = psql("select available from customer_vaults where customer_id='cust-2' and currency='CNY'").trim();
-    if (Number(avail) !== 2200) throw new Error(`expected 2200 left, got ${avail}`);
+    // 7,200 opening deposit + 720 server-priced deposit - 5,000 settlement = 2,920.
+    if (Number(avail) !== 2920) throw new Error(`expected 2920 left, got ${avail}`);
   });
 
   check("an unallocated remainder returns to the cashbox instead of vanishing", () => {
@@ -275,6 +298,73 @@ try {
         ('off-1','Office One','office','44444444-4444-4444-4444-444444444444')
         on conflict do nothing`);
 
+  // ── Real business flow A/B/C: custody is derived, never trusted from a label ──
+  check("Type A is partner custody and creates the exact receipt assignment", () => {
+    psql(`insert into public.txs(
+      id,type,cp_id,cur_id,amount,rate,against_id,total,partner_id,status,date)
+      values ('tx-flow-a','buy','cust-1','cny',7200,0.13888889,'usd',1000,
+              'p-x','completed',now())`);
+    const row = psql(`select business_flow||'|'||partner_id from public.txs
+      where id='tx-flow-a'`).trim();
+    if (row !== "partner_custody|p-x") throw new Error(`Type A became ${row}`);
+    const assignment = psql(`select flow||'|'||customer_id||'|'||partner_id||'|'||expected_currency
+      from public.receipt_transaction_assignments where transaction_id='tx-flow-a'`).trim();
+    if (assignment !== "customer_sells_to_zeman|cust-1|p-x|CNY") {
+      throw new Error(`Type A receipt assignment is ${assignment}`);
+    }
+    psql(`insert into public.receipt_batches(
+            id,customer_id,partner_id,direction,currency,uploaded_by)
+          values ('batch-flow-a-0001','cust-1','p-x','in','CNY','cust-1');
+      insert into public.receipt_intake_items(
+        id,batch_id,submitted_by,customer_id,partner_id,direction,image_path,amount,fee,
+        net_amount,currency,ref_no,source_status,intake_status,counted,raw)
+      values ('receipt-flow-a','batch-flow-a-0001','cust-1','cust-1','p-x','in',
+        'ingest/batch-flow-a-0001/receipt-flow-a.jpg',
+        7200,0,7200,'CNY','REF-A','verified','accepted',true,
+        '{"payee":"Partner X Wallet","platform":"WeChat","feeTreatment":"no_fee",
+          "txDate":"2026-08-18","transactionStatus":"successful"}'::jsonb);
+      update public.receipt_intake_items set transaction_id='tx-flow-a'
+      where id='receipt-flow-a'`);
+    const detail = psql(`select business_flow||'|'||payee||'|'||platform||'|'||has_fee||'|'||partner_id
+      from public.v_receipt_batch_structured_details where receipt_id='receipt-flow-a'`).trim();
+    if (detail !== "partner_custody|Partner X Wallet|wechat|false|p-x") {
+      throw new Error(`Type A receipt detail is ${detail}`);
+    }
+  });
+
+  check("Type B is one paired owner-cashbox trade with no partner", () => {
+    psql(`begin;
+      insert into public.txs(id,type,cp_id,cur_id,amount,rate,against_id,total,
+        direct,pair_id,direct_role,own_money,status,date)
+      values
+        ('tx-flow-b-buy','buy','cust-1','cny',7200,0.13888889,'usd',1000,
+         true,'pair-flow-b','buy',true,'completed',now()),
+        ('tx-flow-b-sell','sell','cust-2','cny',7200,0.14,'usd',1008,
+         true,'pair-flow-b','sell',true,'completed',now());
+      commit;`);
+    const row = psql(`select count(*)||'|'||min(business_flow)||'|'||
+      count(*) filter(where partner_id is not null) from public.txs where pair_id='pair-flow-b'`).trim();
+    if (row !== "2|owner_cashbox|0") throw new Error(`Type B became ${row}`);
+  });
+
+  check("Type C keeps the ordinary transaction behaviour", () => {
+    psql(`insert into public.txs(id,type,cp_id,cur_id,amount,rate,against_id,total,status,date)
+      values ('tx-flow-c','buy','cust-1','cny',720,0.13888889,'usd',100,'completed',now())`);
+    const row = psql(`select business_flow||'|'||coalesce(partner_id,'none')||'|'||direct
+      from public.txs where id='tx-flow-c'`).trim();
+    if (row !== "standard|none|false") throw new Error(`Type C became ${row}`);
+  });
+
+  mustFail("a forged flow label cannot contradict partner custody",
+    `insert into public.txs(id,type,cp_id,cur_id,amount,rate,against_id,total,partner_id,
+       business_flow,status,date) values ('tx-flow-forged','buy','cust-1','cny',72,
+       0.13888889,'usd',10,'p-x','standard','completed',now())`);
+
+  mustFail("half of an owner-cashbox pair cannot commit",
+    `insert into public.txs(id,type,cp_id,cur_id,amount,rate,against_id,total,direct,
+       pair_id,direct_role,own_money,status,date) values ('tx-flow-half','buy','cust-1',
+       'cny',72,0.13888889,'usd',10,true,'pair-half','buy',true,'completed',now())`);
+
   check("13D.5 balance 1000, sold 1300: 1000 consumed and 300 becomes debt", () => {
     psql(`insert into public.partner_accounts(id,partner_id,currency,available)
           values ('pa-x-cny','p-x','CNY',1000)
@@ -311,25 +401,69 @@ try {
     if (after !== before) throw new Error(`debts went from ${before} to ${after} on replay`);
   });
 
-  check("an office assignment carries the transaction amount and currency", () => {
-    psql(`insert into public.office_payment_assignments(id,office_id,amount,currency,assigned_by)
-          values ('opa-1','off-1',5000,'CNY','u-a')`);
-    const row = psql("select amount||'|'||currency||'|'||status from office_payment_assignments where id='opa-1'").trim();
-    if (row !== "5000.0000000000|CNY|assigned") throw new Error(`assignment is ${row}`);
+  let officeAssignmentId = "";
+  check("an office assignment derives amount and currency from the exact pending purchase", () => {
+    psql(`insert into public.txs(id,type,cp_id,cur_id,amount,rate,against_id,total,status,date)
+          values ('tx-office','buy','cust-1','cny',36000,0.13888889,'usd',5000,'pending',now())`);
+    const out = psql(`select public.sarraf_create_office_payment_assignment(
+      'tx-office','off-1',now()+interval '1 day','pay this exact purchase','cmd-opa-create-1')::text`);
+    const id = JSON.parse(out).assignment_id;
+    officeAssignmentId = id;
+    const row = psql(`select transaction_id||'|'||office_id||'|'||amount||'|'||currency||'|'||status
+      from office_payment_assignments where id='${id}'`).trim();
+    if (row !== "tx-office|off-1|5000.0000000000|USD|assigned") throw new Error(`assignment is ${row}`);
+  });
+
+  check("only the server worker may record an office evidence attestation", () => {
+    const signature = `public.sarraf_office_payment_attach_evidence_server(text,text,text,bigint,text,text,text)`;
+    const browser = psql(`select has_function_privilege('authenticated','${signature}','execute')`).trim();
+    const service = psql(`select has_function_privilege('service_role','${signature}','execute')`).trim();
+    const legacy = psql(`select (to_regprocedure(
+      'public.sarraf_office_payment_attach_evidence(text,text,text,text)') is null)::text`).trim();
+    if (browser !== "f" || service !== "t" || legacy !== "true") {
+      throw new Error(`evidence grants authenticated=${browser}, service=${service}, legacy=${legacy}`);
+    }
+  });
+
+  check("an office cannot report payment before immutable evidence is attached", () => {
+    psql(`create or replace function auth.uid() returns uuid language sql stable
+          as $fn$ select '44444444-4444-4444-4444-444444444444'::uuid $fn$`);
+    let denied = false;
+    try { psql(`select public.sarraf_office_payment_report(
+      '${officeAssignmentId}','paid_reported',2000,'REF-X','no evidence','cmd-op-no-evidence')`); }
+    catch { denied = true; }
+    psql(`create or replace function auth.uid() returns uuid language sql stable
+          as $fn$ select '11111111-1111-1111-1111-111111111111'::uuid $fn$`);
+    if (!denied) throw new Error("payment was reported without evidence");
+    psql(`insert into public.office_payment_evidence(
+      id,assignment_id,storage_path,image_sha256,file_size,media_type,actor_id,command_key)
+      values ('opev-verify','${officeAssignmentId}',
+        'ingest/office-payments/${officeAssignmentId}/verify.jpg',repeat('a',64),1024,
+        'image/jpeg','off-1','cmd-evidence-verify');
+      update public.office_payment_assignments
+        set evidence_path='ingest/office-payments/${officeAssignmentId}/verify.jpg'
+        where id='${officeAssignmentId}'`);
   });
 
   check("a partial payment report leaves the remainder outstanding", () => {
     psql(`create or replace function auth.uid() returns uuid language sql stable
           as $fn$ select '44444444-4444-4444-4444-444444444444'::uuid $fn$`);
-    const out = psql(`select public.sarraf_office_payment_report('opa-1','paid_reported',2000,'REF-1','partial','cmd-op-1')::text`);
+    const out = psql(`select public.sarraf_office_payment_report('${officeAssignmentId}','paid_reported',2000,'REF-1','partial','cmd-op-1')::text`);
     if (!out.replace(/\s/g,"").includes('"outstanding":3000')) throw new Error(`expected 3000 outstanding: ${out}`);
   });
 
+  check("replaying an office report cannot add its amount twice", () => {
+    const out = psql(`select public.sarraf_office_payment_report('${officeAssignmentId}','paid_reported',2000,'REF-1','partial','cmd-op-1')::text`);
+    const paid = psql(`select amount_paid from office_payment_assignments where id='${officeAssignmentId}'`).trim();
+    if (Number(paid) !== 2000) throw new Error(`replay raised amount_paid to ${paid}`);
+    if (!out.replace(/\s/g,"").includes('"replayed":true')) throw new Error(out);
+  });
+
   mustFail("an office cannot report more than the assignment",
-    `select public.sarraf_office_payment_report('opa-1','paid_reported',999999,'X','over','cmd-op-2')`);
+    `select public.sarraf_office_payment_report('${officeAssignmentId}','paid_reported',999999,'X','over','cmd-op-2')`);
 
   mustFail("an office cannot confirm its own payment",
-    `select public.sarraf_office_payment_report('opa-1','confirmed',null,null,null,'cmd-op-3')`);
+    `select public.sarraf_office_payment_report('${officeAssignmentId}','confirmed',null,null,null,'cmd-op-3')`);
 
   check("another office cannot touch an assignment that is not theirs", () => {
     psql(`insert into public.app_users(id,name,role,auth_id) values
@@ -337,11 +471,41 @@ try {
     psql(`create or replace function auth.uid() returns uuid language sql stable
           as $fn$ select '55555555-5555-5555-5555-555555555555'::uuid $fn$`);
     let denied = false;
-    try { psql(`select public.sarraf_office_payment_report('opa-1','acknowledged',null,null,null,'cmd-op-4')`); }
+    try { psql(`select public.sarraf_office_payment_report('${officeAssignmentId}','acknowledged',null,null,null,'cmd-op-4')`); }
     catch { denied = true; }
     psql(`create or replace function auth.uid() returns uuid language sql stable
           as $fn$ select '11111111-1111-1111-1111-111111111111'::uuid $fn$`);
     if (!denied) throw new Error("a different office was allowed to report");
+  });
+
+  check("only after the full office report can an administrator confirm and settle the purchase", () => {
+    psql(`insert into public.ledger(id,type,owner,cur_id,amount,note,date,created_by)
+          values ('verify-usd-capital','deposit','self','usd',1000000,
+                  'accounting verifier opening cash',statement_timestamp(),'u-a')
+          on conflict (id) do nothing`);
+    psql(`insert into public.office_payment_evidence(
+      id,assignment_id,storage_path,image_sha256,file_size,media_type,actor_id,command_key)
+      values ('opev-verify-2','${officeAssignmentId}',
+        'ingest/office-payments/${officeAssignmentId}/verify-2.jpg',repeat('b',64),1024,
+        'image/jpeg','off-1','cmd-evidence-verify-2');
+      update public.office_payment_assignments
+        set evidence_path='ingest/office-payments/${officeAssignmentId}/verify-2.jpg'
+        where id='${officeAssignmentId}'`);
+    psql(`create or replace function auth.uid() returns uuid language sql stable
+          as $fn$ select '44444444-4444-4444-4444-444444444444'::uuid $fn$`);
+    psql(`select public.sarraf_office_payment_report('${officeAssignmentId}','paid_reported',3000,'REF-2','remainder','cmd-op-5')`);
+    psql(`create or replace function auth.uid() returns uuid language sql stable
+          as $fn$ select '11111111-1111-1111-1111-111111111111'::uuid $fn$`);
+    const out = psql(`select public.sarraf_office_payment_confirm(
+      '${officeAssignmentId}','verified against bank statement','cmd-op-confirm-1')::text`);
+    const state = psql(`select a.status||'|'||t.status from office_payment_assignments a
+      join txs t on t.id=a.transaction_id where a.id='${officeAssignmentId}'`).trim();
+    if (state !== "confirmed|completed") throw new Error(`office settlement state is ${state}`);
+    const pair = psql(`select string_agg(account_id||':'||side,',' order by line_no)
+      from journal_lines where entry_id=(select journal_entry_id from transaction_payment_events
+        where office_assignment_id='${officeAssignmentId}' and event_kind='settled')`).trim();
+    if (pair !== "acc-2300:debit,acc-1000:credit") throw new Error(`office settlement posted ${pair}`);
+    if (!out.replace(/\s/g,"").includes('"status":"confirmed"')) throw new Error(out);
   });
 
   check("the trial balance still reconciles after partner and office activity", () => {
@@ -351,9 +515,11 @@ try {
 
 
   // ── Phase 4: receipt state machine, custody, forwarding ──
-  psql(`insert into public.app_users(id,name,role) values
-        ('cust-r','Receipt Customer','customer'),('part-r','Receipt Partner','partner'),
-        ('inv-r','Investor','investor') on conflict do nothing`);
+  psql(`insert into public.app_users(id,name,role,auth_id) values
+        ('cust-r','Receipt Customer','customer','66666666-6666-6666-6666-666666666666'),
+        ('part-r','Receipt Partner','partner','77777777-7777-7777-7777-777777777777'),
+        ('inv-r','Investor','investor','88888888-8888-8888-8888-888888888888')
+        on conflict (id) do update set auth_id=excluded.auth_id`);
 
   const doc = (id, flow, uploader, extra = "") => `
     insert into public.receipt_documents(id,flow,uploader_id,storage_path${extra ? "," + extra.split("=")[0] : ""})
@@ -387,6 +553,11 @@ try {
     `update public.receipt_documents set state='accepted' where id='doc-1'`);
 
   check("the documented happy path walks through every state", () => {
+    psql(`insert into public.receipt_extractions(
+            document_id,version,is_original,raw,gross_amount,fee_amount,fee_treatment,
+            net_amount,currency,payee,tx_date,confidence,platform,has_fee,transaction_status)
+          values ('doc-1',1,true,'{}'::jsonb,100,0,'no_fee',100,'CNY',
+                  'Receipt Customer',current_date,0.99,'wechat',false,'successful')`);
     const path = ["uploading","uploaded","ocr_pending","ocr_processing","parsed","validated",
                   "submitted","matched","accepted","finalized","forwarded","delivered"];
     for (const s of path) psql(`update public.receipt_documents set state='${s}' where id='doc-1'`);
@@ -460,8 +631,220 @@ try {
     if (!threw) throw new Error("a duplicate counted image was accepted");
   });
 
+  // ── Canonical receipt authority: assignment → stored OCR → decision → rate → recipient ──
+  check("canonical receipt flow preserves assignment authority and the exact CNY benchmark", () => {
+    psql(`update public.app_users set auth_id='66666666-6666-6666-6666-666666666666' where id='cust-r';
+          update public.app_users set auth_id='77777777-7777-7777-7777-777777777777' where id='part-r';
+          insert into public.txs(id,type,cp_id,cp_name,cur_id,amount,rate,against_id,total,partner_id,status)
+          values ('tx-canonical','sell','cust-r','Receipt Customer','cny',2447,0.1388888889,
+                  'usd',339.86,'part-r','pending') on conflict do nothing`);
+
+    // Admin assignment and every later admin decision require AAL2 in the same session.
+    psql(`begin;
+          select set_config('request.jwt.claim.aal','aal2',true);
+          select public.sarraf_set_receipt_assignment(
+            'tx-canonical','part-r',null,'verified transaction ownership',
+            'receipt-assign:tx-canonical:0001');
+          commit`);
+
+    psql(`create or replace function auth.uid() returns uuid language sql stable
+          as $fn$ select '66666666-6666-6666-6666-666666666666'::uuid $fn$`);
+    let customerDenied = false;
+    try {
+      psql(`select public.sarraf_receipt_intake_begin_v2(
+            'doc-forged-customer','tx-canonical','batch-canonical','image/jpeg',
+            'receipt-intake:tx-canonical:forged-customer',null)`);
+    } catch { customerDenied = true; }
+    if (!customerDenied) throw new Error("customer uploaded the assigned partner's purchase receipt");
+
+    psql(`create or replace function auth.uid() returns uuid language sql stable
+          as $fn$ select '77777777-7777-7777-7777-777777777777'::uuid $fn$`);
+    psql(`select public.sarraf_receipt_intake_begin_v2(
+          'doc-canonical','tx-canonical','batch-canonical','image/jpeg',
+          'receipt-intake:tx-canonical:doc-canonical',null)`);
+    const custody = psql(`select count(*) from public.receipt_custody_ledger
+                          where document_id='doc-canonical' and to_partner_id='part-r'`).trim();
+    if (custody !== "1") throw new Error(`assigned partner custody rows: ${custody}`);
+
+    // Only the server worker has the grant in production; this verifier runs as the database
+    // owner so it can exercise the command after separately checking those grants below.
+    psql(`select public.sarraf_receipt_record_server_extraction(
+          'doc-canonical',repeat('b',64),1000,'image/jpeg',true,
+          '{"grossAmount":"2520.41","orderAmount":"2447.00","feeAmount":"73.41",
+            "feeTreatment":"added_on_top","netAmount":"2447.00","currency":"CNY",
+            "refNo":"ORDER-CANONICAL","payee":"Assigned Customer","platform":"Alipay",
+            "txDate":"2026-08-18","transactionStatus":"successful",
+            "confidence":"0.99","ocrVersion":"6"}'::jsonb,
+          'test-provider','test-model',50,'request-canonical-0001')`);
+    const ocrState = psql(`select state||'|'||(server_attested_at is not null)::text
+                           from receipt_documents where id='doc-canonical'`).trim();
+    if (ocrState !== "validated|true") throw new Error(`server OCR state is ${ocrState}`);
+
+    psql(`select public.sarraf_receipt_submit(
+          '["doc-canonical"]'::jsonb,'receipt-submit:doc-canonical')`);
+    psql(`create or replace function auth.uid() returns uuid language sql stable
+          as $fn$ select '11111111-1111-1111-1111-111111111111'::uuid $fn$`);
+    psql(`begin;
+          select set_config('request.jwt.claim.aal','aal2',true);
+          select public.sarraf_receipt_review_command(
+            'doc-canonical','accept','{}'::jsonb,'stored original matches transaction',
+            'receipt-review:accept:doc-canonical:0001');
+          select public.sarraf_set_receipt_daily_rate(
+            'CNY',(statement_timestamp() at time zone 'Asia/Baghdad')::date,7.20,
+            'manual daily settlement rate',
+            'receipt-rate:CNY:today:canonical');
+          select public.sarraf_receipt_finalize_command(
+            'doc-canonical','receipt figures and rate verified',
+            'receipt-finalize:doc-canonical:0001');
+          commit`);
+    const benchmark = psql(`select concat_ws('|',
+      public.sarraf_receipt_summary('doc-canonical')->>'gross_usd',
+      public.sarraf_receipt_summary('doc-canonical')->>'fee_usd',
+      public.sarraf_receipt_summary('doc-canonical')->>'net_usd')`).trim();
+    if (benchmark !== "350.06|10.20|339.86") throw new Error(`benchmark is ${benchmark}`);
+
+    psql(`begin;
+          select set_config('request.jwt.claim.aal','aal2',true);
+          select public.sarraf_set_receipt_daily_rate(
+            'CNY',(statement_timestamp() at time zone 'Asia/Baghdad')::date,7.30,
+            'later manual rate must not revalue history',
+            'receipt-rate:CNY:later:canonical');
+          commit`);
+    const frozenRate = psql(`select public.sarraf_receipt_summary('doc-canonical')->>'rate_value'`).trim();
+    if (Number(frozenRate) !== 7.2) throw new Error(`historical receipt changed to rate ${frozenRate}`);
+    let correctionDenied = false;
+    try {
+      psql(`begin;
+        select set_config('request.jwt.claim.aal','aal2',true);
+        select public.sarraf_receipt_review_command(
+          'doc-canonical','correct','{"netAmount":"1"}'::jsonb,'must not rewrite finalized evidence',
+          'receipt-review:correct:finalized:denied');
+        commit`);
+    } catch { correctionDenied = true; }
+    if (!correctionDenied) throw new Error("a finalized extraction was rewritten");
+
+    const destination = psql(`begin;
+      select set_config('request.jwt.claim.aal','aal2',true);
+      select public.sarraf_forward_receipts_v2(
+        '["doc-canonical"]'::jsonb,'verified finalized handoff',
+        'receipt-forward:assigned:canonical')->'destinations'->0->>'to_actor_id';
+      commit`).trim().split("\n").filter(Boolean).pop();
+    if (destination !== "cust-r") throw new Error(`receipt was sent to ${destination}`);
+
+    psql(`create or replace function auth.uid() returns uuid language sql stable
+          as $fn$ select '66666666-6666-6666-6666-666666666666'::uuid $fn$`);
+    const seen = psql(`select public.sarraf_receipt_mark_seen_v2('doc-canonical')->>'status'`).trim();
+    if (seen !== "seen") throw new Error(`customer acknowledgement is ${seen}`);
+    const visible = psql(`select count(*) from public.sarraf_my_forwarded_receipts_v2(25)
+                          where document_id='doc-canonical' and net_usd=339.86`).trim();
+    if (visible !== "1") throw new Error(`customer forwarded read model rows: ${visible}`);
+
+    psql(`create or replace function auth.uid() returns uuid language sql stable
+          as $fn$ select '77777777-7777-7777-7777-777777777777'::uuid $fn$`);
+    psql(`select public.sarraf_receipt_intake_begin_v2(
+          'doc-duplicate-ref','tx-canonical','batch-canonical-2','image/jpeg',
+          'receipt-intake:tx-canonical:duplicate-ref',null)`);
+    psql(`select public.sarraf_receipt_record_server_extraction(
+          'doc-duplicate-ref',repeat('c',64),1001,'image/jpeg',true,
+          '{"grossAmount":"2520.41","orderAmount":"2447.00","feeAmount":"73.41",
+            "feeTreatment":"added_on_top","netAmount":"2447.00","currency":"CNY",
+            "refNo":" order canonical ","payee":"Assigned Customer","platform":"Alipay",
+            "txDate":"2026-08-18","transactionStatus":"successful","confidence":"0.99"}'::jsonb,
+          'test-provider','test-model',51,'request-canonical-duplicate-ref')`);
+    psql(`select public.sarraf_receipt_submit(
+          '["doc-duplicate-ref"]'::jsonb,'receipt-submit:duplicate-ref')`);
+    psql(`create or replace function auth.uid() returns uuid language sql stable
+          as $fn$ select '11111111-1111-1111-1111-111111111111'::uuid $fn$`);
+    const duplicateState = psql(`begin;
+      select set_config('request.jwt.claim.aal','aal2',true);
+      select public.sarraf_receipt_review_command(
+        'doc-duplicate-ref','accept','{}'::jsonb,'normalized reference must be unique',
+        'receipt-review:accept:duplicate-ref')->>'state';
+      commit`).trim().split("\n").filter(Boolean).pop();
+    if (duplicateState !== "duplicate") throw new Error(`normalized duplicate became ${duplicateState}`);
+
+    const browserCanWrite = psql(`select has_function_privilege('authenticated',
+      'public.sarraf_receipt_record_server_extraction(text,text,bigint,text,boolean,jsonb,text,text,integer,text)',
+      'execute')`).trim();
+    const serviceCanWrite = psql(`select has_function_privilege('service_role',
+      'public.sarraf_receipt_record_server_extraction(text,text,bigint,text,boolean,jsonb,text,text,integer,text)',
+      'execute')`).trim();
+    if (browserCanWrite !== "f" || serviceCanWrite !== "t") {
+      throw new Error(`OCR grants authenticated=${browserCanWrite}, service=${serviceCanWrite}`);
+    }
+  });
+
+  check("customer-sale intake belongs only to its customer and is never portal-published", () => {
+    psql(`insert into public.app_users(id,name,role,auth_id) values
+          ('inv-r','Receipt Investor','investor','88888888-8888-8888-8888-888888888888')
+          on conflict (id) do nothing;
+          insert into public.txs(id,type,cp_id,cp_name,cur_id,amount,rate,against_id,total,status)
+          values ('tx-customer-sale','buy','cust-r','Receipt Customer','cny',100,0.1388888889,
+                  'usd',13.89,'pending') on conflict do nothing`);
+    psql(`begin;
+          select set_config('request.jwt.claim.aal','aal2',true);
+          select public.sarraf_set_receipt_assignment(
+            'tx-customer-sale',null,null,'verified customer sale ownership',
+            'receipt-assign:tx-customer-sale:0001');
+          commit`);
+
+    psql(`create or replace function auth.uid() returns uuid language sql stable
+          as $fn$ select '77777777-7777-7777-7777-777777777777'::uuid $fn$`);
+    let denied = false;
+    try {
+      psql(`select public.sarraf_receipt_intake_begin_v2(
+        'doc-wrong-partner','tx-customer-sale','batch-sale','image/jpeg',
+        'receipt-intake:tx-customer-sale:wrong-partner',null)`);
+    } catch { denied = true; }
+    if (!denied) throw new Error("an unrelated partner uploaded the customer's sale receipt");
+
+    psql(`create or replace function auth.uid() returns uuid language sql stable
+          as $fn$ select '88888888-8888-8888-8888-888888888888'::uuid $fn$`);
+    denied = false;
+    try {
+      psql(`select public.sarraf_receipt_intake_begin_v2(
+        'doc-investor-forged','tx-customer-sale','batch-sale','image/jpeg',
+        'receipt-intake:tx-customer-sale:investor',null)`);
+    } catch { denied = true; }
+    if (!denied) throw new Error("an investor uploaded operational receipt evidence");
+
+    psql(`create or replace function auth.uid() returns uuid language sql stable
+          as $fn$ select '66666666-6666-6666-6666-666666666666'::uuid $fn$`);
+    psql(`select public.sarraf_receipt_intake_begin_v2(
+      'doc-customer-sale','tx-customer-sale','batch-sale','image/jpeg',
+      'receipt-intake:tx-customer-sale:customer',null)`);
+    const row = psql(`select flow||'|'||uploader_id from public.receipt_documents
+                      where id='doc-customer-sale'`).trim();
+    if (row !== "customer_sells_to_zeman|cust-r") throw new Error(`sale intake is ${row}`);
+
+    psql(`insert into public.receipt_extractions(
+            document_id,version,is_original,raw,gross_amount,fee_amount,fee_treatment,
+            net_amount,currency,payee,tx_date,confidence,platform,has_fee,transaction_status)
+          values ('doc-customer-sale',1,true,'{}'::jsonb,100,0,'no_fee',100,'CNY',
+                  'Receipt Customer',current_date,0.99,'alipay',false,'successful')`);
+
+    for (const state of ["uploaded","ocr_pending","ocr_processing","parsed","validated","submitted","matched","accepted","finalized"])
+      psql(`update public.receipt_documents set state='${state}' where id='doc-customer-sale'`);
+    psql(`create or replace function auth.uid() returns uuid language sql stable
+          as $fn$ select '11111111-1111-1111-1111-111111111111'::uuid $fn$`);
+    denied = false;
+    try {
+      psql(`begin;
+        select set_config('request.jwt.claim.aal','aal2',true);
+        select public.sarraf_forward_receipts_v2(
+          '["doc-customer-sale"]'::jsonb,'must not publish customer-sale evidence',
+          'receipt-forward:customer-sale:denied');
+        commit`);
+    } catch { denied = true; }
+    if (!denied) throw new Error("customer-sale evidence was published to another portal");
+  });
+
 
   // ── Phase 5: transactions post to the journal ──
+  // A failed role-specific fixture must never leak its identity into the independent accounting
+  // section that follows it.
+  psql(`create or replace function auth.uid() returns uuid language sql stable
+        as $fn$ select '11111111-1111-1111-1111-111111111111'::uuid $fn$`);
   check("a completed buy posts a balanced entry with the spread recognised", () => {
     psql(`insert into public.txs(id,type,cur_id,amount,rate,against_id,total,status,date)
           values ('tx-buy','buy','cny',7200,0.138889,'usd',1000.00,'completed',now())`);
@@ -475,12 +858,20 @@ try {
   });
 
   check("a pending buy books a payable rather than moving cash", () => {
-    psql(`insert into public.txs(id,type,cur_id,amount,rate,against_id,total,status,date)
-          values ('tx-pend','buy','cny',720,0.138889,'usd',100.00,'pending',now())`);
+    psql(`insert into public.txs(id,type,cp_id,cur_id,amount,rate,against_id,total,status,date)
+          values ('tx-pend','buy','cust-1','cny',720,0.1972,'usd',142,'pending',now())`);
     const acct = psql(`select account_id from journal_lines
                        where entry_id='je-tx-tx-pend' and side='credit' order by line_no limit 1`).trim();
     if (acct !== "acc-2300") throw new Error(`pending buy credited ${acct}, expected the payable`);
+    const debt = psql(`select debtor_type||'|'||coalesce(debtor_id,'')||'|'||creditor_type||'|'||
+      coalesce(creditor_id,'')||'|'||outstanding_principal
+      from debts where source_transaction_id='tx-pend' and status='open'`).trim();
+    if (debt !== "zeman||customer|cust-1|142.0000000000")
+      throw new Error(`pending purchase debt is ${debt}`);
   });
+
+  mustFail("posted transaction economics cannot drift away from recognition and debt",
+    "update public.txs set total=999 where id='tx-pend'");
 
   check("a sell credits inventory and debits what came in", () => {
     psql(`insert into public.txs(id,type,cur_id,amount,rate,against_id,total,status,date)
@@ -507,10 +898,66 @@ try {
     if (out !== "true") throw new Error(psql("select public.sarraf_trial_balance_check()::text"));
   });
 
-  check("a transaction posts only once, however often it is updated", () => {
-    psql(`update public.txs set status='completed' where id='tx-pend'`);
+  check("pending to completed posts a separate cash settlement without rewriting recognition", () => {
+    // A completed purchase must be funded.  This is a real operational-ledger seed, not a
+    // mocked balance column, and the settlement gate will refuse to overdraw it.
+    psql(`insert into public.ledger(id,type,owner,cur_id,amount,note,date,created_by)
+          values ('verify-usd-capital','deposit','self','usd',1000000,
+                  'accounting verifier opening cash',statement_timestamp(),'u-a')
+          on conflict (id) do nothing`);
+    const before = psql("select count(*) from journal_lines where entry_id='je-tx-tx-pend'").trim();
+    const out = psql(`select public.sarraf_settle_transaction(
+      'tx-pend',false,'cmd-tx-settle-1','direct settlement','pending purchase paid in full')::text`);
+    const after = psql("select count(*) from journal_lines where entry_id='je-tx-tx-pend'").trim();
+    if (after !== before) throw new Error("recognition entry was rewritten during settlement");
+    const accountPair = psql(`select string_agg(account_id||':'||side,',' order by line_no)
+      from journal_lines where entry_id=(select journal_entry_id from transaction_payment_events
+        where transaction_id='tx-pend' and event_kind='settled' order by id desc limit 1)`).trim();
+    if (accountPair !== "acc-2300:debit,acc-1000:credit")
+      throw new Error(`settlement posted ${accountPair}`);
+    const cash = psql(`select amount from public.ledger
+      where tx_id='tx-pend' and type='settlement' and reversal_of is null`).trim();
+    if (Number(cash) !== -142) throw new Error(`operational settlement cash is ${cash || "missing"}`);
+    if (!out.replace(/\s/g,"").includes('"status":"completed"')) throw new Error(out);
+    const debtState = psql(`select status||'|'||outstanding_principal from debts
+      where source_transaction_id='tx-pend' order by opened_at limit 1`).trim();
+    if (debtState !== "settled|0.0000000000") throw new Error(`transaction debt is ${debtState}`);
     const n = psql("select count(*) from journal_entries where source_id='tx-pend'").trim();
-    if (n !== "1") throw new Error(`${n} entries exist for one transaction`);
+    if (n !== "1") throw new Error(`${n} recognition entries exist for one transaction`);
+  });
+
+  check("replaying settlement does not move cash twice", () => {
+    const before = psql("select count(*) from transaction_payment_events where transaction_id='tx-pend'").trim();
+    const out = psql(`select public.sarraf_settle_transaction(
+      'tx-pend',false,'cmd-tx-settle-1','direct settlement','pending purchase paid in full')::text`);
+    const after = psql("select count(*) from transaction_payment_events where transaction_id='tx-pend'").trim();
+    if (after !== before) throw new Error(`events went from ${before} to ${after}`);
+    if (!out.replace(/\s/g,"").includes('"replayed":true')) throw new Error(out);
+  });
+
+  check("unsettling mirrors only the settlement and returns the transaction to pending", () => {
+    const out = psql(`select public.sarraf_unsettle_transaction(
+      'tx-pend','cmd-tx-unsettle-1','reverse settlement','bank rejected the payment')::text`);
+    const state = psql("select status||'|'||coalesce(paid_at::text,'') from txs where id='tx-pend'").trim();
+    if (state !== "pending|") throw new Error(`transaction state is ${state}`);
+    const rev = psql(`select count(*) from journal_entries where source_type='transaction_settlement_reversal'
+      and transaction_id='tx-pend' and status='posted'`).trim();
+    if (rev !== "1") throw new Error("settlement reversal is missing");
+    const open = psql(`select count(*) from debts where source_transaction_id='tx-pend'
+      and status in ('open','partially_settled')`).trim();
+    if (open !== "1") throw new Error(`unsettled transaction has ${open} open debts`);
+    if (!out.replace(/\s/g,"").includes('"status":"pending"')) throw new Error(out);
+  });
+
+  check("a draft recognition becomes posted only after a real rate is supplied", () => {
+    psql(`insert into public.receipt_daily_rates(id,currency,effective_date,rate_value,version,set_by,reason)
+          values ('verify-rate-try','TRY',current_date,32,1,'u-a','verified TRY accounting rate')`);
+    const out = psql(`select public.sarraf_resolve_transaction_draft(
+      'tx-norate','published verified TRY daily rate','cmd-resolve-try-1')::text`);
+    const st = psql("select status from journal_entries where id='je-tx-tx-norate'").trim();
+    const n = psql("select count(*) from journal_lines where entry_id='je-tx-tx-norate'").trim();
+    if (st !== "posted" || Number(n)<2) throw new Error(`draft is ${st} with ${n} lines`);
+    if (!out.replace(/\s/g,"").includes('"status":"posted"')) throw new Error(out);
   });
 
   check("reversing a transaction entry mirrors every line and keeps the original", () => {
@@ -662,7 +1109,9 @@ try {
     psql(`select public.sarraf_receipt_intake_extracted('doc-in-2', true,
       '{"grossAmount":"2520.41","orderAmount":"2447.00","feeAmount":"73.41",
         "feeTreatment":"added_on_top","netAmount":"2447.00","currency":"CNY",
-        "refNo":"ORD-1","confidence":"0.91","txDate":"2026-08-04"}'::jsonb, 'groq', 'qwen')`);
+        "refNo":"ORD-1","confidence":"0.91","txDate":"2026-08-04",
+        "payee":"Verified Recipient","platform":"Alipay",
+        "transactionStatus":"successful"}'::jsonb, 'groq', 'qwen')`);
     const st = psql("select state from receipt_documents where id='doc-in-2'").trim();
     if (st !== "validated") throw new Error(`state is ${st}`);
     const v = psql(`select version||'|'||is_original||'|'||gross_amount
@@ -707,6 +1156,11 @@ try {
   // A sale receipt, taken through to accepted.
   psql(`insert into public.receipt_documents(id,flow,uploader_id,customer_id,storage_path)
         values ('fw-1','customer_sells_to_zeman','fw-cust','fw-cust','ingest/fw/fw-1.jpg')`);
+  psql(`insert into public.receipt_extractions(
+          document_id,version,is_original,raw,gross_amount,fee_amount,fee_treatment,net_amount,
+          currency,payee,tx_date,confidence,platform,has_fee)
+        values ('fw-1',1,true,'{}'::jsonb,100,0,'no_fee',100,
+                'CNY','FW Partner',current_date,0.99,'wechat',false)`);
   for (const st of ["uploading","uploaded","ocr_pending","ocr_processing","parsed","validated","submitted","accepted"])
     psql(`update public.receipt_documents set state='${st}' where id='fw-1'`);
   // And one left mid-review, which must never be forwarded.
@@ -741,6 +1195,11 @@ try {
     // already-forwarded state of fw-1.
     psql(`insert into public.receipt_documents(id,flow,uploader_id,customer_id,storage_path)
           values ('fw-3','customer_sells_to_zeman','fw-cust','fw-cust','ingest/fw/fw-3.jpg')`);
+    psql(`insert into public.receipt_extractions(
+            document_id,version,is_original,raw,gross_amount,fee_amount,fee_treatment,net_amount,
+            currency,payee,tx_date,confidence,platform,has_fee)
+          values ('fw-3',1,true,'{}'::jsonb,100,0,'no_fee',100,
+                  'CNY','FW Partner',current_date,0.99,'wechat',false)`);
     for (const st of ["uploading","uploaded","ocr_pending","ocr_processing","parsed","validated","submitted","accepted"])
       psql(`update public.receipt_documents set state='${st}' where id='fw-3'`);
     const out = psql(`select public.sarraf_forward_receipts('["fw-3"]'::jsonb,'fw-cust',null,
@@ -809,6 +1268,12 @@ try {
   });
 
   // ── §12: day close ──
+  // Distinct historical business dates prove the one-close-per-day contract. Historical
+  // rates are seeded explicitly; a later current rate must never be borrowed for an old close.
+  psql(`insert into public.rate_history(id,cur_id,buy_rate,sell_rate,created_at,changed_by)
+        values ('verify-iqd-history','iqd',1400,1400,
+                ((current_date-10)::timestamp at time zone 'Asia/Baghdad'),'u-a')
+        on conflict (id) do nothing`);
   // A safe short by 400,000 could be closed in silence, and nobody could ever find out why.
   mustFail("a counted difference cannot be closed without a reason",
     `insert into public.day_closes(id,close_date,lines,has_diff,closed_by) values
@@ -824,18 +1289,24 @@ try {
      ('dc-bad3',current_date,'[{"cur":"iqd","code":"IQD","diff":-400000}]'::jsonb,false,'u-a')`);
 
   check("a clean count closes with no reason at all", () => {
-    psql(`insert into public.day_closes(id,close_date,lines,closed_by) values
-          ('dc-clean',current_date,'[{"cur":"iqd","code":"IQD","expected":1000,"counted":1000,"diff":0}]'::jsonb,'u-a')`);
+    psql(`begin;
+          select set_config('sarraf.day_close_adjustment','verify-clean',true);
+          insert into public.day_closes(id,close_date,lines,closed_by) values
+          ('dc-clean',current_date-4,'[{"cur":"iqd","code":"IQD","expected":1000,"counted":1000,"diff":0}]'::jsonb,'u-a');
+          commit`);
     const n = psql("select count(*) from journal_entries where id='je-close-dc-clean'").trim();
     if (n !== "0") throw new Error("a day with no difference posted an entry");
   });
 
   // §12 and §13: the difference reaches the books instead of vanishing into an adjustment.
   check("an explained shortage posts to cash over/short and balances", () => {
-    psql(`insert into public.day_closes(id,close_date,lines,note,closed_by) values
-          ('dc-short',current_date,
+    psql(`begin;
+          select set_config('sarraf.day_close_adjustment','verify-short',true);
+          insert into public.day_closes(id,close_date,lines,note,closed_by) values
+          ('dc-short',current_date-3,
            '[{"cur":"iqd","code":"IQD","expected":1420000,"counted":1418600,"diff":-1400}]'::jsonb,
-           'خەرجی تۆمار نەکراو بۆ گواستنەوە','u-a')`);
+           'خەرجی تۆمار نەکراو بۆ گواستنەوە','u-a');
+          commit`);
     const st = psql("select status from journal_entries where id='je-close-dc-short'").trim();
     if (st !== "posted") throw new Error(`entry is ${st || "missing"}`);
     const short = psql(`select coalesce(sum(base_amount) filter (where side='debit'),0)
@@ -848,10 +1319,13 @@ try {
   });
 
   check("an overage credits cash over/short rather than debiting it", () => {
-    psql(`insert into public.day_closes(id,close_date,lines,note,closed_by) values
-          ('dc-over',current_date,
+    psql(`begin;
+          select set_config('sarraf.day_close_adjustment','verify-over',true);
+          insert into public.day_closes(id,close_date,lines,note,closed_by) values
+          ('dc-over',current_date-2,
            '[{"cur":"usd","code":"USD","expected":1000,"counted":1025,"diff":25}]'::jsonb,
-           'پارەی زیادە لە ژماردندا دۆزرایەوە','u-a')`);
+           'پارەی زیادە لە ژماردندا دۆزرایەوە','u-a');
+          commit`);
     const cr = psql(`select coalesce(sum(base_amount) filter (where side='credit'),0)
                      from journal_lines where entry_id='je-close-dc-over' and account_id='acc-5910'`).trim();
     if (Number(cr) <= 0) throw new Error("an overage did not credit cash over/short");
@@ -860,9 +1334,12 @@ try {
   // A currency with no rate cannot be valued; the entry is a draft carrying the reason,
   // exactly as an unvalued transaction is — never an invented number.
   check("a difference in an unrated currency is drafted, not guessed", () => {
-    psql(`insert into public.day_closes(id,close_date,lines,note,closed_by) values
-          ('dc-unrated',current_date,'[{"cur":"xxx","code":"XXX","diff":-50}]'::jsonb,
-           'دراوێک کە نرخی دانەنراوە','u-a')`);
+    psql(`begin;
+          select set_config('sarraf.day_close_adjustment','verify-unrated',true);
+          insert into public.day_closes(id,close_date,lines,note,closed_by) values
+          ('dc-unrated',current_date-1,'[{"cur":"xxx","code":"XXX","diff":-50}]'::jsonb,
+           'دراوێک کە نرخی دانەنراوە','u-a');
+          commit`);
     const st = psql("select status from journal_entries where id='je-close-dc-unrated'").trim();
     if (st !== "draft") throw new Error(`expected a draft, got ${st || "nothing"}`);
     const n = psql("select count(*) from journal_lines where entry_id='je-close-dc-unrated'").trim();
@@ -901,8 +1378,8 @@ try {
 
   check("reconciliation refuses to say the books agree while a gap exists", () => {
     const out = psql("select public.sarraf_ledger_journal_reconciliation()::text").trim();
-    if (/"agreed":\s*true/.test(out)) throw new Error(`agreed while a gap exists: ${out}`);
-    if (!/"missing_entries":\s*[1-9]/.test(out)) throw new Error(`the gap was not counted: ${out}`);
+    if (/"ok":\s*true/.test(out)) throw new Error(`agreed while a gap exists: ${out}`);
+    if (!/"ledger_journal_gaps":\s*[1-9]/.test(out)) throw new Error(`the gap was not counted: ${out}`);
   });
 
   // The rows that would show an operator money the books cannot account for.
@@ -910,8 +1387,9 @@ try {
     psql(`insert into public.ledger(id,type,cur_id,amount,tx_id)
           values ('lg-gap','buy','cny',500,'tx-gap'),('lg-ok','buy','cny',100,'tx-ok')`);
     const out = psql("select public.sarraf_ledger_journal_reconciliation()::text").trim();
-    if (!/"ledger_rows_without_entry":\s*1/.test(out))
-      throw new Error(`expected exactly the unposted one to count: ${out}`);
+    const gaps = Number(psql("select count(*) from public.v_ledger_journal_gaps").trim());
+    if (gaps < 1 || !/"ledger_journal_gaps":\s*[1-9]/.test(out))
+      throw new Error(`the ledger/journal gap was not counted: ${out}`);
   });
 
   // An unvalued entry is a gap too: the trade happened, the books cannot state it in USD.
@@ -922,7 +1400,7 @@ try {
     if (!gaps.includes("tx-unrated|entry_unvalued"))
       throw new Error(`an unvalued entry was not distinguished: ${gaps}`);
     const out = psql("select public.sarraf_ledger_journal_reconciliation()::text").trim();
-    if (!/"unvalued_entries":\s*[1-9]/.test(out)) throw new Error(`not counted: ${out}`);
+    if (!/"journal_drafts":\s*[1-9]/.test(out)) throw new Error(`not counted: ${out}`);
   });
 
   check("an entry whose transaction was voided is reported as an orphan", () => {

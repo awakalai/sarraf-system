@@ -9,10 +9,22 @@ const STAGE_LABEL = {
   matched: "بەستراوەکان",
   archived: "ئەرشیفکراو",
   rejected: "دووبارە",
+  created: "ئامادەکردن", uploading: "دەنێردرێت", uploaded: "گەیشت",
+  ocr_pending: "چاوەڕوانی خوێندنەوە", ocr_processing: "دەخوێندرێتەوە",
+  ocr_failed_retryable: "خوێندنەوە دووبارە دەکرێتەوە", parsed: "خوێندرایەوە",
+  needs_manual_review: "لە پشکنینی ئەدمین", currency_mismatch: "دراو یەک ناگرێتەوە",
+  duplicate: "دووبارە", tamper_suspected: "پشکنینی زیاتر", validated: "پشتڕاستکرا",
+  submitted: "نێردرا", accepted: "پەسەندکرا", finalized: "تەواوکرا",
+  forwarded: "نێردرا بۆ وەرگر", delivered: "گەیشت", seen: "بینرا",
 };
 const STAGE_TONE = {
   received: "slate", reading: "slate", needs_review: "amber",
   verified: "green", matched: "green", archived: "slate", rejected: "red",
+  created: "slate", uploading: "slate", uploaded: "slate", ocr_pending: "slate",
+  ocr_processing: "slate", ocr_failed_retryable: "amber", parsed: "amber",
+  needs_manual_review: "amber", currency_mismatch: "amber", duplicate: "red",
+  tamper_suspected: "amber", validated: "green", submitted: "green", accepted: "green",
+  finalized: "green", forwarded: "green", delivered: "green", seen: "green",
 };
 
 const num0 = (v) => (v === null || v === undefined || v === "" ? 0 : Number(v) || 0);

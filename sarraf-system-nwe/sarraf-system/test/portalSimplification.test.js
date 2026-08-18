@@ -5,10 +5,12 @@ import fs from "node:fs";
 const app = fs.readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
 const portal = fs.readFileSync(new URL("../src/components/portal/PortalFoundation.jsx", import.meta.url), "utf8");
 
-test("ordinary customer and partner portals use the simplified receipt intake", () => {
-  assert.match(app, /ReceiptUploader customerId=[\s\S]{0,260}\bsimple\b/);
-  assert.match(app, /ReceiptUploader partnerId=[\s\S]{0,260}\bsimple\b/);
-  assert.match(app, /function ReceiptUploader\([^)]*simple = false/);
+test("customer and partner evidence enters a reviewable batch before any transaction exists", () => {
+  assert.match(app, /ReceiptUploader customerId=\{user\.id\}[\s\S]{0,220}direction="in"[\s\S]{0,120}\bsimple\b/);
+  assert.match(app, /ReceiptUploader partnerId=\{user\.id\}[\s\S]{0,180}direction="out" allowDirection/);
+  assert.doesNotMatch(app, /ReceiptUploader transactionId=/);
+  assert.match(app, /createReceiptIngestionCommand\(\)/);
+  assert.doesNotMatch(app, /readReceiptAI/);
 });
 
 test("global operational search is rendered only for the real admin shell", () => {

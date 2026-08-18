@@ -28,17 +28,25 @@ export async function assignReceiptCustody(client, { batchId, allocations, reaso
  * Convert accepted receipts in a verified batch into a transaction.
  * Mirrors public.sarraf_convert_receipt_batch_to_transaction(p_batch_id, p_receipt_ids, p_tx, p_reason, p_command_key).
  */
-export async function convertReceiptBatchToTransaction(client, { batchId, receiptIds, transaction, reason: reasonText, commandKey }) {
+export async function convertReceiptBatchToTransaction(client, {
+  batchId, receiptIds, transaction, officeId = null, reason: reasonText, commandKey,
+}) {
   if (!batchId) throw new Error("receipt batch is required");
   if (!Array.isArray(receiptIds) || !receiptIds.length) throw new Error("at least one receipt is required");
   if (!transaction || typeof transaction !== "object") throw new Error("transaction payload is required");
   const why = reason(reasonText);
   if (why.length < 8) throw new Error("an 8-character conversion reason is required");
   const key = commandKey || receiptConvertCommandKey(batchId);
-  const { data, error } = await client.rpc("sarraf_convert_receipt_batch_to_transaction", {
+  const pendingOfficePurchase = transaction.type === "buy" && transaction.status === "pending";
+  if (pendingOfficePurchase && !officeId) throw new Error("office is required for a pending purchase");
+  const { data, error } = await client.rpc(
+    pendingOfficePurchase
+      ? "sarraf_convert_pending_receipt_purchase_with_office"
+      : "sarraf_convert_receipt_batch_to_transaction", {
     p_batch_id: batchId,
     p_receipt_ids: receiptIds,
     p_tx: transaction,
+    ...(pendingOfficePurchase ? { p_office_id: officeId, p_due_at: null } : {}),
     p_reason: why,
     p_command_key: key,
   });
@@ -65,7 +73,7 @@ export async function convertReceiptBatchToTransaction(client, { batchId, receip
  * Mirrors public.sarraf_portal_receipt_summary(p_days).
  */
 export async function loadPortalReceiptSummary(client, days = 365) {
-  const { data, error } = await client.rpc("sarraf_portal_receipt_summary", { p_days: days });
+  const { data, error } = await client.rpc("sarraf_portal_receipt_summary_v2", { p_days: days });
   if (error) throw error;
   return data || { totals: [], batches: [], batch_count: 0, accepted_count: 0, rejected_count: 0 };
 }

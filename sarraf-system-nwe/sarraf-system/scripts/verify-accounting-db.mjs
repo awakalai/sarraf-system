@@ -954,8 +954,13 @@ try {
   });
 
   check("a draft recognition becomes posted only after a real rate is supplied", () => {
+    // The ratio has to be supplied where the system reads it. receipt_daily_rates is the
+    // receipt lifecycle's own published rate; every valuation outside that lifecycle — this
+    // resolver included — reads currencies.rate, which is the single ratio of Phase 2. Both are
+    // set here so the case is unambiguous about which one made the draft postable.
     psql(`insert into public.receipt_daily_rates(id,currency,effective_date,rate_value,version,set_by,reason)
           values ('verify-rate-try','TRY',current_date,32,1,'u-a','verified TRY accounting rate')`);
+    psql("update public.currencies set rate = 32, rate_updated = now() where id = 'try'");
     const out = psql(`select public.sarraf_resolve_transaction_draft(
       'tx-norate','published verified TRY daily rate','cmd-resolve-try-1')::text`);
     const st = psql("select status from journal_entries where id='je-tx-tx-norate'").trim();
@@ -1501,8 +1506,10 @@ try {
 
   // An unpaid purchase must not pretend cash left the safe.
   check("an unpaid purchase brings the currency in and moves no cash", () => {
-    psql(`insert into public.txs(id,type,cur_id,amount,rate,against_id,total,status,date)
-          values ('tx-unpaid','buy','cny',1000,0.138889,'usd',138.89,'pending',now())`);
+    // A pending purchase opens a debt against somebody, so it must name a registered customer.
+    // Without one the insert is refused and the case never reaches what it is testing.
+    psql(`insert into public.txs(id,type,cp_id,cur_id,amount,rate,against_id,total,status,date)
+          values ('tx-unpaid','buy','cust-1','cny',1000,0.138889,'usd',138.89,'pending',now())`);
     psql("select public.sarraf_ensure_transaction_ledger('tx-unpaid')");
     const cny = psql("select amount from ledger where tx_id='tx-unpaid' and cur_id='cny'").trim();
     const usd = psql("select count(*) from ledger where tx_id='tx-unpaid' and cur_id='usd'").trim();
@@ -1794,7 +1801,9 @@ try {
     if (s.calculation_status !== "pending_rate") throw new Error(`status is ${s.calculation_status}`);
     const c = s.currencies[0];
     if (c.usd.status !== "pending_rate") throw new Error("a USD figure was produced without a ratio");
-    if (c.native.gross_total.amount_decimal !== "500") throw new Error("the native breakdown was withheld");
+    // At the currency's own scale, as every other native figure now is: 500.00 beside 2447.00,
+    // not 500 beside 2447.00.
+    if (c.native.gross_total.amount_decimal !== "500.00") throw new Error("the native breakdown was withheld");
     if (JSON.stringify(c.usd).includes("amount_decimal")) throw new Error("a USD amount appeared anyway");
   });
 

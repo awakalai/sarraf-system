@@ -46,7 +46,10 @@ try {
 
   // ── the cast ────────────────────────────────────────────────────────────────
   const UID = {
-    admin: "11111111-1111-1111-1111-111111111111",
+    // Distinct from the harness's own u-a, which already holds 1111…. auth_id is unique, and
+    // `on conflict (id) do nothing` does not catch a collision on a different column — the whole
+    // cast failed to be created and the gate stopped before its first flow.
+    admin: "f10a0001-0000-0000-0000-000000000001",
     customer: "22222222-2222-2222-2222-222222222222",
     partner: "33333333-3333-3333-3333-333333333333",
     office: "44444444-4444-4444-4444-444444444444",
@@ -81,6 +84,19 @@ try {
     const f = { stage: "received", currency: "CNY", ...fields };
     psql(`insert into public.receipt_batches(id,customer_id,uploaded_by,direction,currency,receipt_stage)
           values ('${id}','cus','cus','in','${f.currency}','${f.stage}')`);
+  };
+
+  // The four things a receipt must state before it may be called validated: who was paid, when,
+  // through which wallet, and whether a fee was taken. The rule is the owner's, and it is
+  // enforced on the document itself — so a fixture that skips them is refused exactly as a real
+  // upload missing them would be.
+  const extraction = (doc, fields = {}) => {
+    const f = { amount: 1000, fee: 0, net: 1000, currency: "CNY", payee: "ئەحمەد",
+      date: "2026-08-01", platform: "wechat", hasFee: false, ...fields };
+    psql(`insert into public.receipt_extractions(document_id,version,is_original,provider,model,
+            gross_amount,fee_amount,net_amount,currency,payee,tx_date,platform,has_fee)
+          values ('${doc}',1,true,'verify','flow',${n(f.amount)},${n(f.fee)},${n(f.net)},
+                  '${f.currency}','${f.payee}','${f.date}','${f.platform}',${f.hasFee})`);
   };
 
   // ── 1 ───────────────────────────────────────────────────────────────────────
@@ -167,9 +183,14 @@ try {
     });
 
     step("the receipts are held by that transaction and by no other", () => {
-      psql(`insert into public.receipt_intake_items(id,batch_id,intake_status,counted,currency,
-              net_amount,transaction_id,converted_at)
-            values ('f2-item','f1','accepted',true,'CNY',2947,'f2-tx',now())`);
+      // Every column the table insists on: an intake item is evidence somebody handed in, and a
+      // row that cannot say who handed it in, which way the money went, or where the image is
+      // kept is not evidence of anything.
+      psql(`insert into public.receipt_intake_items(id,batch_id,submitted_by,direction,image_path,
+              source_status,intake_status,counted,currency,amount,fee,net_amount,
+              transaction_id,converted_at)
+            values ('f2-item','f1','cus','in','ingest/flow-two-batch-01/receipt-f2-item.jpg',
+                    'ok','accepted',true,'CNY',2947,0,2947,'f2-tx',now())`);
       const held = psql(`select transaction_id from public.sarraf_receipt_already_converted('["f2-item"]'::jsonb)`).trim();
       eq(held, "f2-tx", "the transaction holding the receipts");
     });
@@ -181,6 +202,7 @@ try {
       be("customer");
       psql(`insert into public.receipt_documents(id,flow,uploader_id,customer_id,storage_path)
             values ('f3-doc','customer_sells_to_zeman','cus','cus','ingest/f3.jpg')`);
+      extraction("f3-doc");
       for (const s of ["uploading","uploaded","ocr_pending","ocr_processing","parsed","validated",
                        "submitted","matched","accepted","finalized"]) {
         psql(`update public.receipt_documents set state='${s}' where id='f3-doc'`);
@@ -215,6 +237,7 @@ try {
       be("partner");
       psql(`insert into public.receipt_documents(id,flow,uploader_id,partner_id,storage_path)
             values ('f4-doc','customer_buys_from_zeman','par','par','ingest/f4.jpg')`);
+      extraction("f4-doc", { platform: "alipay", fee: 12, net: 988, hasFee: true });
       for (const st of ["uploading","uploaded","ocr_pending","ocr_processing","parsed","validated",
                         "submitted","matched","accepted","finalized"]) {
         psql(`update public.receipt_documents set state='${st}' where id='f4-doc'`);
@@ -359,6 +382,12 @@ try {
 
     step("the office reports a partial payment and the remainder stands", () => {
       be("office");
+      psql(`insert into public.office_payment_evidence(
+              id,assignment_id,storage_path,image_sha256,file_size,media_type,actor_id,command_key)
+            values ('f8-ev-1','f8-opa','ingest/office-payments/f8-opa/report-one.jpg',
+                    repeat('c',64),2048,'image/jpeg','off','flow-op-ev-1')`);
+      psql(`update public.office_payment_assignments
+               set evidence_path='ingest/office-payments/f8-opa/report-one.jpg' where id='f8-opa'`);
       const out = j(`public.sarraf_office_payment_report('f8-opa','paid_reported',2000,'REF-F8','part paid','flow-op-1')`);
       eq(out.outstanding, 3000, "outstanding");
     });
@@ -572,10 +601,12 @@ try {
 
     step("a change to the receipts issues a new version, and the old one is refused", () => {
       const before = j("public.sarraf_batch_summary('f12')").summary_version;
-      psql("update public.receipts set amount = 2600 where id='f12-r1'");
+      // net must stay equal to amount minus fee. The step is about the version moving, not
+      // about the row becoming inconsistent, so both figures move together.
+      psql("update public.receipts set amount = 2600, net_amount = 2600 - fee where id='f12-r1'");
       const after = j("public.sarraf_batch_summary('f12')").summary_version;
       if (before === after) throw new Error("the figures changed and the version did not");
-      psql("update public.receipts set amount = 2520.41 where id='f12-r1'");
+      psql("update public.receipts set amount = 2520.41, net_amount = 2520.41 - fee where id='f12-r1'");
       eq(j("public.sarraf_batch_summary('f12')").summary_version, before, "the version returns with the figures");
     });
 

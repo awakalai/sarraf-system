@@ -1544,17 +1544,24 @@ try {
   mustFail("an edit cannot break the agreement either",
     "update public.txs set total = 5000 where id='tx-mv'");
 
+  // batch_id is a foreign key and 'b-1' was never created, so both intake cases failed on the
+  // insert rather than on what they were meant to be testing.
+  psql(`insert into public.receipt_batches(id,customer_id,uploaded_by,direction,currency)
+        values ('b-intake','cust-1','u-a','in','CNY') on conflict (id) do nothing`);
+
   // A receipt already turned into a transaction cannot be turned into another one.
   check("a converted receipt is named as converted, not merely ineligible", () => {
-    psql(`insert into public.receipt_intake_items(id,batch_id,intake_status,counted,currency,net_amount,transaction_id)
-          values ('ri-1','b-1','accepted',true,'CNY',3400,'tx-mv')`);
+    // submitted_by is not null: an intake item is evidence somebody handed in, and a row that
+    // cannot say who did is not evidence of anything.
+    psql(`insert into public.receipt_intake_items(id,batch_id,submitted_by,direction,image_path,source_status,intake_status,counted,currency,amount,fee,net_amount,transaction_id)
+          values ('ri-1','b-intake','u-a','in','ingest/verify-intake-0001/receipt-ri-1.jpg','ok','accepted',true,'CNY',3400,0,3400,'tx-mv')`);
     const n = psql(`select count(*) from public.sarraf_receipt_already_converted('["ri-1"]'::jsonb)`).trim();
     if (n !== "1") throw new Error("an already-converted receipt was not reported");
   });
 
   check("an unconverted receipt is not reported as converted", () => {
-    psql(`insert into public.receipt_intake_items(id,batch_id,intake_status,counted,currency,net_amount)
-          values ('ri-2','b-1','accepted',true,'CNY',1000)`);
+    psql(`insert into public.receipt_intake_items(id,batch_id,submitted_by,direction,image_path,source_status,intake_status,counted,currency,amount,fee,net_amount)
+          values ('ri-2','b-intake','u-a','in','ingest/verify-intake-0001/receipt-ri-2.jpg','ok','accepted',true,'CNY',1000,0,1000)`);
     const n = psql(`select count(*) from public.sarraf_receipt_already_converted('["ri-2"]'::jsonb)`).trim();
     if (n !== "0") throw new Error("a free receipt was reported as converted");
   });
@@ -1802,9 +1809,11 @@ try {
   });
 
   check("acting on a version that has moved is refused as stale, with 409", () => {
-    psql("update public.receipts set amount = 1300.20 where id='r-sum1'");
+    // net must stay equal to amount minus fee, so both move together. What the case is about
+    // is the summary version changing, not the row becoming inconsistent.
+    psql("update public.receipts set amount = 1300.20, net_amount = 1300.20 - fee where id='r-sum1'");
     const out = psql(`select public.zeman_probe_stale('b-sum', '${lockedVersion}')`).trim();
-    psql("update public.receipts set amount = 1000.03 where id='r-sum1'");
+    psql("update public.receipts set amount = 1000.03, net_amount = 1000.03 - fee where id='r-sum1'");
     if (out !== "PT409|stale_summary") throw new Error(`the refusal was ${out}`);
   });
 
@@ -1910,7 +1919,9 @@ try {
   });
 
   check("only the system owner may give up a debt", () => {
-    psql(`update public.app_users set admin_level='staff' where id='u-a'`);
+    // 'operator', not 'staff': admin_level is checked against owner|operator, and the
+    // point of the case is an administrator who is not the owner.
+    psql(`update public.app_users set admin_level='operator' where id='u-a'`);
     let denied = false;
     try { psql(`select public.sarraf_write_off_debt('d-wo2',null,'a perfectly long reason here','cmd-wo-4')`); }
     catch { denied = true; }
@@ -2011,9 +2022,11 @@ try {
   });
 
   check("a customer sees only the vouchers they are named on", () => {
-    psql(`update public.app_users set auth_id='88888888-8888-8888-8888-888888888888' where id='cust-1'`);
+    // A id of its own: inv-r already holds 8888…, and auth_id is unique, so borrowing it
+    // failed the update and took the check with it.
+    psql(`update public.app_users set auth_id='c0570001-0000-0000-0000-000000000001' where id='cust-1'`);
     psql(`create or replace function auth.uid() returns uuid language sql stable
-          as $fn$ select '88888888-8888-8888-8888-888888888888'::uuid $fn$`);
+          as $fn$ select 'c0570001-0000-0000-0000-000000000001'::uuid $fn$`);
     const mine = JSON.parse(psql("select public.sarraf_voucher_register(null,null,null,50)::text"));
     asAdmin();
     const all = JSON.parse(psql("select public.sarraf_voucher_register(null,null,null,50)::text"));

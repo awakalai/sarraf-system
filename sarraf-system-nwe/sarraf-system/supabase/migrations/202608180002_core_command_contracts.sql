@@ -887,8 +887,15 @@ begin
 end;
 $$;
 
+-- 202608140004 created this with defaults on p_action and p_detail, and `create or replace`
+-- cannot take a default away — it fails with `cannot remove parameter defaults from existing
+-- function` and stops the whole migration. Dropped first so the two files agree; the defaults
+-- are then restored below, because callers in the application still omit both arguments.
+drop function if exists public.sarraf_save_rates(jsonb,jsonb,text,text,text);
+
 create or replace function public.sarraf_save_rates(
-  p_rows jsonb,p_history jsonb,p_command_key text,p_action text,p_detail text
+  p_rows jsonb,p_history jsonb,p_command_key text,
+  p_action text default 'گۆڕینی ڕەیتیۆی ڕۆژ',p_detail text default ''
 ) returns jsonb
 language plpgsql security definer set search_path=pg_catalog,public
 as $$

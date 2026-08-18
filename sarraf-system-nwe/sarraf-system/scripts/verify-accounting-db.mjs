@@ -1570,10 +1570,15 @@ try {
   // The owner's report: "the customer-seller may only send their own sale receipts, not
   // purchase", and "the customer-seller and every other user must see the history and details
   // of their own receipts".
+  // A distinct auth_id. cust-r already holds 6666…, and auth_id is unique, so re-using it made
+  // `on conflict do nothing` swallow this insert whole — the seller was never created and the
+  // first row referencing them failed a foreign key several lines later, naming a table that had
+  // nothing to do with the mistake.
   psql(`insert into public.app_users(id,name,role,auth_id) values
-        ('cust-s','Seller','customer','66666666-6666-6666-6666-666666666666') on conflict do nothing`);
+        ('cust-s','Seller','customer','5e11e5aa-0000-0000-0000-00000000005e')
+        on conflict (id) do update set auth_id = excluded.auth_id`);
   const asSeller = () => psql(`create or replace function auth.uid() returns uuid language sql stable
-        as $fn$ select '66666666-6666-6666-6666-666666666666'::uuid $fn$`);
+        as $fn$ select '5e11e5aa-0000-0000-0000-00000000005e'::uuid $fn$`);
   const asAdmin = () => psql(`create or replace function auth.uid() returns uuid language sql stable
         as $fn$ select '11111111-1111-1111-1111-111111111111'::uuid $fn$`);
   asSeller();
@@ -2294,6 +2299,43 @@ try {
   check("the books still reconcile after pending deposits", () => {
     const out = psql("select (public.sarraf_trial_balance_check()->>'balanced')::text").trim();
     if (out !== "true") throw new Error(psql("select public.sarraf_trial_balance_check()::text"));
+  });
+
+  // ── the schema this code was written against is the schema that exists ─────
+  //
+  // Two failures reached the owner that nothing here could have caught, because both were
+  // disagreements between the migrations and the live database rather than mistakes inside
+  // either. The legacy baseline declares the tables with `create table if not exists`, so a
+  // fresh database gets the declaration and a database that already had them keeps whatever it
+  // had. Every gate runs on a fresh one, which is why they all agreed with the declaration.
+  //
+  // sarraf_schema_drift is the comparison that was missing. Run here it proves a fresh database
+  // matches; run from the SQL editor it says the same of the live one.
+
+  check("a fresh database matches the shape the code expects", () => {
+    const drift = psql(`select coalesce(string_agg(
+      table_name || '.' || column_name || ' expected ' || expected || ' found ' || found, '; '), '')
+      from public.sarraf_schema_drift()`).trim();
+    if (drift) throw new Error(drift);
+  });
+
+  // `column "user_id" of relation "audit" does not exist` — saving a ratio, on the live system.
+  check("saving a ratio records who did it", () => {
+    psql(`select public.sarraf_save_rates(
+      '[{"id":"cny","rate":6.79}]'::jsonb, '[]'::jsonb, 'cmd-audit-1', 'ratio change', 'CNY 6.79')`);
+    const who = psql(`select coalesce(user_id,'<null>') from public.audit
+                      where action = 'ratio change' order by date desc limit 1`).trim();
+    if (who === "") throw new Error("the ratio change was not recorded at all");
+    if (who === "<null>") throw new Error("the change was recorded with nobody against it");
+  });
+
+  // `operator does not exist: text = date` — the duplicate check, on the live system. It is the
+  // check that decides whether an upload is new, so with it unable to run every receipt that
+  // reached the compound key was refused. Calling it is enough: the error was raised at plan
+  // time, before any row was examined.
+  check("the duplicate check runs on all four keys", () => {
+    psql(`select * from public.check_receipt_dupe(
+      'sha-none', 'REF-NONE', 'ORD-NONE', 'CNY', 1200, current_date, 'nobody')`);
   });
 
   let failed = 0;

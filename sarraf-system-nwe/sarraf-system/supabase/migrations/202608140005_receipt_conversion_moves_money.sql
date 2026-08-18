@@ -1,4 +1,4 @@
--- Turning receipts into a transaction must move the money, once.
+-- Turning receipts into a transaction must move the money, once (after lifecycle setup).
 --
 -- The owner's report: "when I link a receipt to a transaction — a yuan receipt arrived, so I am
 -- buying yuan — the yuan should go up and the dollars should come down, because this is a real

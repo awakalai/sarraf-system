@@ -693,6 +693,99 @@ async function requireSarrafUser(req, allowedRoles = null) {
   return { user, profile, token, aal };
 }
 
+/**
+ * Server-side OCR engine shared by the legacy HTTP compatibility route and the canonical
+ * stored-object worker.  Callers provide bytes that the server obtained; no database decision is
+ * made here.  The canonical worker records the result together with the verified object hash.
+ */
+export async function readReceiptImage(image, mediaType = "image/jpeg", { maxBase64Chars = MAX_BASE64_CHARS } = {}) {
+  if (!image || typeof image !== "string") {
+    const error = new Error("receipt image is required");
+    error.status = 400;
+    throw error;
+  }
+  const normalizedMediaType = String(mediaType || "image/jpeg").toLowerCase();
+  if (!/^image\/(jpeg|png|webp|heic|heif)$/.test(normalizedMediaType)) {
+    const error = new Error("unsupported receipt image type");
+    error.status = 400;
+    throw error;
+  }
+  if (image.length > maxBase64Chars) {
+    const error = new Error("receipt image is too large");
+    error.status = 413;
+    throw error;
+  }
+
+  const qKey = process.env.GROQ_API_KEY;
+  const gKey = process.env.GEMINI_API_KEY;
+  const visionKey = process.env.GOOGLE_CLOUD_VISION_API_KEY;
+  const aKey = process.env.ANTHROPIC_API_KEY;
+  if (!qKey && !gKey && !visionKey && !aKey) {
+    const error = new Error("receipt OCR is not configured");
+    error.status = 503;
+    throw error;
+  }
+
+  const currentDate = new Date().toISOString().slice(0, 10);
+  const requestedProvider = String(process.env.OCR_PROVIDER || "").toLowerCase().trim();
+  const providers = [];
+  const addProvider = (name, key, fn) => {
+    if (key && !providers.some((provider) => provider.name === name)) {
+      providers.push({ name, key, fn });
+    }
+  };
+  if (requestedProvider === "gemini") addProvider("gemini", gKey, callGemini);
+  else if (requestedProvider === "google-vision" || requestedProvider === "vision") {
+    addProvider("google-vision", visionKey, callGoogleVision);
+  } else if (requestedProvider === "claude") addProvider("claude", aKey, callClaude);
+  else addProvider("groq", qKey, callGroq);
+  addProvider("groq", qKey, callGroq);
+  addProvider("gemini", gKey, callGemini);
+  addProvider("google-vision", visionKey, callGoogleVision);
+  addProvider("claude", aKey, callClaude);
+
+  const attempts = [];
+  let result = null;
+  let lastError = null;
+  for (let index = 0; index < providers.length; index += 1) {
+    const provider = providers[index];
+    try {
+      result = await provider.fn(provider.key, image, normalizedMediaType, currentDate);
+      result.meta = {
+        ...(result.meta || {}),
+        fallbackFrom: attempts.map((attempt) => attempt.provider),
+      };
+      break;
+    } catch (error) {
+      lastError = error;
+      attempts.push({
+        provider: provider.name,
+        status: Number(error?.status) || null,
+        message: String(error?.message || error).slice(0, 220),
+      });
+      const status = Number(error?.status);
+      const fallbackable = status === 429 || status === 404 || status === 422 || status === 500
+        || RETRYABLE.has(status)
+        || /rate limit|quota|timed out|temporar|service unavailable|model.*not found/i.test(String(error?.message || ""));
+      if (!fallbackable) throw error;
+      if (index === providers.length - 1 && RETRYABLE.has(status)) {
+        await sleep(500);
+        result = await provider.fn(provider.key, image, normalizedMediaType, currentDate);
+        result.meta = { ...(result.meta || {}), fallbackFrom: attempts.map((attempt) => attempt.provider) };
+        break;
+      }
+    }
+  }
+  if (!result) {
+    if (lastError) {
+      lastError.attempts = attempts;
+      throw lastError;
+    }
+    throw new Error("OCR providers failed");
+  }
+  return { ...result.data, _meta: result.meta, ocrVersion: 6 };
+}
+
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store, max-age=0");
   res.setHeader("Pragma", "no-cache");
@@ -737,12 +830,10 @@ export default async function handler(req, res) {
     res.status(500).json({ error: "خزمەتگوزاری خوێندنەوە لە سێرڤەر ڕێک نەخراوە" });
     return;
   }
-
   try {
     const body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
     const image = body?.image;
     const mediaType = String(body?.mediaType || "image/jpeg").toLowerCase();
-
     if (!image || typeof image !== "string") {
       res.status(400).json({ error: "وێنە نەنێردراوە" });
       return;
@@ -858,7 +949,7 @@ export default async function handler(req, res) {
         imageSha256,
         extractionDigest: attested.extraction_digest || extractionDigest(attestedFields),
       } : null,
-      ocrVersion: 5
+      ocrVersion: 5,
     });
   } catch (e) {
     const status = Number(e?.status);

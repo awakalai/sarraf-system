@@ -1,154 +1,155 @@
-# ڕێنمایی دامەزراندنی سیستەمی کڕین و فرۆشتنی دراو
-## (وێبسایت + ئەپی مۆبایل)
+# ڕێنمایی دامەزراندن و بڵاوکردنەوەی ZEMAN
 
-ئەم ڕێنماییە هەنگاو بە هەنگاوە — بە ڕیز جێبەجێی بکە.
+ئەمە ڕێڕەوی production ـە. `supabase_schema.sql` سکیمای کۆنی مێژووییە و نابێت لە SQL Editor جێبەجێ بکرێت. سەرچاوەی یەکلاکەرەوەی داتابەیس تەنها فایلە ڕیزبەندکراوەکانی `supabase/migrations/` ـن.
 
-----
-----
-## بەشی ١: درووستکردنی داتابەیس (Supabase)
+## ئەو فایلانەی لە وێنە/چاتەکەدا هەن
 
-1. بڕۆ بۆ **https://supabase.com** و ئەکاونتێک درووست بکە (بەخۆڕاییە).
-2. کلیک لە **New Project** بکە:
-   - ناوی **ZEMAN** بنووسە
-   - **Database Password** ـێکی بەهێز دابنێ و لە شوێنێکی پارێزراو هەڵیبگرە
-   - Region: نزیکترین هەرێم هەڵبژێرە (نموونە: Frankfurt)
-3. کە پڕۆژەکە ئامادە بوو، لە لای چەپەوە بڕۆ بۆ **SQL Editor**.
-4. ناوەڕۆکی فایلی `supabase_schema.sql` هەمووی کۆپی بکە و لەوێ دای بنێ و **Run** بکە.
-   - دەبێت بنووسێت "Success" — گەر هەڵەی دا، دڵنیابە هەمووی کۆپیت کردووە.
+- `App.jsx`، `receiptWorkspace.js`، `ReceiptReviewWorkspace.jsx` و هاوشێوەکانیان کۆدی ئەپن؛ لە شوێنی خۆیان لە `src/` دانراون و نابێت لە SQL Editor جێبەجێ بکرێن.
+- فایلە ژمارەدارەکانی `*.sql` migration ـن؛ لە `supabase/migrations/` دەمێنن و تەنها CLI بە ڕیز جێبەجێیان دەکات.
+- `verify-accounting-db.mjs` و `verify-roles-e2e.mjs` تاقیکەرەوەن؛ بە `npm run verify:accounting` و `npm run verify:roles` جێبەجێ دەکرێن.
+- `supabase_schema.sql` کۆن و retire کراوە؛ ئێستا بە مەبەست هەڵە دەدات تا بە هەڵە سکیمای ناتەواو دروست نەکرێت.
+- لەم branch ـەدا ئەم فایلانە پێشتر لە شوێنی دروستی خۆیان دانراون؛ دووبارە copy/paste یان Runیان مەکە.
 
-## بەشی ٢: درووستکردنی ئەکاونتی ئەدمین (خۆت)
+## ١. پێداویستییەکان
 
-1. لە Supabase بڕۆ بۆ **Authentication → Users → Add user → Create new user**.
-2. ئیمەیل و وشەی نهێنی خۆت بنووسە (ئەمە لۆگینی خۆتە — لەبیری مەکە).
-3. دوای درووستکردنی، لە لیستەکەدا کلیکی لەسەر بکە و **UUID** ـەکەی کۆپی بکە
-   (ژمارەیەکی درێژە وەک: a1b2c3d4-....).
-4. بگەڕێوە بۆ **SQL Editor** و ئەم دێڕە جێبەجێ بکە
-   (UUID و ناوەکە بگۆڕە بە هی خۆت):
-
-```sql
-insert into app_users (id, auth_id, name, role)
-values ('admin', 'ئێرە-UUID-ەکەت-دابنێ', 'ناوی خۆت', 'admin');
-```
-
-## بەشی ٣: بەستنەوەی ئەپەکە بە داتابەیسەوە
-
-1. لە Supabase بڕۆ بۆ **Project Settings → API** و ئەم دووانە کۆپی بکە:
-   - **Project URL** (نموونە: https://xxxx.supabase.co)
-   - **anon public key** (دەقێکی درێژە بە eyJ دەست پێدەکات)
-2. لە بوخچەی پڕۆژەکەدا، فایلی `.env.example` کۆپی بکە بە ناوی `.env`
-   و ئەو دوو نرخە تێی بنووسە:
-
-```
-VITE_SUPABASE_URL=https://xxxx.supabase.co
-VITE_SUPABASE_ANON_KEY=eyJ....
-```
-
-## بەشی ٤: تاقیکردنەوە لەسەر کۆمپیوتەرەکەت
-
-پێویستە **Node.js** دامەزرابێت (لە https://nodejs.org وەشانی LTS دابگرە).
-
-لە ناو بوخچەی پڕۆژەکەدا تێرمیناڵ بکەوە و:
+- Node.js 22.17 یان نوێتر
+- Git
+- Docker بۆ stackی localی Supabase؛ Supabase CLI، Playwright و Chromiumی تاقیکردنەوە لە `package-lock.json` ـدا pinned ـن
+- پڕۆژەی جیاوازی Supabase بۆ staging؛ production نابێت شوێنی یەکەم تاقیکردنەوە بێت
+- پڕۆژەی Vercel یان hostێک کە API route ـەکانی `api/` جێبەجێ بکات
 
 ```bash
-npm install
-npm run dev
-```
-
-پاشان لە وێبگەڕەکەت بڕۆ بۆ ناونیشانەکەی کە پیشانی دەدات (http://localhost:5173)
-و بە ئیمەیل و پاسۆردی ئەدمینەکەت بچۆ ژوورەوە.
-
-## بەشی ٥: بڵاوکردنەوەی وێبسایتەکە (Vercel — بەخۆڕایی)
-
-1. کۆدەکە بخەرە سەر **GitHub** (ریپۆیەکی private درووست بکە).
-   - گرنگ: فایلی `.env` مەخەرە سەر GitHub (لە `.gitignore` دایە).
-2. بڕۆ بۆ **https://vercel.com** و بە GitHub بچۆ ژوورەوە.
-3. **Add New → Project** و ریپۆکەت هەڵبژێرە.
-4. لە بەشی **Environment Variables** هەردوو نرخەکەی `.env` زیاد بکە:
-   - `VITE_SUPABASE_URL`
-   - `VITE_SUPABASE_ANON_KEY`
-5. **Deploy** بکە — دوای خولەکێک وێبسایتەکەت ئامادەیە لەسەر
-   ناونیشانێکی وەک `zeman.vercel.app` یان ئەو domain ـەی Vercel بۆ ZEMAN دیاری دەکات.
-   دەشتوانیت دۆمەینی تایبەتی خۆتی پێ ببەستیت.
-
-## بەشی ٦: دانی لۆگین بە کەسانی تر (نووسینگە، هاوبەش، وەبەرهێنەر، کڕیار)
-
-بۆ هەر کەسێک کە دەتەوێت لۆگین بکات:
-
-1. یەکەم لە ناو ئەپەکەدا (بەکارهێنەران → بەڕێوەبردنی ئەکاونت) ئەکاونتی
-   بازرگانی بۆ درووست بکە وەک هەمیشە.
-2. لە Supabase → **Authentication → Users → Add user** ئیمەیل و پاسۆردێکی
-   بۆ درووست بکە و **UUID** ـەکەی کۆپی بکە.
-3. لە **SQL Editor** ئەم دێڕە جێبەجێ بکە بۆ بەستنەوەیان
-   (ناوەکە بگۆڕە بە ناوی ئەو کەسە وەک لە ئەپەکەدا نووسیوتە):
-
-```sql
-update app_users set auth_id = 'UUID-ەکە'
-where name = 'ناوی کەسەکە' and deleted = false;
-```
-
-4. ئیمەیل و پاسۆردەکەی بدە بەو کەسە — کە لۆگین دەکات، تەنها
-   پۆرتاڵی خۆی دەبینێت (داتابەیسەکە خۆی ڕێگری دەکات لە بینینی هی تر).
-
-## بەشی ٧: ئەپی مۆبایل (Android)
-
-پێویستە **Android Studio** دامەزرابێت (https://developer.android.com/studio).
-
-لە ناو بوخچەی پڕۆژەکەدا:
-
-```bash
-npm install @capacitor/core @capacitor/cli @capacitor/android
+npm ci
+npm test
+npm run verify:source
 npm run build
-npx cap add android
-npx cap sync
-npx cap open android
+ZEMAN_DB_STRICT=1 npm run verify:accounting
+ZEMAN_E2E_STRICT=1 npm run verify:roles
 ```
 
-Android Studio دەکرێتەوە — لەوێوە:
-- بۆ تاقیکردنەوە: مۆبایلەکەت ببەستە و **Run** بکە.
-- بۆ فایلی APK (بۆ دابەشکردن بەسەر کارمەندەکانت):
-  **Build → Build App Bundles / APKs → Build APK**
-  فایلەکە بنێرە بۆ هەر کەسێک و دایبمەزرێنێت.
+هەموو فرمانەکان دەبێت سەرکەوتوو بن پێش هەر push/deployێک.
 
-دوای هەر نوێکردنەوەیەکی کۆد، ئەمانە دووبارە بکەوە:
+## ٢. داتابەیسی نوێ
+
+`supabase/config.toml` ئامادەیە، PostgreSQL 16 بەکاردەهێنێت، seedی نەبوو ناچالاکە و TOTP/MFAی local چالاکە. لە ڕەگی پڕۆژەکە:
+
 ```bash
-npm run build && npx cap sync
+npx supabase start
+npx supabase db reset
+ZEMAN_DB_STRICT=1 npm run verify:accounting
+ZEMAN_E2E_STRICT=1 npm run verify:roles
 ```
 
-بۆ iOS (ئایفۆن) هەمان شێوەیە بەڵام پێویستی بە کۆمپیوتەری Mac و
-ئەکاونتی Apple Developer هەیە (`npx cap add ios`).
+`supabase db reset` تەنها بۆ local/test ـە؛ هەموو migration ـەکان لە سفرەوە بە ڕیز جێبەجێ دەکات. هەرگیز `supabase db reset --linked` لە production بەکارمەهێنە، چونکە داتا دەسڕێتەوە.
 
-## بەشی ٨: پاراستنی داتا (Backup)
+پاش سەرکەوتنی local، پڕۆژەی staging ببەستەوە و سەرەتا preview بکە:
 
-لە Supabase → **Database → Backups**: پلانی بەخۆڕایی باکئەپی ڕۆژانەی
-٧ ڕۆژی هەیە. بۆ کۆمپانیا پێشنیار دەکەم پلانی **Pro** ($25/مانگ) کە
-باکئەپی زیاتر و توانای گەڕانەوەی هەر خولەکێک دەدات.
+```bash
+npx supabase login
+npx supabase link --project-ref STAGING_PROJECT_REF
+npx supabase migration list
+npx supabase db push --dry-run
+npx supabase db push
+```
 
-هەروەها لە ناو ئەپەکەدا، لە ڕاپۆرتەوە بە بەردەوامی **CSV** دەربهێنە
-و لە شوێنێکی پارێزراو هەڵیبگرە.
+لە staging هەموو ڕۆڵەکان و ئەم ڕێڕەوانە تاقی بکەرەوە: مامەڵەی A، B، C؛ پەسەندکردنی maker/checker؛ فیش/OCR؛ forwarding؛ settlement؛ debt؛ day close؛ backup/reconciliation.
 
----
+## ٣. داتابەیسی کۆن/هەبوو
 
-## پرسیارە باوەکان
+هیچ فایلێکی SQL بە دەستی و بە تاکی لە وێنە/چاتەکانەوە Run مەکە. ئەو فایلانە دەبێت لە هەمان بوخچەی `supabase/migrations/` بمێنن و CLI بە ڕیز جێبەجێیان بکات.
 
-**دەتوانم دوایی شت بگۆڕم؟** بەڵێ — هەموو کۆدەکە هی تۆیە. هەر
-گۆڕانکارییەکت ویست، فایلەکان بهێنەوە بۆ Claude و داوای گۆڕانکاری بکە.
+پێش دەستکاری remote:
 
-**داتاکەم لە کوێیە؟** لە داتابەیسی Supabase ـی خۆتدایە — تەنها تۆ
-دەسەڵاتت بەسەریدایە.
+1. لە Dashboard ـی Supabase backupی نوێ پشتڕاست بکەرەوە.
+2. logical dumpێکی جیاواز هەڵبگرە و Storage object ـەکانیش جیا هەڵبگرە؛ backupی داتابەیس خودی فایلەکانی Storage ناگرێتەوە.
+3. production ـەکە clone/restore بکە بۆ staging.
+4. دۆخی migration بەراورد بکە:
 
-**ئەگەر ئینتەرنێت نەبوو؟** ئەپەکە پێویستی بە ئینتەرنێتە چوونکە داتاکە
-لە سێرڤەرە — ئەمە بۆ ئەوەیە هەموو ئامێرەکان هەمان داتا ببینن.
-# Google Cloud Vision receipt fallback
+```bash
+npx supabase link --project-ref STAGING_PROJECT_REF
+npx supabase migration list
+npx supabase db push --include-all --dry-run
+```
 
-The server-side receipt endpoint supports Google Cloud Vision `DOCUMENT_TEXT_DETECTION`
-as a conservative fallback. Enable the Cloud Vision API in Google Cloud, create an API
-key restricted to that API, and set this server-only Vercel environment variable:
+`202608090001_legacy_core_baseline.sql` بە مەبەستی reproducible fresh install پێش migration ـە کۆنەکان دانراوە. بۆ remoteێک کە migration ـە دواترەکانی پێشتر تۆمار کردووە، `--include-all` دەتوانێت migration ـە نەبووەکانی مێژوو لە dry-run پیشان بدات. تەنها دوای backup و سەرکەوتنی staging ئەمە جێبەجێ بکە:
+
+```bash
+npx supabase db push --include-all
+```
+
+ئەگەر `migration list` نیشانی schema drift یان history mismatch بدات، وەستا. `supabase migration repair` تەنها history دەگۆڕێت و SQL جێبەجێ ناکات؛ تەنها کاتێک بەکاریبهێنە کە بە پشکنینی schema دڵنیایت migration ـەکە پێشتر بە تەواوی جێبەجێ بووە. هیچ migrationێک بە خەیاڵی خۆت `applied` مەکە.
+
+## ٤. دروستکردنی خاوەنی سیستەم
+
+لە Supabase Authentication بەکارهێنەری خۆت دروست بکە، MFA چالاک بکە، UUID ـەکە هەڵبگرە، پاشان تەنها داتای bootstrap ـی خوارەوە دابنێ:
+
+```sql
+insert into public.app_users (id, auth_id, name, role, admin_level)
+values ('admin-owner', 'AUTH_UUID', 'ناوی خاوەن', 'admin', 'owner')
+on conflict (id) do update
+set auth_id=excluded.auth_id,
+    name=excluded.name,
+    role='admin',
+    admin_level='owner',
+    deleted=false;
+```
+
+بۆ operator، `admin_level='operator'` بەکاربهێنە. بەکارهێنەری maker نابێت داواکاری خۆی پەسەند بکات؛ بۆ checker ئەکاونتێکی adminی جیاواز پێویستە.
+
+## ٥. Environment variables
+
+`.env.example` کۆپی بکە بۆ `.env`ی local. `.env` هەرگیز commit مەکە.
 
 ```text
-GOOGLE_CLOUD_VISION_API_KEY=your_restricted_key
+VITE_SUPABASE_URL=
+VITE_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
 ```
 
-Optionally set `OCR_PROVIDER=google-vision` to try it first. Without that override, the
-order is Groq, Gemini, Google Vision, then Claude. Never expose the key through a
-`VITE_` variable or commit it to Git. Vision-only results are deliberately capped below
-high confidence and must pass the existing receipt review policy before finalization.
+`VITE_*` لە browser دەبینرێن. `SUPABASE_SERVICE_ROLE_KEY` و key ـەکانی OCR تەنها لە server/host دابنێ و هەرگیز پێشگری `VITE_` مەدە.
+
+لانیکەم یەک OCR provider دابنێ:
+
+```text
+GROQ_API_KEY=
+GEMINI_API_KEY=
+GOOGLE_CLOUD_VISION_API_KEY=
+ANTHROPIC_API_KEY=
+OCR_PROVIDER=google-vision
+```
+
+فیشی OCR بە خۆی مامەڵە یان تۆماری دارایی دروست ناکات؛ پێویستی بە review/finalizationی ئەدمین هەیە.
+
+## ٦. Production release
+
+ڕیزبەندی release:
+
+1. backupی DB و Storage؛
+2. CI: test، source contract، build، accounting DB، role E2E، dependency audit؛
+3. migration dry-run لە production؛
+4. چالاککردنی maintenance/freeze لە ئەپ؛
+5. `supabase db push` (یان `--include-all` تەنها بۆ یەکەم یەکخستنەوەی history کە staging پەسەندی کردووە)؛
+6. جێبەجێکردنی `sarraf_runtime_contract()` و `sarraf_system_health()`؛
+7. deployی frontend/API؛
+8. smoke testی A/B/C، receipt، approval، settlement و day close؛
+9. ناچالاککردنی maintenance تەنها دوای PASS.
+
+تەنها یەک کەس migration بۆ remote push بکات. schema/table/function لە production Dashboard بە دەستی مەگۆڕە؛ هەر گۆڕانکارییەک دەبێت migrationی نوێ بێت.
+
+## ٧. Backup و گەڕاندنەوە
+
+- پلانی Free بە backupی ڕۆژانە دڵنیا مەزانە؛ بەردەوام `supabase db dump` و off-site copy هەبێت.
+- backupی DB فایلەکانی Storage ناگرێتەوە؛ bucketی `receipts` و بەڵگەکانی office جیا هەڵبگرە.
+- restore rehearsal لە staging بکە، نەک یەکسەر لە production.
+- CSV backupی داتابەیس نییە؛ تەنها exportی ڕاپۆرتە.
+
+سەرچاوەی فەرمی: [Supabase database migrations](https://supabase.com/docs/guides/deployment/database-migrations)، [local CLI workflow](https://supabase.com/docs/guides/local-development/cli-workflows)، [database backups](https://supabase.com/docs/guides/platform/backups).
+
+## ٨. کارەکانی خاوەن پێش فرۆشتن
+
+- project ref، domain و environment variable ـە ڕاستەقینەکان دابنێ.
+- دوو adminی جیاواز بۆ maker/checker دروست بکە و MFAیان چالاک بکە.
+- threshold ـەکانی approval، timezone و owner override لە ناوەندی کۆنترۆڵ دیاری بکە.
+- rateی دەستی یەکەم بۆ هەر دراوێک تۆمار بکە؛ مامەڵەی بێ historical rate ڕەت دەکرێتەوە.
+- backup/restore rehearsal و acceptance testی کڕیار بە داتای نموونە تەواو بکە.
+- دوای ئەمانە production write چالاک بکە.

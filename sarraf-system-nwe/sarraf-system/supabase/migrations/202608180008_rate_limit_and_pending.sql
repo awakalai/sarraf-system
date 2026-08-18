@@ -1,4 +1,4 @@
--- A limit on how fast our own doors can be knocked on, and a third state for money in a cashbox.
+-- A limit on how fast our own doors can be knocked on, and a third cashbox state (after core hardening).
 --
 -- Rate limiting: every provider we call has one, and we read theirs carefully. Our own routes
 -- had none, so a single account could hold the OCR budget open against every other customer, and

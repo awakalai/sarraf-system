@@ -1,11 +1,12 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, History,
   Loader2, Minus, RefreshCw, XCircle, ZoomIn,
 } from "lucide-react";
 import {
   correctExtraction, diffVersions, loadDocumentDetail, loadReviewQueue,
-  reviewEquation, reviewTotals, transitionDocument,
+  finalizeReceipt, loadReceiptSummary, reviewEquation, reviewTotals,
+  setReceiptDailyRate, transitionDocument,
 } from "../../services/receiptWorkspace";
 import "./receipt-review.css";
 
@@ -19,7 +20,8 @@ const COPY = {
     undecidable: "ناتوانرێت بڕیار بدرێت — فیشەکە بڕی بنەڕەتی نەنووسیوە",
     gross: "کۆی گشتی", order: "بڕی بنەڕەتی", fee: "فی", net: "نەت", expected: "پێویستە بێت",
     treatment: "شێوازی فی", currency: "دراو", ref: "ژمارەی مامەڵە", payee: "وەرگر",
-    accept: "پەسەندکردن", reject: "ڕەتکردنەوە", review: "بۆ پشکنینی دەستی",
+    accept: "پەسەندکردن", acceptReason: "هۆکاری پەسەندکردن (لانیکەم ٨ پیت)",
+    reject: "ڕەتکردنەوە", review: "بۆ پشکنینی دەستی",
     rejectReason: "هۆکاری ڕەتکردنەوە (لانیکەم ٨ پیت)",
     correct: "ڕاستکردنەوە", correctReason: "هۆکاری ڕاستکردنەوە (لانیکەم ٨ پیت)",
     save: "پاشەکەوت", cancel: "پاشگەزبوونەوە", working: "جێبەجێکردن...",
@@ -27,6 +29,12 @@ const COPY = {
     totals: "کۆی کۆمەڵە", accepted: "پەسەندکراو", pending: "چاوەڕوان", rejected: "ڕەتکراو", duplicate: "دووبارە",
     noImage: "وێنە بەردەست نییە", zoomOut: "بچووککردنەوە", zoomIn: "گەورەکردن", reset: "گەڕاندنەوە",
     immutable: "خوێندنەوەی ڕەسەن هەرگیز ناگۆڕدرێت — ڕاستکردنەوە وەشانێکی نوێ دروست دەکات",
+    valuation: "جێگیرکردنی نرخی USD", businessDate: "بەرواری کاری مامەڵە",
+    convention: "یاسای نرخ", availableRate: "نرخی بەردەست", noRate: "نرخی ئەم ڕۆژە هێشتا دانەنراوە",
+    rateValue: "چەند یەکەی ئەم دراوە = 1 USD", rateReason: "هۆکاری دانانی نرخ (لانیکەم ٨ پیت)",
+    setRate: "دانانی وەشانی نوێی نرخ", finalReason: "هۆکاری جێگیرکردن (لانیکەم ٨ پیت)",
+    finalize: "جێگیرکردن و ئامادەکردن بۆ ناردن", mfa: "ئەم هەنگاوە MFA ـی ئەدمین پێویستە",
+    frozen: "نرخ لەسەر خودی فیشەکە جێگیر دەکرێت و دوای ئەوە ناگۆڕدرێت",
     treatments: {
       added_on_top: "لەسەر زیادکراوە", deducted_from_principal: "لە بڕی سەرەکی لابراوە",
       included_in_total: "لە کۆدا تێکەڵە", no_fee: "فی نییە", unknown: "نادیار",
@@ -45,7 +53,7 @@ function Field({ label, value, suffix }) {
   );
 }
 
-export function ReceiptReviewWorkspace({ client, lang = "ku", actorId = null, signedUrlFor = null, flash = () => {} }) {
+export function ReceiptReviewWorkspace({ client, lang = "ku", signedUrlFor = null, flash = () => {} }) {
   const copy = COPY[lang] || COPY.ku;
   const [queue, setQueue] = useState([]);
   const [index, setIndex] = useState(0);
@@ -54,9 +62,15 @@ export function ReceiptReviewWorkspace({ client, lang = "ku", actorId = null, si
   const [zoom, setZoom] = useState(1);
   const [imageUrl, setImageUrl] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [acceptText, setAcceptText] = useState("");
   const [rejectText, setRejectText] = useState("");
   const [editing, setEditing] = useState(null);
   const [correctReason, setCorrectReason] = useState("");
+  const [rateValue, setRateValue] = useState("");
+  const [rateReason, setRateReason] = useState("");
+  const [finalReason, setFinalReason] = useState("");
+  const flashRef = useRef(flash);
+  flashRef.current = flash;
 
   const loadQueue = useCallback(async () => {
     setState("loading");
@@ -65,8 +79,8 @@ export function ReceiptReviewWorkspace({ client, lang = "ku", actorId = null, si
       setQueue(rows);
       setIndex((i) => Math.min(i, Math.max(0, rows.length - 1)));
       setState("ready");
-    } catch (e) { console.error("review queue", e); flash(String(e?.message || e)); setState("error"); }
-  }, [client, flash]);
+    } catch (e) { console.error("review queue", e); flashRef.current(String(e?.message || e)); setState("error"); }
+  }, [client]);
 
   useEffect(() => { loadQueue(); }, [loadQueue]);
 
@@ -74,21 +88,23 @@ export function ReceiptReviewWorkspace({ client, lang = "ku", actorId = null, si
 
   useEffect(() => {
     let alive = true;
-    setDetail(null); setImageUrl(null); setZoom(1); setEditing(null); setRejectText("");
+    setDetail(null); setImageUrl(null); setZoom(1); setEditing(null); setAcceptText(""); setRejectText("");
+    setRateValue(""); setRateReason(""); setFinalReason("");
     if (!currentDoc) return;
     (async () => {
       try {
         const d = await loadDocumentDetail(client, currentDoc.id);
         if (!alive) return;
         setDetail(d);
+        setRateValue(d.summary?.availableRateValue == null ? "" : String(d.summary.availableRateValue));
         if (signedUrlFor && d.document.storagePath) {
           const url = await signedUrlFor(d.document.storagePath);
           if (alive) setImageUrl(url);
         }
-      } catch (e) { if (alive) { console.error("review detail", e); flash(String(e?.message || e)); } }
+      } catch (e) { if (alive) { console.error("review detail", e); flashRef.current(String(e?.message || e)); } }
     })();
     return () => { alive = false; };
-  }, [client, currentDoc, signedUrlFor, flash]);
+  }, [client, currentDoc, signedUrlFor]);
 
   const equation = useMemo(() => reviewEquation(detail?.current), [detail]);
   const changes = useMemo(
@@ -96,17 +112,28 @@ export function ReceiptReviewWorkspace({ client, lang = "ku", actorId = null, si
     [detail]
   );
   const totals = useMemo(() => reviewTotals(queue), [queue]);
+  const isAccepted = currentDoc?.state === "accepted";
+  const receiptCurrency = detail?.summary?.currency || currentDoc?.expectedCurrency || "";
+  const rateReady = Number(detail?.summary?.availableRateValue) > 0;
 
-  const act = async (fn, message) => {
+  const act = async (fn, message, { reloadQueue = true } = {}) => {
     if (busy) return;
     setBusy(true);
-    try { await fn(); flash(message); await loadQueue(); setDetail(null); }
-    catch (e) { console.error("review action", e); flash(String(e?.message || e)); }
+    try {
+      const result = await fn();
+      flashRef.current(typeof message === "function" ? message(result) : message);
+      if (reloadQueue) { await loadQueue(); setDetail(null); }
+    }
+    catch (e) { console.error("review action", e); flashRef.current(String(e?.message || e)); }
     finally { setBusy(false); }
   };
 
   const accept = () => act(
-    () => transitionDocument(client, { documentId: currentDoc.id, toState: "validated" }), "✓");
+    () => transitionDocument(client, {
+      documentId: currentDoc.id,
+      toState: "accepted",
+      reason: acceptText,
+    }), "✓");
   const reject = () => act(
     () => transitionDocument(client, { documentId: currentDoc.id, toState: "rejected", reason: rejectText }), "✓");
   const saveCorrection = () => act(async () => {
@@ -119,9 +146,28 @@ export function ReceiptReviewWorkspace({ client, lang = "ku", actorId = null, si
     }
     await correctExtraction(client, {
       documentId: currentDoc.id, base: detail.current, changes: changed,
-      reason: correctReason, correctedBy: actorId,
+      reason: correctReason,
     });
   }, "✓");
+
+  const saveRate = () => act(async () => {
+    await setReceiptDailyRate(client, {
+      currency: detail.summary?.currency || currentDoc.expectedCurrency,
+      effectiveDate: detail.summary?.businessDate,
+      rate: rateValue,
+      reason: rateReason,
+    });
+    const refreshed = await loadDocumentDetail(client, currentDoc.id);
+    setDetail(refreshed);
+    setRateValue(refreshed.summary?.availableRateValue == null ? "" : String(refreshed.summary.availableRateValue));
+    setRateReason("");
+  }, "✓", { reloadQueue: false });
+
+  const finalize = () => act(async () => {
+    const result = await finalizeReceipt(client, { documentId: currentDoc.id, reason: finalReason });
+    if (result?.valuation_status !== "valued") throw new Error(copy.noRate);
+    return loadReceiptSummary(client, currentDoc.id);
+  }, (summary) => summary?.netUsd == null ? "✓" : `✓ ${copy.net} بە USD: $${money(summary.netUsd)}`);
 
   if (state === "loading") return <div className="rrw"><div className="rrw-empty">{copy.loading}</div></div>;
 
@@ -218,7 +264,54 @@ export function ReceiptReviewWorkspace({ client, lang = "ku", actorId = null, si
 
                   <p className="rrw-note">{copy.immutable}</p>
 
-                  {editing ? (
+                  {isAccepted ? (
+                    <div className="rrw-valuation">
+                      <div className="rrw-valuation-head">
+                        <h3>{copy.valuation}</h3>
+                        <span>{copy.mfa}</span>
+                      </div>
+                      <div className="rrw-fields">
+                        <Field label={copy.businessDate} value={detail.summary?.businessDate} />
+                        <Field label={copy.convention} value="1 USD = X currency" />
+                        <Field
+                          label={copy.availableRate}
+                          value={rateReady ? `1 USD = ${detail.summary.availableRateValue} ${receiptCurrency}` : copy.noRate}
+                        />
+                      </div>
+                      {receiptCurrency !== "USD" && (
+                        <div className="rrw-edit">
+                          <label>
+                            {copy.rateValue}
+                            <input type="number" min="0" step="any" inputMode="decimal" value={rateValue}
+                                   onChange={(e) => setRateValue(e.target.value)} />
+                          </label>
+                          <label className="rrw-wide">
+                            {copy.rateReason}
+                            <input value={rateReason} onChange={(e) => setRateReason(e.target.value)} />
+                          </label>
+                          <div className="rrw-actions">
+                            <button type="button" className="rrw-btn"
+                                    disabled={busy || !(Number(rateValue) > 0) || rateReason.trim().length < 8
+                                      || !detail.summary?.businessDate}
+                                    onClick={saveRate}>
+                              {busy ? <Loader2 className="rrw-spin" aria-hidden="true" /> : null} {copy.setRate}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      {!rateReady && <p className="rrw-rate-warning"><AlertTriangle aria-hidden="true" /> {copy.noRate}</p>}
+                      <div className="rrw-reject">
+                        <input placeholder={copy.finalReason} value={finalReason}
+                               onChange={(e) => setFinalReason(e.target.value)} />
+                        <button type="button" className="rrw-btn is-pos"
+                                disabled={busy || !rateReady || finalReason.trim().length < 8} onClick={finalize}>
+                          {busy ? <Loader2 className="rrw-spin" aria-hidden="true" /> : <CheckCircle2 aria-hidden="true" />}
+                          {copy.finalize}
+                        </button>
+                      </div>
+                      <p className="rrw-note">{copy.frozen}</p>
+                    </div>
+                  ) : editing ? (
                     <div className="rrw-edit">
                       {["grossAmount", "orderAmount", "feeAmount", "netAmount", "currency", "refNo", "payee"].map((k) => (
                         <label key={k}>
@@ -240,12 +333,19 @@ export function ReceiptReviewWorkspace({ client, lang = "ku", actorId = null, si
                       </div>
                     </div>
                   ) : (
-                    <div className="rrw-actions">
-                      <button type="button" className="rrw-btn is-pos" disabled={busy} onClick={accept}>
-                        <CheckCircle2 aria-hidden="true" /> {copy.accept}
-                      </button>
-                      <button type="button" className="rrw-btn"
-                              onClick={() => setEditing({ ...detail.current })}>{copy.correct}</button>
+                    <div>
+                      <div className="rrw-reject">
+                        <input placeholder={copy.acceptReason} value={acceptText}
+                               onChange={(e) => setAcceptText(e.target.value)} />
+                        <button type="button" className="rrw-btn is-pos"
+                                disabled={busy || acceptText.trim().length < 8} onClick={accept}>
+                          <CheckCircle2 aria-hidden="true" /> {copy.accept}
+                        </button>
+                      </div>
+                      <div className="rrw-actions">
+                        <button type="button" className="rrw-btn"
+                                onClick={() => setEditing({ ...detail.current })}>{copy.correct}</button>
+                      </div>
                     </div>
                   )}
 

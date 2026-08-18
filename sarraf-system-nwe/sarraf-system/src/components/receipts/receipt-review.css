@@ -91,6 +91,21 @@
 
 .rrw-note { margin: 0; font-size: 10.5px; color: var(--txt-3); line-height: 1.6; }
 
+.rrw-valuation {
+  display: grid; gap: 11px; padding: 12px; border-radius: var(--r-sm);
+  border: 1px solid color-mix(in srgb, var(--ac) 28%, var(--line));
+  background: color-mix(in srgb, var(--ac) 5%, var(--surf-2));
+}
+.rrw-valuation-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.rrw-valuation-head h3 { margin: 0; font-size: 12.5px; color: var(--txt); }
+.rrw-valuation-head span { margin-inline-start: auto; font-size: 10px; color: var(--txt-3); }
+.rrw-rate-warning {
+  margin: 0; display: flex; align-items: center; gap: 7px; padding: 8px 10px;
+  border-radius: var(--r-sm); background: var(--warn-bg); color: var(--warn);
+  font-size: 11px; font-weight: 600;
+}
+.rrw-rate-warning svg { width: 14px; height: 14px; flex: 0 0 auto; }
+
 .rrw-edit { display: grid; gap: 9px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
 .rrw-edit label { display: grid; gap: 4px; font-size: 10.5px; font-weight: 600; color: var(--txt-3); }
 .rrw-edit .rrw-wide, .rrw-edit .rrw-actions { grid-column: 1 / -1; }

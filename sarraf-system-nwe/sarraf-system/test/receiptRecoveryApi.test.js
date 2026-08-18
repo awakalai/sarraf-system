@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { validateCommand } from "../api/receipt-ingestion.js";
 
 const batchId = "12345678-1234-1234-1234-123456789abc";
@@ -43,4 +44,12 @@ test("receipt recovery rejects a path outside the exact command folder", () => {
   assert.throws(() => validateCommand(command({
     p_receipts: [receipt({ image_path: "someone-else/receipt-1.jpg" })],
   })), (error) => error.code === "invalid_path" && error.status === 400);
+});
+
+test("legacy recovery is resumable and never deletes a partially recovered batch", () => {
+  const source = fs.readFileSync(new URL("../api/receipt-ingestion.js", import.meta.url), "utf8");
+  assert.match(source, /fills only the missing immutable rows/);
+  assert.match(source, /receipt_recovery_incomplete/);
+  assert.match(source, /receipt_intake_items/);
+  assert.doesNotMatch(source, /from\("receipt_batches"\)\.delete\(/);
 });

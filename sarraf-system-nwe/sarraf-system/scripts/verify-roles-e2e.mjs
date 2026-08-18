@@ -19,7 +19,8 @@
  *   npm run verify:roles
  */
 import { spawn } from "node:child_process";
-import { writeFileSync, rmSync, existsSync } from "node:fs";
+import { writeFileSync, rmSync, existsSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
@@ -41,11 +42,32 @@ const loadPlaywright = async () => {
   const require = createRequire(import.meta.url);
   for (const spec of ["playwright", "/opt/node22/lib/node_modules/playwright/index.mjs"]) {
     try {
-      if (spec.startsWith("/")) { if (!existsSync(spec)) continue; return await import(spec); }
-      return await import(require.resolve(spec));
+      if (spec.startsWith("/")) {
+        if (!existsSync(spec)) continue;
+        const loaded = await import(spec);
+        return loaded.chromium ? loaded : loaded.default;
+      }
+      const loaded = await import(require.resolve(spec));
+      return loaded.chromium ? loaded : loaded.default;
     } catch { /* try the next one */ }
   }
   return null;
+};
+
+// CI runners frequently provide no system browser, while a direct Playwright CDN download may be
+// blocked even though npm dependencies are available.  The pinned serverless Chromium archive is
+// therefore the deterministic final fallback.  Only the executable is inflated; the application
+// bundles its own fonts and this avoids platform-specific ownership metadata in the font archive.
+const loadBundledChromium = async () => {
+  try {
+    const archive = path.join(root, "node_modules/@sparticuz/chromium/bin/chromium.br");
+    if (!existsSync(archive)) return null;
+    const target = path.join(tmpdir(), "chromium");
+    if (existsSync(target) && statSync(target).size === 0) rmSync(target, { force: true });
+    const { inflate } = await import("@sparticuz/chromium");
+    const executable = await inflate(archive);
+    return existsSync(executable) && statSync(executable).size > 0 ? executable : null;
+  } catch { return null; }
 };
 
 // ── the fixture every role is offered ────────────────────────────────────────
@@ -76,7 +98,7 @@ const ROLE_EXPECTATIONS = {
   },
   office: {
     absent: ["ناوەندی بەڕێوەبردن", "بەستنی ڕۆژ", "پاراستنی داتا"],
-    present: [],
+    present: ["پارەدانی نووسینگە"],
   },
   investor: {
     absent: ["ناوەندی بەڕێوەبردن", "بەستنی ڕۆژ", "پاراستنی داتا"],
@@ -154,13 +176,16 @@ try {
     if (own && existsSync(own)) executablePath = own;
   } catch { /* no managed download; fall back below */ }
   if (!executablePath) executablePath = CHROMIUM_CANDIDATES.find((p) => existsSync(p));
+  if (!executablePath) executablePath = await loadBundledChromium();
   if (!executablePath) unavailable("No Chromium binary was found");
 
   // The app refuses to boot without a Supabase URL; every call is intercepted anyway.
   writeFileSync(envFile,
     "VITE_SUPABASE_URL=https://stub.supabase.co\nVITE_SUPABASE_ANON_KEY=stub-anon-key-for-role-verification\n");
 
-  server = spawn("npx", ["vite", "--port", String(PORT), "--strictPort", "--mode", "e2e"], {
+  const viteBin = path.join(root, "node_modules", ".bin", process.platform === "win32" ? "vite.cmd" : "vite");
+  if (!existsSync(viteBin)) unavailable("The local Vite binary is not installed");
+  server = spawn(viteBin, ["--port", String(PORT), "--strictPort", "--mode", "e2e"], {
     cwd: root, detached: true, stdio: "ignore",
     env: { ...process.env, NODE_ENV: "development" },
   });
@@ -298,6 +323,40 @@ try {
         `${label}: can reach «${needle}»`,
         body.includes(needle) ? "" : "the surface this role is entitled to was missing");
     }
+
+    // Critical accessibility contract in the shipped DOM: every visible interactive control
+    // has a programmatic name, IDs are unique, and keyboard focus can enter the interface.
+    const accessibility = await page.evaluate(() => {
+      const visible = (element) => {
+        const style = getComputedStyle(element);
+        const box = element.getBoundingClientRect();
+        return style.display !== "none" && style.visibility !== "hidden" && box.width > 0 && box.height > 0;
+      };
+      const controls = [...document.querySelectorAll("button,a[href],input,select,textarea")]
+        .filter((element) => visible(element) && element.getAttribute("type") !== "hidden");
+      const unnamed = controls.filter((element) => {
+        const labelledBy = (element.getAttribute("aria-labelledby") || "").split(/\s+/).filter(Boolean)
+          .map((id) => document.getElementById(id)?.textContent || "").join(" ");
+        const labels = [...(element.labels || [])].map((label) => label.textContent || "").join(" ");
+        const childAlt = [...element.querySelectorAll?.("img[alt]") || []].map((img) => img.alt).join(" ");
+        return ![element.getAttribute("aria-label"), labelledBy, labels, element.getAttribute("title"),
+          element.textContent, childAlt].some((value) => String(value || "").trim());
+      }).map((element) => {
+        const selector = `${element.tagName.toLowerCase()}${element.id ? `#${element.id}` : ""}${element.className ? `.${String(element.className).split(/\s+/).slice(0,2).join(".")}` : ""}`;
+        const hint = element.getAttribute("placeholder") || element.parentElement?.textContent?.trim().slice(0, 60) || "";
+        return hint ? `${selector} [${hint}]` : selector;
+      });
+      const ids = [...document.querySelectorAll("[id]")].map((element) => element.id);
+      const duplicateIds = [...new Set(ids.filter((id, index) => ids.indexOf(id) !== index))];
+      return { unnamed: unnamed.slice(0, 12), duplicateIds: duplicateIds.slice(0, 12) };
+    });
+    record(accessibility.unnamed.length === 0, `${label}: visible controls have accessible names`,
+      accessibility.unnamed.join(", "));
+    record(accessibility.duplicateIds.length === 0, `${label}: rendered IDs are unique`,
+      accessibility.duplicateIds.join(", "));
+    await page.keyboard.press("Tab");
+    const keyboardEntered = await page.evaluate(() => document.activeElement && document.activeElement !== document.body);
+    record(keyboardEntered, `${label}: keyboard focus enters the interface`);
 
     const real = crashes.filter((e) => !/supabaseUrl|Failed to load resource|net::ERR/i.test(e));
     record(real.length === 0, `${label}: no uncaught error`, real.slice(0, 2).join(" | "));

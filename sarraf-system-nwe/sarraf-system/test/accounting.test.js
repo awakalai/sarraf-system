@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   moveCustomerVault, applyVaultToDebt, creditDebtToVault, previewDebtWaterfall,
   requireRateFor, summarizeDebts, agingBucketOf, loadDebts, loadTrialBalance,
+  creditPartnerFunds, disbursePartnerFunds, loadDailyAccountingRates,
 } from "../src/services/accounting.js";
 
 const clientWith = (impl = {}) => ({
@@ -11,7 +12,7 @@ const clientWith = (impl = {}) => ({
   from(table) {
     const chain = {
       _table: table,
-      select() { return chain; }, eq() { return chain; }, in() { return chain; },
+      select() { return chain; }, eq() { return chain; }, in() { return chain; }, lte() { return chain; },
       order() { return chain; }, limit() { return chain; },
       then(resolve) { return Promise.resolve(impl.rows ?? { data: [], error: null }).then(resolve); },
     };
@@ -143,4 +144,48 @@ test("an RPC error is surfaced, never swallowed into a false success", async () 
     () => moveCustomerVault(c, { customerId: "c", currency: "USD", amount: 1, direction: "in", reason: "دانان" }),
     (e) => e.code === "42501"
   );
+});
+
+test("partner disbursement and credit use explicit idempotent commands", async () => {
+  const c = clientWith();
+  const disbursement = await disbursePartnerFunds(c, {
+    partnerId: "p-1", currency: "cny", amount: 1300, rate: 7.2,
+    transactionId: "tx-1", reason: "assigned sale",
+  });
+  const credit = await creditPartnerFunds(c, {
+    partnerId: "p-1", currency: "cny", amount: 500, rate: 7.2, reason: "bank receipt",
+  });
+  assert.match(disbursement.commandKey, /^acct-partner-disburse:p-1:/);
+  assert.match(credit.commandKey, /^acct-partner-credit:p-1:/);
+  assert.equal(c.calls[0].fn, "sarraf_partner_disburse");
+  assert.equal(c.calls[0].args.p_transaction_id, "tx-1");
+  assert.equal(c.calls[1].fn, "sarraf_partner_credit");
+  assert.equal(c.calls[1].args.p_currency, "CNY");
+  assert.notEqual(c.calls[0].args.p_command_key, c.calls[1].args.p_command_key);
+});
+
+test("invalid partner movements never reach the database", async () => {
+  const c = clientWith();
+  await assert.rejects(() => disbursePartnerFunds(c, {
+    partnerId: "", currency: "CNY", amount: 1, rate: 7.2, reason: "valid",
+  }));
+  await assert.rejects(() => creditPartnerFunds(c, {
+    partnerId: "p", currency: "CNY", amount: -1, rate: 7.2, reason: "valid",
+  }));
+  await assert.rejects(() => creditPartnerFunds(c, {
+    partnerId: "p", currency: "CNY", amount: 1, rate: null, reason: "valid",
+  }));
+  assert.equal(c.calls.length, 0);
+});
+
+test("daily accounting rates take the newest immutable snapshot per currency", async () => {
+  const rows = { data: [
+    { currency: "CNY", effective_date: "2026-08-12", rate_value: "7.25", version: 2 },
+    { currency: "CNY", effective_date: "2026-08-12", rate_value: "7.20", version: 1 },
+    { currency: "IQD", effective_date: "2026-08-11", rate_value: "1410", version: 1 },
+  ], error: null };
+  const rates = await loadDailyAccountingRates(clientWith({ rows }), "2026-08-12");
+  assert.deepEqual(rates.CNY, { value: 7.25, effectiveDate: "2026-08-12", version: 2 });
+  assert.equal(rates.IQD.value, 1410);
+  assert.equal(rates.USD.value, 1);
 });

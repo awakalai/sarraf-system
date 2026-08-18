@@ -1,19 +1,18 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  diffVersions, reviewEquation, reviewTotals, correctExtraction, transitionDocument,
+  RECEIPT_REVIEW_STATES, diffVersions, reviewEquation, reviewTotals, correctExtraction,
+  finalizeReceipt, loadReceiptSummary, setReceiptDailyRate, transitionDocument,
 } from "../src/services/receiptWorkspace.js";
 
 const client = (impl = {}) => ({
-  inserts: [], updates: [],
-  from(table) {
-    const self = this;
-    return {
-      insert(row) { self.inserts.push({ table, row }); return Promise.resolve(impl.insert ?? { error: null }); },
-      update(patch) {
-        return { eq(_c, v) { self.updates.push({ table, patch, id: v }); return Promise.resolve(impl.update ?? { error: null }); } };
-      },
-    };
+  calls: [],
+  rpc(fn, args) {
+    this.calls.push({ fn, args });
+    return Promise.resolve(impl.rpc ?? {
+      data: { document_id: args.p_document_id, action: args.p_action, state: args.p_action === "accept" ? "accepted" : "needs_manual_review", version: 2 },
+      error: null,
+    });
   },
 });
 
@@ -72,40 +71,100 @@ test("a correction must carry a reason and an actual change", async () => {
   const base = { version: 1, grossAmount: 100, currency: "CNY" };
   await assert.rejects(() => correctExtraction(c, { documentId: "d", base, changes: { grossAmount: 90 }, reason: "short" }));
   await assert.rejects(() => correctExtraction(c, { documentId: "d", base, changes: {}, reason: "a proper eight-character reason" }));
-  assert.equal(c.inserts.length, 0, "nothing may be written without a reason and a change");
+  assert.equal(c.calls.length, 0, "nothing may be written without a reason and a change");
 });
 
-test("a correction is written as a new version, never over the original", async () => {
+test("a correction is delegated to the audited versioning command", async () => {
   const c = client();
   const base = { version: 1, grossAmount: 2520.41, currency: "CNY", feeAmount: 73.41 };
   await correctExtraction(c, {
     documentId: "doc-1", base, changes: { grossAmount: 2447.0 },
-    reason: "gross misread from the image", correctedBy: "admin-1",
+    reason: "gross misread from the image",
   });
-  assert.equal(c.inserts.length, 1);
-  const row = c.inserts[0].row;
-  assert.equal(row.version, 2, "a correction increments the version");
-  assert.equal(row.is_original, false);
-  assert.equal(row.gross_amount, 2447.0);
-  assert.equal(row.fee_amount, 73.41, "untouched fields carry forward from the base version");
-  assert.equal(row.corrected_by, "admin-1");
-  assert.ok(row.correction_reason.length >= 8);
+  assert.equal(c.calls.length, 1);
+  const call = c.calls[0];
+  assert.equal(call.fn, "sarraf_receipt_review_command");
+  assert.equal(call.args.p_action, "correct");
+  assert.deepEqual(call.args.p_changes, { grossAmount: 2447.0 });
+  assert.ok(call.args.p_command_key.startsWith("receipt-review:correct:doc-1:"));
+  assert.equal("corrected_by" in call.args, false, "the server derives the reviewer identity");
 });
 
 test("rejecting a receipt requires a reason and records it", async () => {
   const c = client();
   await assert.rejects(() => transitionDocument(c, { documentId: "d", toState: "rejected", reason: "no" }));
   await transitionDocument(c, { documentId: "d", toState: "rejected", reason: "the image is not a payment receipt" });
-  const patch = c.updates[0].patch;
-  assert.equal(patch.state, "rejected");
-  assert.equal(patch.rule_code, "manual_reject");
-  assert.ok(patch.rule_reason.length >= 8);
+  const call = c.calls[0];
+  assert.equal(call.fn, "sarraf_receipt_review_command");
+  assert.equal(call.args.p_action, "reject");
+  assert.ok(call.args.p_reason.length >= 8);
 });
 
-test("moving a receipt forward needs no reason", async () => {
+test("accepting a receipt requires an auditable reason", async () => {
   const c = client();
-  await transitionDocument(c, { documentId: "d", toState: "validated" });
-  assert.deepEqual(c.updates[0].patch, { state: "validated" });
+  await assert.rejects(() => transitionDocument(c, { documentId: "d", toState: "accepted" }));
+  await transitionDocument(c, { documentId: "d", toState: "accepted", reason: "verified against the stored original" });
+  assert.equal(c.calls[0].args.p_action, "accept");
+  assert.deepEqual(c.calls[0].args.p_changes, {});
+});
+
+test("accepted receipts remain in the admin queue until their rate is finalized", () => {
+  assert.ok(RECEIPT_REVIEW_STATES.includes("accepted"));
+  assert.ok(!RECEIPT_REVIEW_STATES.includes("finalized"));
+});
+
+test("daily rates use the immutable 1 USD equals X currency convention", async () => {
+  const c = client({ rpc: { data: { convention: "1_USD_EQUALS_X_CURRENCY", rate_value: 7.2 }, error: null } });
+  const result = await setReceiptDailyRate(c, {
+    currency: "cny", effectiveDate: "2026-08-12", rate: "7.20",
+    reason: "verified manual business-day rate",
+  });
+  assert.equal(result.convention, "1_USD_EQUALS_X_CURRENCY");
+  assert.equal(c.calls[0].fn, "sarraf_set_receipt_daily_rate");
+  assert.deepEqual(
+    [c.calls[0].args.p_currency, c.calls[0].args.p_effective_date, c.calls[0].args.p_rate],
+    ["CNY", "2026-08-12", 7.2],
+  );
+  assert.ok(c.calls[0].args.p_command_key.startsWith("receipt-rate:CNY:2026-08-12:"));
+  const invalid = client();
+  await assert.rejects(() => setReceiptDailyRate(invalid, {
+    currency: "CNY", effectiveDate: "2026-08-12", rate: 0, reason: "verified manual rate",
+  }));
+  assert.equal(invalid.calls.length, 0);
+});
+
+test("finalization is an audited command and USD figures come back from the server summary", async () => {
+  const c = client({ rpc: { data: { state: "finalized", valuation_status: "valued" }, error: null } });
+  await finalizeReceipt(c, { documentId: "doc-1", reason: "freeze the verified daily rate" });
+  assert.equal(c.calls[0].fn, "sarraf_receipt_finalize_command");
+  assert.deepEqual(Object.keys(c.calls[0].args).sort(), ["p_command_key", "p_document_id", "p_reason"]);
+  assert.ok(c.calls[0].args.p_command_key.startsWith("receipt-finalize:doc-1:"));
+
+  const summaryClient = client({
+    rpc: {
+      data: {
+        document_id: "doc-1", currency: "CNY", state: "finalized", counted: true,
+        business_date: "2026-08-12", rate_value: "7.20", rate_convention: "1_USD_EQUALS_X_CURRENCY",
+        rate_date: "2026-08-12", rate_version: "4", gross_usd: "350.06",
+        fee_usd: "10.20", net_usd: "339.86", valuation_status: "valued",
+      },
+      error: null,
+    },
+  });
+  const summary = await loadReceiptSummary(summaryClient, "doc-1");
+  assert.equal(summaryClient.calls[0].fn, "sarraf_receipt_summary");
+  assert.deepEqual(
+    [summary.rateValue, summary.rateVersion, summary.grossUsd, summary.feeUsd, summary.netUsd],
+    [7.2, 4, 350.06, 10.2, 339.86],
+  );
+  assert.equal(summary.rateConvention, "1_USD_EQUALS_X_CURRENCY");
+});
+
+test("review writes never target receipt tables directly", async () => {
+  const fs = await import("node:fs");
+  const source = fs.readFileSync(new URL("../src/services/receiptWorkspace.js", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /from\("receipt_documents"\)\.update/);
+  assert.doesNotMatch(source, /from\("receipt_extractions"\)\.insert/);
 });
 
 // §11.13 with §4.14: the queue footer counts documents. The money belongs to one place only,

@@ -32,7 +32,7 @@ import { BRAND } from "./brand/brand";
 import { BrandLogo } from "./brand/BrandLogo";
 import "./components/portal/portal.css";
 import {
-  LayoutDashboard, Vault, ArrowLeftRight, ListOrdered, Users, Handshake,
+  LayoutDashboard, Vault, ArrowLeftRight, ListOrdered, Users, Handshake, Boxes,
   TrendingUp, Building2, UserCog, PieChart, History, Plus, Trash2, Pencil,
   CheckCircle2, AlertTriangle, Eye, LogOut, Wallet, ChevronLeft, Coins,
   Receipt, TrendingDown, ScanLine, Scale, Upload, XCircle, SlidersHorizontal, Search, MoreHorizontal, Zap, ArrowDownLeft, ArrowUpRight, X, Share2, Database, Download, ClipboardCheck, RotateCcw, MessageCircle, Moon, Sun, WifiOff, Wifi, EyeOff, Bell, QrCode, Camera, Fingerprint, ShieldCheck, KeyRound, Inbox, ShieldAlert, FileCheck2, Send
@@ -52,6 +52,7 @@ const DebtCenter = lazyNamed(() => import("./components/accounting/DebtCenter"),
 const CashboxPanel = lazyNamed(() => import("./components/accounting/CashboxPanel"), "CashboxPanel");
 const OfficePayments = lazyNamed(() => import("./components/accounting/OfficePayments"), "OfficePayments");
 const PartnerAccounts = lazyNamed(() => import("./components/accounting/PartnerAccounts"), "PartnerAccounts");
+const PartnerHoldings = lazyNamed(() => import("./components/accounting/PartnerHoldings"), "PartnerHoldings");
 const ReceiptReviewWorkspace = lazyNamed(() => import("./components/receipts/ReceiptReviewWorkspace"), "ReceiptReviewWorkspace");
 const ReceiptForwardingCenter = lazyNamed(() => import("./components/receipts/ReceiptForwardingCenter"), "ReceiptForwardingCenter");
 const ForwardedReceipts = lazyNamed(() => import("./components/receipts/ForwardedReceipts"), "ForwardedReceipts");
@@ -178,6 +179,7 @@ const ADMIN_CENTER_PAGE_IDS = new Set([
   "cashbox",
   "office-payments",
   "partner-accounts",
+  "partner-holdings",
   "receipt-review",
   "receipt-forwarding",
   "backup",
@@ -689,6 +691,7 @@ function AdminCenterHub({ lang = "ku", onNavigate }) {
         ["receipt-forwarding", label("ناردنی فیش", "Receipt Forwarding", "إرسال الإيصالات"), label("ناردنی فیشی پەسەندکراو بۆ خاوەنەکەی و پێکهاتنەوەی گەیاندن", "Send accepted receipts to their owner and reconcile delivery", "إرسال الإيصالات المعتمدة إلى أصحابها ومطابقة التسليم"), Send],
         ["office-payments", label("پارەدانی نووسینگە", "Office Payments", "مدفوعات المكتب"), label("ئەرکی پارەدان و بەڵگە", "Payment assignments and evidence", "مهام الدفع والإثباتات"), Building2],
         ["partner-accounts", label("حسابی هاوبەشان", "Partner Accounts", "حسابات الشركاء"), label("کریدیت، دابەشکردن و waterfall ـی قەرز", "Credit, disbursement, and debt waterfall", "الائتمان والصرف وتسوية الديون"), Handshake],
+        ["partner-holdings", label("ئەوەی لای هاوبەش دانراوە", "Placed With Partners", "المودع لدى الشركاء"), label("کۆمەڵە فیشەکان بەپێی ئەو هاوبەشەی پارەکەی لای دانراوە — وەرگر، بەروار، پلاتفۆرم و فی", "Receipt batches by the partner holding the money — receiver, date, platform and fee", "دفعات الإيصالات حسب الشريك الذي يحتفظ بالمال"), Boxes],
         ["cashbox", label("قاسەی کڕیاران", "Customer Cashbox", "خزنة الزبائن"), label("دانان، دەرهێنان و تسویەی قەرز لە قاسە", "Deposit, withdraw, and settle debt from the cashbox", "إيداع وسحب وتسوية الديون"), Wallet],
         ["debt-center", label("قەرز و قاسە", "Debt & Cashbox", "الديون والخزنة"), label("قەرز بە ئاڕاستەی ڕوون، تەمەن و قاسەی کڕیاران", "Debts by explicit direction, aging, and customer cashboxes", "الديون باتجاه واضح والأعمار وخزائن الزبائن"), Scale],
         ["export-audit", label("هەناردە و وردبینی", "Export & Audit", "التصدير والتدقيق"), label("هەناردەی سنووردار، timeline و checksum", "Bounded exports, timeline, and checksum", "تصدير محدود وخط زمني وبصمة تحقق"), FileCheck2],
@@ -3573,6 +3576,9 @@ export default function App() {
             {page === "office-payments" && <DeferredPanel><OfficePayments client={supabase} lang={lang}
               flash={flash} canConfirm={isAdmin} /></DeferredPanel>}
             {page === "partner-accounts" && <DeferredPanel><PartnerAccounts client={supabase} lang={lang} flash={flash}
+              partners={(data?.users || []).filter((u) => u.role === "partner" && !u.deleted)} /></DeferredPanel>}
+            {page === "partner-holdings" && <DeferredPanel><PartnerHoldings client={supabase} lang={lang}
+              isStaff={isAdmin || profile?.role === "office"}
               partners={(data?.users || []).filter((u) => u.role === "partner" && !u.deleted)} /></DeferredPanel>}
             {page === "cashbox" && <DeferredPanel><CashboxPanel client={supabase} lang={lang} flash={flash}
               customers={(data?.users || []).filter((u) => u.role === "customer" && !u.deleted)}

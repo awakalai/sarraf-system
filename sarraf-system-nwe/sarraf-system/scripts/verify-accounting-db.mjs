@@ -2355,6 +2355,128 @@ try {
       'sha-none', 'REF-NONE', 'ORD-NONE', 'CNY', 1200, current_date, 'nobody')`);
   });
 
+  // ── Task A: the details of an indirect trade reach the partner holding the money ──
+  //
+  // "the money is sent straight to a partner to hold... the seller uploads the receipt... the
+  //  app must put the details into an organised table: the receiver, the date, which platform
+  //  was used, and whether the fee is included... and the details of those receipts must go to
+  //  whichever partner the money was placed with."
+
+  psql(`insert into public.app_users(id,name,role,auth_id) values
+        ('part-a','Holding Partner','partner','9a97e400-0000-0000-0000-00000000000a'),
+        ('cust-a','Selling Customer','customer','c0570002-0000-0000-0000-000000000002')
+        on conflict (id) do update set auth_id = excluded.auth_id`);
+  psql(`insert into public.receipt_batches(id,customer_id,uploaded_by,partner_id,direction,currency,receipt_stage)
+        values ('b-partner','cust-a','cust-a','part-a','in','CNY','verified')`);
+  psql(`insert into public.receipts(id,batch_id,customer_id,uploaded_by,direction,amount,fee,
+          net_amount,currency,receiver,platform,tx_date,ref_no,status,counted,raw)
+        values
+        ('r-pa1','b-partner','cust-a','cust-a','in',1000,0,1000,'CNY','ئەحمەد','WeChat Pay',
+          '2026-08-10','PA-1','ok',true,'{}'),
+        ('r-pa2','b-partner','cust-a','cust-a','in',500,5,495,'CNY','ئەحمەد','Alipay',
+          '2026-08-11','PA-2','ok',true,'{}'),
+        ('r-pa3','b-partner','cust-a','cust-a','in',300,0,300,'CNY','سارا','支付宝',
+          '2026-08-12','PA-3','ok',true,'{}')`);
+  psql(`insert into public.receipt_batch_transactions(batch_id,transaction_id,partner_id,
+          item_count,amount,currency,created_by)
+        values ('b-partner','tx-buy','part-a',3,1795,'CNY','u-a')`);
+
+  const asPartnerA = () => psql(`create or replace function auth.uid() returns uuid language sql stable
+        as $fn$ select '9a97e400-0000-0000-0000-00000000000a'::uuid $fn$`);
+  const detail = () => JSON.parse(psql("select public.sarraf_partner_batch_detail('b-partner')::text"));
+
+  check("the details table names the receiver, the date and the platform", () => {
+    const rows = detail().rows;
+    if (rows.length !== 3) throw new Error(`${rows.length} rows`);
+    const one = rows.find((r) => r.ref_no === "PA-1");
+    if (one.receiver !== "ئەحمەد") throw new Error(`receiver is ${one.receiver}`);
+    if (one.tx_date !== "2026-08-10") throw new Error(`date is ${one.tx_date}`);
+    if (one.platform !== "wechat") throw new Error(`platform is ${one.platform}`);
+  });
+
+  // The same wallet is written several ways depending on which reader produced the row. A table
+  // nobody can total by platform is not the table that was asked for.
+  check("the same wallet spelled differently is still one platform", () => {
+    const rows = detail().rows;
+    if (rows.find((r) => r.ref_no === "PA-2").platform !== "alipay") throw new Error("Alipay missed");
+    if (rows.find((r) => r.ref_no === "PA-3").platform !== "alipay") throw new Error("支付宝 missed");
+    const alipay = detail().by_platform.find((p) => p.platform === "alipay");
+    if (Number(alipay.n) !== 2) throw new Error(`alipay counted ${alipay.n}`);
+  });
+
+  check("every receipt says whether it carries a fee", () => {
+    const rows = detail().rows;
+    if (rows.find((r) => r.ref_no === "PA-1").has_fee !== false) throw new Error("a free receipt claimed a fee");
+    if (rows.find((r) => r.ref_no === "PA-2").has_fee !== true) throw new Error("a fee was not reported");
+    const t = detail().totals[0];
+    if (Number(t.with_fee_count) !== 1 || Number(t.without_fee_count) !== 2) {
+      throw new Error(`${t.with_fee_count} with fee, ${t.without_fee_count} without`);
+    }
+  });
+
+  check("the totals are given both with the fee and without it", () => {
+    const t = detail().totals[0];
+    if (Number(t.with_fee) !== 1800) throw new Error(`with fee ${t.with_fee}`);
+    if (Number(t.without_fee) !== 1795) throw new Error(`without fee ${t.without_fee}`);
+    if (Number(t.fee) !== 5) throw new Error(`fee ${t.fee}`);
+  });
+
+  check("receipts are grouped by who was paid", () => {
+    const ahmed = detail().by_receiver.find((b) => b.receiver === "ئەحمەد");
+    if (Number(ahmed.n) !== 2) throw new Error(`${ahmed.n} receipts to the same recipient`);
+    if (Number(ahmed.with_fee) !== 1500) throw new Error(`with fee ${ahmed.with_fee}`);
+  });
+
+  // The point of the whole flow: the partner the money was placed with can read it.
+  check("the partner holding the money reads the details", () => {
+    asPartnerA();
+    const d = JSON.parse(psql("select public.sarraf_partner_batch_detail('b-partner')::text"));
+    asAdmin();
+    if (d.partner_id !== "part-a") throw new Error(`holder is ${d.partner_id}`);
+    if (d.is_indirect !== true) throw new Error("an indirect trade was not named as one");
+    if (d.rows.length !== 3) throw new Error(`the partner sees ${d.rows.length} rows`);
+    if (d.transaction_id !== "tx-buy") throw new Error(`transaction is ${d.transaction_id}`);
+  });
+
+  check("a partner who holds nothing of this batch is refused, not shown an empty table", () => {
+    psql(`insert into public.app_users(id,name,role,auth_id) values
+          ('part-b','Other Partner','partner','9a97e400-0000-0000-0000-00000000000b')
+          on conflict (id) do update set auth_id = excluded.auth_id`);
+    psql(`create or replace function auth.uid() returns uuid language sql stable
+          as $fn$ select '9a97e400-0000-0000-0000-00000000000b'::uuid $fn$`);
+    let refused = false;
+    try { psql("select public.sarraf_partner_batch_detail('b-partner')"); } catch { refused = true; }
+    asAdmin();
+    // An empty answer to "what is in this batch" reads as "nothing", which is a different and
+    // untrue statement.
+    if (!refused) throw new Error("another partner read a batch that was not theirs");
+  });
+
+  check("a partner lists what has been placed with them", () => {
+    asPartnerA();
+    const held = JSON.parse(psql("select public.sarraf_partner_holdings(null)::text"));
+    asAdmin();
+    if (Number(held.batch_count) !== 1) throw new Error(`${held.batch_count} batches`);
+    if (held.batches[0].batch_id !== "b-partner") throw new Error("the batch is not listed");
+    if (Number(held.by_currency[0].amount) !== 1795) throw new Error(`amount ${held.by_currency[0].amount}`);
+  });
+
+  check("a partner cannot list another partner's holdings by asking for them", () => {
+    asPartnerA();
+    const held = JSON.parse(psql("select public.sarraf_partner_holdings('part-b')::text"));
+    asAdmin();
+    // The parameter is ignored rather than refused, so one call serves both screens.
+    if (held.partner_id !== "part-a") throw new Error(`a partner read ${held.partner_id}`);
+  });
+
+  check("a batch nobody is holding is not called indirect", () => {
+    psql(`insert into public.receipt_batches(id,customer_id,uploaded_by,direction,currency)
+          values ('b-direct','cust-a','cust-a','in','CNY')`);
+    const d = JSON.parse(psql("select public.sarraf_partner_batch_detail('b-direct')::text"));
+    if (d.is_indirect !== false) throw new Error("a direct batch was named indirect");
+    if (d.partner_id !== null) throw new Error(`holder is ${d.partner_id}`);
+  });
+
   let failed = 0;
   for (const [ok, name] of checks) { console.log(`${ok ? "PASS" : "FAIL"}  ${name}`); if (!ok) failed++; }
   console.log(failed

@@ -858,15 +858,19 @@ try {
   });
 
   check("a pending buy books a payable rather than moving cash", () => {
+    // 720 x 0.1972 is 141.984, and the row claimed 142 — outside the one-unit tolerance the
+    // total/rate agreement allows, so the insert was refused and tx-pend never existed. Three
+    // later checks then failed with "transaction not found", naming nothing that was wrong.
+    // A rate that divides cleanly says the same thing without the argument.
     psql(`insert into public.txs(id,type,cp_id,cur_id,amount,rate,against_id,total,status,date)
-          values ('tx-pend','buy','cust-1','cny',720,0.1972,'usd',142,'pending',now())`);
+          values ('tx-pend','buy','cust-1','cny',720,0.2,'usd',144.00,'pending',now())`);
     const acct = psql(`select account_id from journal_lines
                        where entry_id='je-tx-tx-pend' and side='credit' order by line_no limit 1`).trim();
     if (acct !== "acc-2300") throw new Error(`pending buy credited ${acct}, expected the payable`);
     const debt = psql(`select debtor_type||'|'||coalesce(debtor_id,'')||'|'||creditor_type||'|'||
       coalesce(creditor_id,'')||'|'||outstanding_principal
       from debts where source_transaction_id='tx-pend' and status='open'`).trim();
-    if (debt !== "zeman||customer|cust-1|142.0000000000")
+    if (debt !== "zeman||customer|cust-1|144.0000000000")
       throw new Error(`pending purchase debt is ${debt}`);
   });
 
@@ -917,7 +921,7 @@ try {
       throw new Error(`settlement posted ${accountPair}`);
     const cash = psql(`select amount from public.ledger
       where tx_id='tx-pend' and type='settlement' and reversal_of is null`).trim();
-    if (Number(cash) !== -142) throw new Error(`operational settlement cash is ${cash || "missing"}`);
+    if (Number(cash) !== -144) throw new Error(`operational settlement cash is ${cash || "missing"}`);
     if (!out.replace(/\s/g,"").includes('"status":"completed"')) throw new Error(out);
     const debtState = psql(`select status||'|'||outstanding_principal from debts
       where source_transaction_id='tx-pend' order by opened_at limit 1`).trim();

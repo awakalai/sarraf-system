@@ -55,6 +55,11 @@ try {
     office: "44444444-4444-4444-4444-444444444444",
     other: "55555555-5555-5555-5555-555555555555",
   };
+  // The cast is seeded with no signed-in actor, as the first administrator of any system
+  // necessarily is: nobody outranks themselves, so a rank cannot be granted from inside the
+  // account receiving it.
+  psql(`create or replace function auth.uid() returns uuid language sql stable
+        as $fn$ select null::uuid $fn$`);
   psql(`insert into public.app_users(id,name,role,admin_level,auth_id) values
     ('adm','ئەدمین','admin','owner','${UID.admin}'),
     ('cus','کڕیار فرۆشیار','customer',null,'${UID.customer}'),

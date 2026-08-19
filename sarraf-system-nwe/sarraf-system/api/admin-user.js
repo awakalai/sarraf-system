@@ -105,8 +105,27 @@ async function requireAdminAal2(req, authClient, service) {
   return { token, user, profile };
 }
 
-const isOwner = (profile) =>
-  profile?.role === "admin" && profile?.admin_level === "owner";
+// Three ranks, all of them role 'admin' so every existing admin check keeps working:
+//   manager  — the person who maintains the system. Above everyone, resets any password.
+//   owner    — the business owner who runs the exchange.
+//   operator — the owner's staff.
+const ADMIN_LEVELS = new Set(["manager", "owner", "operator"]);
+
+const levelOf = (profile) =>
+  profile?.role === "admin" ? (profile?.admin_level || "operator") : null;
+
+const isManager = (profile) => levelOf(profile) === "manager";
+
+// A manager outranks an owner, so anything an owner may do a manager may do. Written once, or
+// the first call site that forgets the second value locks the manager out of their own system.
+const isOwner = (profile) => ["owner", "manager"].includes(levelOf(profile));
+
+/** Which ranks may an actor hand out? Nobody may create a rank above their own. */
+const mayGrant = (profile, level) => {
+  if (level === "manager") return isManager(profile);
+  if (level === "owner" || level === "operator") return isOwner(profile);
+  return false;
+};
 
 async function writeAudit(service, action, detail) {
   const { error } = await service.from("audit").insert({
@@ -173,8 +192,18 @@ export default async function handler(req, res) {
       const password = String(body.password || "");
       const role = String(body.role || "");
       const rate = Number(body.rate || 0);
-      if (role === "admin" && !isOwner(actor.profile)) {
-        return res.status(403).json({ error: "تەنها خاوەنی سیستەم دەتوانێت ئەدمینی نوێ درووست بکات", code: "owner_required" });
+      // The rank the new administrator gets. Defaults to the least, so a caller that says
+      // nothing cannot accidentally create somebody above themselves.
+      const adminLevel = role === "admin"
+        ? (ADMIN_LEVELS.has(String(body.adminLevel || "")) ? String(body.adminLevel) : "operator")
+        : null;
+      if (role === "admin" && !mayGrant(actor.profile, adminLevel)) {
+        return res.status(403).json({
+          error: adminLevel === "manager"
+            ? "تەنها ماناجەر دەتوانێت ماناجەری نوێ درووست بکات"
+            : "تەنها ماناجەر یان سەرخێڵ دەتوانێت ئەدمینی نوێ درووست بکات",
+          code: adminLevel === "manager" ? "manager_required" : "owner_required",
+        });
       }
       const scope = Array.isArray(body.scope)
         ? [...new Set(body.scope.map((x) => String(x).trim()).filter(Boolean))].slice(0, 100)
@@ -195,7 +224,10 @@ export default async function handler(req, res) {
         email,
         password,
         email_confirm: true,
-        user_metadata: { name, role, phone, admin_level: role === "admin" ? "admin" : null },
+        // 'admin' was written here and in the profile below, and admin_level is checked
+        // against manager/owner/operator. Every administrator account creation was refused by
+        // the database with a constraint violation.
+        user_metadata: { name, role, phone, admin_level: adminLevel },
       });
       if (createError || !created?.user?.id) throw createError || new Error("Auth user creation failed");
 
@@ -209,7 +241,7 @@ export default async function handler(req, res) {
         auth_id: authId,
         name,
         role,
-        admin_level: role === "admin" ? "admin" : null,
+        admin_level: adminLevel,
         rate,
         scope_curs: scope,
         phone,
@@ -242,7 +274,7 @@ export default async function handler(req, res) {
 
       return res.status(200).json({
         ok: true,
-        user: { id: profileId, authId, name, role, adminLevel: role === "admin" ? "admin" : null, phone, rate, scope },
+        user: { id: profileId, authId, name, role, adminLevel, phone, rate, scope },
       });
     }
 
@@ -262,10 +294,15 @@ export default async function handler(req, res) {
       if (!target?.id) return res.status(404).json({ error: "ئەکاونت نەدۆزرایەوە" });
       if (target.role === "admin") {
         if (!isOwner(actor.profile)) {
-          return res.status(403).json({ error: "تەنها خاوەنی سیستەم دەتوانێت ئەدمین ناچالاک بکات", code: "owner_required" });
+          return res.status(403).json({ error: "تەنها ماناجەر یان سەرخێڵ دەتوانێت ئەدمین ناچالاک بکات", code: "owner_required" });
         }
-        if (target.admin_level === "owner") {
-          return res.status(403).json({ error: "ئەکاونتی خاوەنی سیستەم لەم ڕێگایە ناچالاک ناکرێت" });
+        // Nobody deactivates a rank at or above their own. A manager's account is reachable
+        // only by another manager, and an owner's only by a manager.
+        if (target.admin_level === "manager" && !isManager(actor.profile)) {
+          return res.status(403).json({ error: "ئەکاونتی ماناجەر تەنها لەلایەن ماناجەرێکەوە ناچالاک دەکرێت", code: "manager_required" });
+        }
+        if (target.admin_level === "owner" && !isManager(actor.profile)) {
+          return res.status(403).json({ error: "ئەکاونتی سەرخێڵ تەنها لەلایەن ماناجەرێکەوە ناچالاک دەکرێت", code: "manager_required" });
         }
       }
 
@@ -316,6 +353,104 @@ export default async function handler(req, res) {
       );
 
       return res.status(200).json({ ok: true, rate });
+    }
+
+    // ── resetting a password ──
+    //
+    // A manager's own reason for existing: somebody is locked out and the business cannot wait
+    // for whoever set the password. The new one is never returned in the response and never
+    // written to the audit line — only that it was changed, by whom, for whom.
+    if (action === "reset_password") {
+      const userId = String(body.userId || "").trim();
+      const password = String(body.password || "");
+      if (!userId || password.length < 12) {
+        return res.status(400).json({ error: "userId و وشەی نهێنیی لانیکەم ١٢ پیت پێویستن" });
+      }
+
+      const { data: target, error: targetError } = await service
+        .from("app_users")
+        .select("id,name,role,admin_level,auth_id,deleted")
+        .eq("id", userId)
+        .maybeSingle();
+      if (targetError) throw targetError;
+      if (!target?.id) return res.status(404).json({ error: "ئەکاونت نەدۆزرایەوە" });
+      if (target.deleted) return res.status(400).json({ error: "ئەکاونتەکە ناچالاکە" });
+      if (!target.auth_id) return res.status(400).json({ error: "ئەم ئەکاونتە لۆگینی نییە" });
+
+      // A manager may reset anyone. An owner may reset their own staff and ordinary users, but
+      // not another administrator of their own rank or above — otherwise an owner could take
+      // the system from a manager by changing their password.
+      const targetLevel = target.role === "admin" ? (target.admin_level || "operator") : null;
+      const allowed = isManager(actor.profile)
+        || (isOwner(actor.profile) && (targetLevel === null || targetLevel === "operator"));
+      if (!allowed) {
+        return res.status(403).json({
+          error: "گۆڕینی وشەی نهێنیی ئەم ئەکاونتە تەنها لەلایەن ماناجەرەوە دەکرێت",
+          code: "manager_required",
+        });
+      }
+
+      const { error: resetError } = await service.auth.admin.updateUserById(
+        target.auth_id, { password }
+      );
+      if (resetError) throw resetError;
+
+      await writeAudit(
+        service,
+        "گۆڕینی وشەی نهێنی",
+        `${target.name} (${target.role}) — by ${actor.profile.name || actor.profile.id}`
+      );
+
+      return res.status(200).json({ ok: true });
+    }
+
+    // ── promoting or demoting an administrator ──
+    if (action === "set_level") {
+      const userId = String(body.userId || "").trim();
+      const level = String(body.adminLevel || "");
+      if (!userId || !ADMIN_LEVELS.has(level)) {
+        return res.status(400).json({ error: "userId و پلەی دروست پێویستن (manager/owner/operator)" });
+      }
+
+      const { data: target, error: targetError } = await service
+        .from("app_users")
+        .select("id,name,role,admin_level,deleted")
+        .eq("id", userId)
+        .maybeSingle();
+      if (targetError) throw targetError;
+      if (!target?.id) return res.status(404).json({ error: "ئەکاونت نەدۆزرایەوە" });
+      if (target.role !== "admin") return res.status(400).json({ error: "تەنها ئەدمین پلەی هەیە" });
+
+      const currentLevel = target.admin_level || "operator";
+      // Nobody hands out a rank above their own, and nobody touches a rank at or above their own.
+      if (!mayGrant(actor.profile, level)
+          || (currentLevel === "manager" && !isManager(actor.profile))) {
+        return res.status(403).json({ error: "دەسەڵاتت نییە بۆ ئەم گۆڕانکارییە", code: "rank_required" });
+      }
+      // The last manager cannot demote themselves out of the system. The database refuses this
+      // too; catching it here means a sentence rather than a constraint name.
+      if (currentLevel === "manager" && level !== "manager") {
+        const { count } = await service
+          .from("app_users")
+          .select("id", { count: "exact", head: true })
+          .eq("role", "admin").eq("admin_level", "manager").eq("deleted", false)
+          .neq("id", userId);
+        if (!count) {
+          return res.status(400).json({ error: "دوایین ماناجەر لاناچێت — سەرەتا یەکێکی تر دابنێ" });
+        }
+      }
+
+      const { error: updateError } = await service
+        .from("app_users").update({ admin_level: level }).eq("id", userId);
+      if (updateError) throw updateError;
+
+      await writeAudit(
+        service,
+        "گۆڕینی پلەی ئەدمین",
+        `${target.name}: ${currentLevel} → ${level} — by ${actor.profile.name || actor.profile.id}`
+      );
+
+      return res.status(200).json({ ok: true, adminLevel: level });
     }
 
     return res.status(400).json({ error: "کردارەکە ناسراو نییە" });

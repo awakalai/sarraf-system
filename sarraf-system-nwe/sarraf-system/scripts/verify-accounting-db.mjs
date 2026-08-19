@@ -1859,7 +1859,13 @@ try {
   });
 
   // ── the debt side: vouchers, netting, writing off, and the history of a debt ──
+  // Appointed with no signed-in actor, as the first owner necessarily is: nobody outranks
+  // themselves, so a rank can never be granted from inside the account receiving it.
+  psql(`create or replace function auth.uid() returns uuid language sql stable
+        as $fn$ select null::uuid $fn$`);
   psql(`update public.app_users set admin_level='owner' where id='u-a'`);
+  psql(`create or replace function auth.uid() returns uuid language sql stable
+        as $fn$ select '11111111-1111-1111-1111-111111111111'::uuid $fn$`);
   asAdmin();
   psql(`create or replace function public.zeman_probe_issue() returns text language plpgsql as $fn$
         declare v public.vouchers; begin
@@ -1935,10 +1941,18 @@ try {
     // 'operator', not 'staff': admin_level is checked against owner|operator, and the
     // point of the case is an administrator who is not the owner.
     psql(`update public.app_users set admin_level='operator' where id='u-a'`);
+    // Demoting oneself is allowed; promoting oneself back is not, which is the rank guard doing
+    // its job. The restore therefore runs with no signed-in actor, as a service write would.
+    const restoreLevel = () => {
+      psql(`create or replace function auth.uid() returns uuid language sql stable
+            as $fn$ select null::uuid $fn$`);
+      psql(`update public.app_users set admin_level='owner' where id='u-a'`);
+      asAdmin();
+    };
     let denied = false;
     try { psql(`select public.sarraf_write_off_debt('d-wo2',null,'a perfectly long reason here','cmd-wo-4')`); }
     catch { denied = true; }
-    psql(`update public.app_users set admin_level='owner' where id='u-a'`);
+    restoreLevel();
     if (!denied) throw new Error("an ordinary administrator wrote off a debt");
   });
 
@@ -2639,6 +2653,145 @@ try {
     asAdmin();
     if (!refused || !refusedDoc) throw new Error("a stranger read evidence that was not theirs");
   });
+
+  // A table the repository does not know about is invisible in both directions — present in the
+  // database and unmaintained, or expected by the code and absent. The owner met the second
+  // kind by querying a table a schema read had listed days earlier and being told it does not
+  // exist.
+  check("a fresh database has every table the migrations create, and no other", () => {
+    const drift = psql(`select coalesce(string_agg(table_name || ' — ' || state, '; '), '')
+                        from public.sarraf_schema_tables()`).trim();
+    if (drift) throw new Error(drift);
+  });
+
+  check("one call answers for both tables and columns", () => {
+    const report = JSON.parse(psql("select public.sarraf_schema_report()::text"));
+    if (!Array.isArray(report.tables) || !Array.isArray(report.columns)) {
+      throw new Error("the report does not carry both halves");
+    }
+    if (report.tables.length || report.columns.length) {
+      throw new Error(JSON.stringify({ tables: report.tables, columns: report.columns }));
+    }
+  });
+
+  // ── three ranks of administrator ───────────────────────────────────────────
+  //
+  //   manager  — maintains the system, resets any password, answers to nobody inside it
+  //   owner    — the business owner who runs the exchange
+  //   operator — the owner's staff
+  //
+  // All three are role 'admin', so every existing admin check keeps working and a manager
+  // inherits everything an administrator can do.
+
+  // The first manager is created with no signed-in actor, exactly as it happens in life: from
+  // the SQL editor, where holding the database credentials is the proof of ownership and the
+  // only proof available before any manager exists.
+  psql(`create or replace function auth.uid() returns uuid language sql stable
+        as $fn$ select null::uuid $fn$`);
+  psql(`insert into public.app_users(id,name,role,admin_level,auth_id) values
+        ('mgr','ماناجەر','admin','manager','9a9a9e70-0000-0000-0000-00000000000f'),
+        ('own','سەرخێڵ','admin','owner','0e9e0001-0000-0000-0000-000000000001'),
+        ('opr','ئەدمین','admin','operator','09e70001-0000-0000-0000-000000000001')
+        on conflict (id) do update set admin_level = excluded.admin_level`);
+  const be = (uid) => psql(`create or replace function auth.uid() returns uuid language sql stable
+        as $fn$ select '${uid}'::uuid $fn$`);
+  const asManager = () => be("9a9a9e70-0000-0000-0000-00000000000f");
+  const asOwner = () => be("0e9e0001-0000-0000-0000-000000000001");
+  const asOperator = () => be("09e70001-0000-0000-0000-000000000001");
+
+  check("each rank reports itself, and a manager also counts as an owner", () => {
+    asManager();
+    const m = psql("select public.sarraf_admin_level()||'|'||public.sarraf_is_manager()||'|'||public.sarraf_is_owner()").trim();
+    asOwner();
+    const o = psql("select public.sarraf_admin_level()||'|'||public.sarraf_is_manager()||'|'||public.sarraf_is_owner()").trim();
+    asOperator();
+    const p = psql("select public.sarraf_admin_level()||'|'||public.sarraf_is_manager()||'|'||public.sarraf_is_owner()").trim();
+    asAdmin();
+    if (m !== "manager|true|true") throw new Error(`manager reads ${m}`);
+    if (o !== "owner|false|true") throw new Error(`owner reads ${o}`);
+    if (p !== "operator|false|false") throw new Error(`operator reads ${p}`);
+  });
+
+  check("a manager may appoint another manager", () => {
+    asManager();
+    psql(`insert into public.app_users(id,name,role,admin_level,auth_id)
+          values ('mgr2','ماناجەری دوو','admin','manager','9a9a9e70-0000-0000-0000-000000000010')`);
+    asAdmin();
+    const level = psql("select admin_level from public.app_users where id='mgr2'").trim();
+    if (level !== "manager") throw new Error(`the new manager is ${level}`);
+  });
+
+  check("the business owner cannot appoint a manager", () => {
+    asOwner();
+    let refused = false;
+    try {
+      psql(`insert into public.app_users(id,name,role,admin_level,auth_id)
+            values ('mgr3','ماناجەری سێ','admin','manager','9a9a9e70-0000-0000-0000-000000000011')`);
+    } catch { refused = true; }
+    asAdmin();
+    if (!refused) throw new Error("an owner created a rank above their own");
+  });
+
+  check("the owner's staff cannot appoint anybody", () => {
+    asOperator();
+    let refused = false;
+    try {
+      psql(`insert into public.app_users(id,name,role,admin_level,auth_id)
+            values ('opr2','ئەدمینی دوو','admin','operator','09e70001-0000-0000-0000-000000000002')`);
+    } catch { refused = true; }
+    asAdmin();
+    if (!refused) throw new Error("an operator created an administrator");
+  });
+
+  check("the business owner may appoint their own staff", () => {
+    asOwner();
+    psql(`insert into public.app_users(id,name,role,admin_level,auth_id)
+          values ('opr3','ئەدمینی سێ','admin','operator','09e70001-0000-0000-0000-000000000003')`);
+    asAdmin();
+    const level = psql("select admin_level from public.app_users where id='opr3'").trim();
+    if (level !== "operator") throw new Error(`the new staff member is ${level}`);
+  });
+
+  check("only a manager may change a manager's rank", () => {
+    asOwner();
+    let refused = false;
+    try { psql("update public.app_users set admin_level='operator' where id='mgr2'"); }
+    catch { refused = true; }
+    asAdmin();
+    if (!refused) throw new Error("an owner demoted a manager");
+  });
+
+  // A system nobody can reach is not more secure, it is unusable, and recovering from it means
+  // going back to the database by hand.
+  check("the last manager cannot be demoted or deactivated", () => {
+    asManager();
+    psql("update public.app_users set admin_level='operator' where id='mgr2'");
+    let demote = false, remove = false;
+    try { psql("update public.app_users set admin_level='operator' where id='mgr'"); }
+    catch { demote = true; }
+    try { psql("update public.app_users set deleted=true where id='mgr'"); }
+    catch { remove = true; }
+    asAdmin();
+    if (!demote) throw new Error("the last manager was demoted");
+    if (!remove) throw new Error("the last manager was deactivated");
+  });
+
+  check("only a manager reads the manager overview", () => {
+    asManager();
+    const view = JSON.parse(psql("select public.sarraf_manager_overview()::text"));
+    asOwner();
+    let refused = false;
+    try { psql("select public.sarraf_manager_overview()"); } catch { refused = true; }
+    asAdmin();
+    if (Number(view.manager_count) !== 1) throw new Error(`${view.manager_count} managers`);
+    if (Number(view.owner_count) < 1) throw new Error("the business owner is not counted");
+    if (!refused) throw new Error("the business owner read the manager overview");
+  });
+
+  // The value api/admin-user.js was writing for every new administrator. The column never
+  // accepted it, so account creation failed at the database every time.
+  mustFail("'admin' was never a rank this column accepts",
+    `insert into public.app_users(id,name,role,admin_level) values ('bad-lvl','X','admin','admin')`);
 
   let failed = 0;
   for (const [ok, name] of checks) { console.log(`${ok ? "PASS" : "FAIL"}  ${name}`); if (!ok) failed++; }

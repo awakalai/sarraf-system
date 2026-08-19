@@ -91,7 +91,7 @@ try {
 
 
   // ── Cashbox (قاسە): a customer-funds-held liability, per customer AND per currency ──
-  psql(`insert into public.app_users(id,name,role) values ('cust-1','Customer One','customer')
+  psql(`insert into public.app_users(id,name,role,tenant_id) values ('cust-1','Customer One','customer','t-sarkhel')
         on conflict do nothing`);
   psql(`insert into public.customer_vaults(id,customer_id,currency) values
         ('cv-cny','cust-1','CNY'),('cv-usd','cust-1','USD') on conflict do nothing`);
@@ -155,7 +155,7 @@ try {
   // partner balance 1,000 CNY; ZEMAN sells them 1,300 → 1,000 consumed, 300 becomes debt.
   // A later 500 credit settles the 300 and leaves 200 available.
   check("the partner over-limit example settles exactly as specified", () => {
-    psql(`insert into public.app_users(id,name,role) values ('p-1','Partner One','partner') on conflict do nothing`);
+    psql(`insert into public.app_users(id,name,role,tenant_id) values ('p-1','Partner One','partner','t-sarkhel') on conflict do nothing`);
     psql(`insert into public.debts(id,debtor_type,debtor_id,creditor_type,creditor_id,currency,
             original_principal,outstanding_principal,source_type,reason,created_by)
           values ('d-p','partner','p-1','zeman',null,'CNY',300,300,'partner_over_limit',
@@ -200,7 +200,7 @@ try {
   psql(`update public.app_users set auth_id='11111111-1111-1111-1111-111111111111' where id='u-a'`);
   psql(`create or replace function auth.uid() returns uuid language sql stable
         as $fn$ select '11111111-1111-1111-1111-111111111111'::uuid $fn$`);
-  psql(`insert into public.app_users(id,name,role) values ('cust-2','Customer Two','customer')
+  psql(`insert into public.app_users(id,name,role,tenant_id) values ('cust-2','Customer Two','customer','t-sarkhel')
         on conflict do nothing`);
 
   check("a deposit posts a balanced entry and credits the customer-funds liability", () => {
@@ -293,9 +293,9 @@ try {
 
 
   // ── §13D: the worked example, executed through the real commands ──
-  psql(`insert into public.app_users(id,name,role,auth_id) values
-        ('p-x','Partner X','partner','33333333-3333-3333-3333-333333333333'),
-        ('off-1','Office One','office','44444444-4444-4444-4444-444444444444')
+  psql(`insert into public.app_users(id,name,role,auth_id,tenant_id) values
+        ('p-x','Partner X','partner','33333333-3333-3333-3333-333333333333','t-sarkhel'),
+        ('off-1','Office One','office','44444444-4444-4444-4444-444444444444','t-sarkhel')
         on conflict do nothing`);
 
   // ── Real business flow A/B/C: custody is derived, never trusted from a label ──
@@ -466,8 +466,8 @@ try {
     `select public.sarraf_office_payment_report('${officeAssignmentId}','confirmed',null,null,null,'cmd-op-3')`);
 
   check("another office cannot touch an assignment that is not theirs", () => {
-    psql(`insert into public.app_users(id,name,role,auth_id) values
-          ('off-2','Office Two','office','55555555-5555-5555-5555-555555555555') on conflict do nothing`);
+    psql(`insert into public.app_users(id,name,role,auth_id,tenant_id) values
+          ('off-2','Office Two','office','55555555-5555-5555-5555-555555555555','t-sarkhel') on conflict do nothing`);
     psql(`create or replace function auth.uid() returns uuid language sql stable
           as $fn$ select '55555555-5555-5555-5555-555555555555'::uuid $fn$`);
     let denied = false;
@@ -515,10 +515,10 @@ try {
 
 
   // ── Phase 4: receipt state machine, custody, forwarding ──
-  psql(`insert into public.app_users(id,name,role,auth_id) values
-        ('cust-r','Receipt Customer','customer','66666666-6666-6666-6666-666666666666'),
-        ('part-r','Receipt Partner','partner','77777777-7777-7777-7777-777777777777'),
-        ('inv-r','Investor','investor','88888888-8888-8888-8888-888888888888')
+  psql(`insert into public.app_users(id,name,role,auth_id,tenant_id) values
+        ('cust-r','Receipt Customer','customer','66666666-6666-6666-6666-666666666666','t-sarkhel'),
+        ('part-r','Receipt Partner','partner','77777777-7777-7777-7777-777777777777','t-sarkhel'),
+        ('inv-r','Investor','investor','88888888-8888-8888-8888-888888888888','t-sarkhel')
         on conflict (id) do update set auth_id=excluded.auth_id`);
 
   const doc = (id, flow, uploader, extra = "") => `
@@ -775,8 +775,8 @@ try {
   });
 
   check("customer-sale intake belongs only to its customer and is never portal-published", () => {
-    psql(`insert into public.app_users(id,name,role,auth_id) values
-          ('inv-r','Receipt Investor','investor','88888888-8888-8888-8888-888888888888')
+    psql(`insert into public.app_users(id,name,role,auth_id,tenant_id) values
+          ('inv-r','Receipt Investor','investor','88888888-8888-8888-8888-888888888888','t-sarkhel')
           on conflict (id) do nothing;
           insert into public.txs(id,type,cp_id,cp_name,cur_id,amount,rate,against_id,total,status)
           values ('tx-customer-sale','buy','cust-r','Receipt Customer','cny',100,0.1388888889,
@@ -998,11 +998,11 @@ try {
   psql(`grant usage on schema public to zeman_rls_probe`);
 
   // Two customers, two partners, one office — each with a distinct auth id.
-  psql(`insert into public.app_users(id,name,role,auth_id) values
-        ('rls-c1','C1','customer','aaaaaaa1-0000-0000-0000-000000000001'),
-        ('rls-c2','C2','customer','aaaaaaa2-0000-0000-0000-000000000002'),
-        ('rls-p1','P1','partner', 'aaaaaaa3-0000-0000-0000-000000000003'),
-        ('rls-o1','O1','office',  'aaaaaaa4-0000-0000-0000-000000000004')
+  psql(`insert into public.app_users(id,name,role,auth_id,tenant_id) values
+        ('rls-c1','C1','customer','aaaaaaa1-0000-0000-0000-000000000001','t-sarkhel'),
+        ('rls-c2','C2','customer','aaaaaaa2-0000-0000-0000-000000000002','t-sarkhel'),
+        ('rls-p1','P1','partner', 'aaaaaaa3-0000-0000-0000-000000000003','t-sarkhel'),
+        ('rls-o1','O1','office',  'aaaaaaa4-0000-0000-0000-000000000004','t-sarkhel')
         on conflict (id) do nothing`);
   psql(`insert into public.customer_vaults(id,customer_id,currency,available) values
         ('rls-v1','rls-c1','CNY',100),('rls-v2','rls-c2','CNY',200)
@@ -1066,8 +1066,8 @@ try {
 
 
   // ── 5: durable intake. The image must survive an OCR failure. ──
-  psql(`insert into public.app_users(id,name,role,auth_id) values
-        ('in-c','Intake Customer','customer','bbbbbbb1-0000-0000-0000-000000000001')
+  psql(`insert into public.app_users(id,name,role,auth_id,tenant_id) values
+        ('in-c','Intake Customer','customer','bbbbbbb1-0000-0000-0000-000000000001','t-sarkhel')
         on conflict (id) do nothing`);
   psql(`create or replace function auth.uid() returns uuid language sql stable
         as $fn$ select 'bbbbbbb1-0000-0000-0000-000000000001'::uuid $fn$`);
@@ -1158,9 +1158,9 @@ try {
 
 
   // 8: forwarding. Accepted evidence reaches exactly the party the flow sends it to.
-  psql(`insert into public.app_users(id,name,role,auth_id) values
-        ('fw-cust','FW Customer','customer','ccccccc1-0000-0000-0000-000000000001'),
-        ('fw-part','FW Partner','partner','ccccccc2-0000-0000-0000-000000000002')
+  psql(`insert into public.app_users(id,name,role,auth_id,tenant_id) values
+        ('fw-cust','FW Customer','customer','ccccccc1-0000-0000-0000-000000000001','t-sarkhel'),
+        ('fw-part','FW Partner','partner','ccccccc2-0000-0000-0000-000000000002','t-sarkhel')
         on conflict (id) do nothing`);
   // A sale receipt, taken through to accepted.
   psql(`insert into public.receipt_documents(id,flow,uploader_id,customer_id,storage_path)
@@ -1592,8 +1592,8 @@ try {
   // `on conflict do nothing` swallow this insert whole — the seller was never created and the
   // first row referencing them failed a foreign key several lines later, naming a table that had
   // nothing to do with the mistake.
-  psql(`insert into public.app_users(id,name,role,auth_id) values
-        ('cust-s','Seller','customer','5e11e5aa-0000-0000-0000-00000000005e')
+  psql(`insert into public.app_users(id,name,role,auth_id,tenant_id) values
+        ('cust-s','Seller','customer','5e11e5aa-0000-0000-0000-00000000005e','t-sarkhel')
         on conflict (id) do update set auth_id = excluded.auth_id`);
   const asSeller = () => psql(`create or replace function auth.uid() returns uuid language sql stable
         as $fn$ select '5e11e5aa-0000-0000-0000-00000000005e'::uuid $fn$`);
@@ -1682,8 +1682,8 @@ try {
 
   check("one uploader never sees another's receipts", () => {
     asAdmin();
-    psql(`insert into public.app_users(id,name,role,auth_id) values
-          ('cust-t','Other','customer','77777777-7777-7777-7777-777777777777') on conflict do nothing`);
+    psql(`insert into public.app_users(id,name,role,auth_id,tenant_id) values
+          ('cust-t','Other','customer','77777777-7777-7777-7777-777777777777','t-sarkhel') on conflict do nothing`);
     psql(`create or replace function auth.uid() returns uuid language sql stable
           as $fn$ select '77777777-7777-7777-7777-777777777777'::uuid $fn$`);
     const s = JSON.parse(psql("select public.sarraf_portal_receipt_summary(365)::text"));
@@ -2385,9 +2385,9 @@ try {
   //  was used, and whether the fee is included... and the details of those receipts must go to
   //  whichever partner the money was placed with."
 
-  psql(`insert into public.app_users(id,name,role,auth_id) values
-        ('part-a','Holding Partner','partner','9a97e400-0000-0000-0000-00000000000a'),
-        ('cust-a','Selling Customer','customer','c0570002-0000-0000-0000-000000000002')
+  psql(`insert into public.app_users(id,name,role,auth_id,tenant_id) values
+        ('part-a','Holding Partner','partner','9a97e400-0000-0000-0000-00000000000a','t-sarkhel'),
+        ('cust-a','Selling Customer','customer','c0570002-0000-0000-0000-000000000002','t-sarkhel')
         on conflict (id) do update set auth_id = excluded.auth_id`);
   psql(`insert into public.receipt_batches(id,customer_id,uploaded_by,partner_id,direction,currency,receipt_stage)
         values ('b-partner','cust-a','cust-a','part-a','in','CNY','verified')`);
@@ -2462,8 +2462,8 @@ try {
   });
 
   check("a partner who holds nothing of this batch is refused, not shown an empty table", () => {
-    psql(`insert into public.app_users(id,name,role,auth_id) values
-          ('part-b','Other Partner','partner','9a97e400-0000-0000-0000-00000000000b')
+    psql(`insert into public.app_users(id,name,role,auth_id,tenant_id) values
+          ('part-b','Other Partner','partner','9a97e400-0000-0000-0000-00000000000b','t-sarkhel')
           on conflict (id) do update set auth_id = excluded.auth_id`);
     psql(`create or replace function auth.uid() returns uuid language sql stable
           as $fn$ select '9a97e400-0000-0000-0000-00000000000b'::uuid $fn$`);
@@ -2688,10 +2688,10 @@ try {
   // only proof available before any manager exists.
   psql(`create or replace function auth.uid() returns uuid language sql stable
         as $fn$ select null::uuid $fn$`);
-  psql(`insert into public.app_users(id,name,role,admin_level,auth_id) values
-        ('mgr','ماناجەر','admin','manager','9a9a9e70-0000-0000-0000-00000000000f'),
-        ('own','سەرخێڵ','admin','owner','0e9e0001-0000-0000-0000-000000000001'),
-        ('opr','ئەدمین','admin','operator','09e70001-0000-0000-0000-000000000001')
+  psql(`insert into public.app_users(id,name,role,admin_level,auth_id,tenant_id) values
+        ('mgr','ماناجەر','admin','manager','9a9a9e70-0000-0000-0000-00000000000f',null),
+        ('own','سەرخێڵ','admin','owner','0e9e0001-0000-0000-0000-000000000001','t-sarkhel'),
+        ('opr','ئەدمین','admin','operator','09e70001-0000-0000-0000-000000000001','t-sarkhel')
         on conflict (id) do update set admin_level = excluded.admin_level`);
   const be = (uid) => psql(`create or replace function auth.uid() returns uuid language sql stable
         as $fn$ select '${uid}'::uuid $fn$`);
@@ -2714,8 +2714,8 @@ try {
 
   check("a manager may appoint another manager", () => {
     asManager();
-    psql(`insert into public.app_users(id,name,role,admin_level,auth_id)
-          values ('mgr2','ماناجەری دوو','admin','manager','9a9a9e70-0000-0000-0000-000000000010')`);
+    psql(`insert into public.app_users(id,name,role,admin_level,auth_id,tenant_id)
+          values ('mgr2','ماناجەری دوو','admin','manager','9a9a9e70-0000-0000-0000-000000000010',null)`);
     asAdmin();
     const level = psql("select admin_level from public.app_users where id='mgr2'").trim();
     if (level !== "manager") throw new Error(`the new manager is ${level}`);
@@ -2725,8 +2725,8 @@ try {
     asOwner();
     let refused = false;
     try {
-      psql(`insert into public.app_users(id,name,role,admin_level,auth_id)
-            values ('mgr3','ماناجەری سێ','admin','manager','9a9a9e70-0000-0000-0000-000000000011')`);
+      psql(`insert into public.app_users(id,name,role,admin_level,auth_id,tenant_id)
+            values ('mgr3','ماناجەری سێ','admin','manager','9a9a9e70-0000-0000-0000-000000000011',null)`);
     } catch { refused = true; }
     asAdmin();
     if (!refused) throw new Error("an owner created a rank above their own");
@@ -2736,8 +2736,8 @@ try {
     asOperator();
     let refused = false;
     try {
-      psql(`insert into public.app_users(id,name,role,admin_level,auth_id)
-            values ('opr2','ئەدمینی دوو','admin','operator','09e70001-0000-0000-0000-000000000002')`);
+      psql(`insert into public.app_users(id,name,role,admin_level,auth_id,tenant_id)
+            values ('opr2','ئەدمینی دوو','admin','operator','09e70001-0000-0000-0000-000000000002','t-sarkhel')`);
     } catch { refused = true; }
     asAdmin();
     if (!refused) throw new Error("an operator created an administrator");
@@ -2745,8 +2745,8 @@ try {
 
   check("the business owner may appoint their own staff", () => {
     asOwner();
-    psql(`insert into public.app_users(id,name,role,admin_level,auth_id)
-          values ('opr3','ئەدمینی سێ','admin','operator','09e70001-0000-0000-0000-000000000003')`);
+    psql(`insert into public.app_users(id,name,role,admin_level,auth_id,tenant_id)
+          values ('opr3','ئەدمینی سێ','admin','operator','09e70001-0000-0000-0000-000000000003','t-sarkhel')`);
     asAdmin();
     const level = psql("select admin_level from public.app_users where id='opr3'").trim();
     if (level !== "operator") throw new Error(`the new staff member is ${level}`);
@@ -2765,9 +2765,11 @@ try {
   // going back to the database by hand.
   check("the last manager cannot be demoted or deactivated", () => {
     asManager();
-    psql("update public.app_users set admin_level='operator' where id='mgr2'");
+    // A demoted manager needs a business to belong to, so the spare is given one on the way
+    // down. The case is about the last manager, not about tenancy.
+    psql("update public.app_users set admin_level='operator', tenant_id='t-sarkhel' where id='mgr2'");
     let demote = false, remove = false;
-    try { psql("update public.app_users set admin_level='operator' where id='mgr'"); }
+    try { psql("update public.app_users set admin_level='operator', tenant_id='t-sarkhel' where id='mgr'"); }
     catch { demote = true; }
     try { psql("update public.app_users set deleted=true where id='mgr'"); }
     catch { remove = true; }
@@ -2791,7 +2793,126 @@ try {
   // The value api/admin-user.js was writing for every new administrator. The column never
   // accepted it, so account creation failed at the database every time.
   mustFail("'admin' was never a rank this column accepts",
-    `insert into public.app_users(id,name,role,admin_level) values ('bad-lvl','X','admin','admin')`);
+    `insert into public.app_users(id,name,role,admin_level,tenant_id) values ('bad-lvl','X','admin','admin','t-sarkhel')`);
+
+  // ── one installation, two businesses, and no way for either to see the other ──
+  //
+  // The owner sells this system. Today one exchange runs on it; tomorrow another buyer runs
+  // their own on the same installation. Neither may see a single row of the other's, and neither
+  // should have to trust that they cannot — the database must make it impossible.
+
+  psql(`insert into public.app_users(id,name,role,admin_level,auth_id,tenant_id) values
+        ('own-b','سەرخێڵی دوو','admin','owner','b0570002-0000-0000-0000-000000000002','t-kurdistan'),
+        ('cust-b','کڕیاری دوو','customer',null,'c0570003-0000-0000-0000-000000000003','t-kurdistan')
+        on conflict (id) do update set tenant_id = excluded.tenant_id`);
+
+  const asTenantB = () => psql(`create or replace function auth.uid() returns uuid language sql stable
+        as $fn$ select 'b0570002-0000-0000-0000-000000000002'::uuid $fn$`);
+
+  check("every table that holds a business's data enforces whose it is", () => {
+    const gaps = psql(`select coalesce(string_agg(table_name || ' — ' || problem, '; '), '')
+                       from public.sarraf_tenant_coverage()`).trim();
+    if (gaps) throw new Error(gaps);
+  });
+
+  check("a manager belongs to no business and sees them all", () => {
+    asManager();
+    const sees = psql("select public.sarraf_sees_all_tenants()||'|'||coalesce(public.sarraf_tenant(),'-')").trim();
+    asAdmin();
+    if (sees !== "true|-") throw new Error(`the manager reads ${sees}`);
+  });
+
+  check("a business owner sees their own business and no other", () => {
+    asTenantB();
+    const sees = psql("select public.sarraf_sees_all_tenants()||'|'||coalesce(public.sarraf_tenant(),'-')").trim();
+    asAdmin();
+    if (sees !== "false|t-kurdistan") throw new Error(`the second owner reads ${sees}`);
+  });
+
+  // Two unknowns are not the same business. A row with no tenant must match nobody, or every
+  // untenanted row would be visible to every business at once.
+  check("a row belonging to nobody is visible to no business", () => {
+    asTenantB();
+    const nul = psql("select public.sarraf_tenant_visible(null)::text").trim();
+    const own = psql("select public.sarraf_tenant_visible('t-kurdistan')::text").trim();
+    const other = psql("select public.sarraf_tenant_visible('t-sarkhel')::text").trim();
+    asAdmin();
+    if (nul !== "false") throw new Error("an untenanted row was visible to a business");
+    if (own !== "true") throw new Error("a business could not see its own row");
+    if (other !== "false") throw new Error("a business saw another's row");
+  });
+
+  check("the manager sees a row of any business, and one of none", () => {
+    asManager();
+    const all = psql(`select public.sarraf_tenant_visible('t-sarkhel')||'|'||
+                             public.sarraf_tenant_visible('t-kurdistan')||'|'||
+                             public.sarraf_tenant_visible(null)`).trim();
+    asAdmin();
+    if (all !== "true|true|true") throw new Error(`the manager reads ${all}`);
+  });
+
+  // The rule that keeps a person's history theirs: an account cannot walk away from the
+  // transactions, receipts and debts it made.
+  mustFail("an account cannot be moved to another business",
+    "update public.app_users set tenant_id='t-kurdistan' where id='cust-1'");
+
+  mustFail("every account except a manager must name a business",
+    `insert into public.app_users(id,name,role,tenant_id)
+     values ('no-tenant','بێ سەرخێڵ','customer',null)`);
+
+  mustFail("a manager cannot belong to one business",
+    `insert into public.app_users(id,name,role,admin_level,tenant_id)
+     values ('mgr-bad','ماناجەری خراپ','admin','manager','t-sarkhel')`);
+
+  // A rate is a price, not a definition: two exchanges do not quote the same one.
+  check("each business sets its own ratio, and reads only its own", () => {
+    psql(`insert into public.tenant_rates(tenant_id,cur_id,rate) values
+          ('t-sarkhel','cny',7.20),('t-kurdistan','cny',6.50)
+          on conflict (tenant_id,cur_id) do update set rate = excluded.rate`);
+    asAdmin();
+    const a = psql("select public.sarraf_usd_value(720,'cny')").trim();
+    asTenantB();
+    const b = psql("select public.sarraf_usd_value(650,'cny')").trim();
+    asAdmin();
+    if (Number(a) !== 100) throw new Error(`the first business values 720 CNY at ${a}`);
+    if (Number(b) !== 100) throw new Error(`the second business values 650 CNY at ${b}`);
+  });
+
+  check("a business with no ratio of its own falls back to the installation's", () => {
+    psql("delete from public.tenant_rates where tenant_id='t-kurdistan' and cur_id='cny'");
+    const installation = Number(psql("select rate from public.currencies where id='cny'").trim());
+    asTenantB();
+    const b = Number(psql("select public.sarraf_usd_value(720,'cny')").trim());
+    asAdmin();
+    const expected = Number((720 / installation).toFixed(10));
+    if (Math.abs(b - expected) > 1e-8) {
+      throw new Error(`the fallback valued 720 CNY at ${b}, expected ${expected} at ${installation}`);
+    }
+  });
+
+  check("a notification addressed to somebody belongs to their business", () => {
+    psql(`insert into public.notes(id,user_id,kind,title,body)
+          values ('note-tenant','cust-1','rate','نرخ','گۆڕا')`);
+    const owner = psql("select coalesce(tenant_id,'<null>') from public.notes where id='note-tenant'").trim();
+    if (owner !== "t-sarkhel") throw new Error(`the notification belongs to ${owner}`);
+  });
+
+  check("no row anywhere belongs to nobody", () => {
+    asManager();
+    const orphans = JSON.parse(psql("select public.sarraf_tenant_orphans()::text"));
+    asAdmin();
+    // system_event_log is append-only and refuses deletion, which is correct: a change log that
+    // can be tidied is not a change log. What it recorded before there were businesses belongs
+    // to none of them, and must stay that way.
+    // Two tables record what happened to the installation rather than to a business, and their
+    // ownerless rows are correct. system_event_log is append-only and refuses deletion — a change
+    // log that can be tidied is not a change log. notes of kind system_event are addressed to
+    // nobody, and a notification for nobody belongs to no business either.
+    const installationWide = new Set(["system_event_log", "notes"]);
+    const stray = Object.entries(orphans.orphans || {})
+      .filter(([table]) => !installationWide.has(table));
+    if (stray.length) throw new Error(stray.map(([t, n]) => `${t}: ${n}`).join("; "));
+  });
 
   let failed = 0;
   for (const [ok, name] of checks) { console.log(`${ok ? "PASS" : "FAIL"}  ${name}`); if (!ok) failed++; }

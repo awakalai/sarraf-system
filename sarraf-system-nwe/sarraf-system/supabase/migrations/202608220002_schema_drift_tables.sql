@@ -44,6 +44,7 @@ as $$
     ('receipt_ocr_attempts'), ('receipt_operation_commands'), ('receipt_pending_conversions'),
     ('receipt_review_commands'), ('receipt_state_transitions'),
     ('receipt_transaction_assignments'), ('receipts'), ('system_event_log'),
+    ('tenant_rates'), ('tenants'),
     ('transaction_payment_events'), ('tx_versions'), ('txs'), ('voucher_counters'), ('vouchers')
   ), live as (
     select c.table_name::text as t

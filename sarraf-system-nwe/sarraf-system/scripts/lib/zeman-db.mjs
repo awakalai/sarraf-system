@@ -113,8 +113,8 @@ port = ${PORT}
       update public.currencies set buy_rate=1400, sell_rate=1420, rate=1410 where id='iqd';
       insert into public.currencies(id,code,name,buy_rate,sell_rate,rate)
       values ('xxx','XXX','Unrated',null,null,null) on conflict do nothing;
-      insert into public.app_users(id,name,role,auth_id)
-      values ('u-a','A','admin','11111111-1111-1111-1111-111111111111')
+      insert into public.app_users(id,name,role,auth_id,tenant_id)
+      values ('u-a','A','admin','11111111-1111-1111-1111-111111111111','t-sarkhel')
       on conflict (id) do update set auth_id=excluded.auth_id;
       create or replace function auth.uid() returns uuid language sql stable
         as $fn$ select '11111111-1111-1111-1111-111111111111'::uuid $fn$;

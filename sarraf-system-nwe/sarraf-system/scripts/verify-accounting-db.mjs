@@ -2585,6 +2585,61 @@ try {
     if (out !== "true") throw new Error(psql("select public.sarraf_trial_balance_check()::text"));
   });
 
+  // ── the same receipt, recorded twice, with nothing saying so ───────────────
+  //
+  // Two paths write a receipt and neither knows about the other: receipt_documents plus
+  // receipt_extractions when an image is read, receipts plus receipt_batches when the uploader
+  // presses send. A photographed receipt exists twice and no column says the two rows are the
+  // same piece of paper.
+
+  psql(`insert into public.receipt_documents(id,flow,uploader_id,customer_id,storage_path)
+        values ('doc-link','customer_sells_to_zeman','cust-a','cust-a','ingest/link.jpg')`);
+  psql(`insert into public.receipt_extractions(document_id,version,is_original,provider,model,
+          gross_amount,fee_amount,net_amount,currency,payee,tx_date,platform,fee_treatment)
+        values ('doc-link',1,true,'verify','link',1000,0,1000,'CNY','ئەحمەد','2026-08-10',
+                'wechat','no_fee')`);
+  psql(`update public.receipts set document_id = 'doc-link' where id = 'r-pa1'`);
+
+  check("a receipt reaches the image it was read from", () => {
+    const both = JSON.parse(psql("select public.sarraf_receipt_both_sides('r-pa1',null)::text"));
+    if (both.linked !== true) throw new Error("the two sides are not linked");
+    if (both.document.id !== "doc-link") throw new Error(`document is ${both.document.id}`);
+    if (both.extraction.platform !== "wechat") throw new Error("the reading did not come back");
+  });
+
+  check("an image reaches the row that counts towards a total", () => {
+    const both = JSON.parse(psql("select public.sarraf_receipt_both_sides(null,'doc-link')::text"));
+    if (both.receipt.id !== "r-pa1") throw new Error(`receipt is ${both.receipt?.id}`);
+  });
+
+  // Two receipts claiming one document is exactly the double count the column exists to prevent.
+  mustFail("two receipts cannot claim the same image",
+    "update public.receipts set document_id = 'doc-link' where id = 'r-pa2'");
+
+  check("a receipt with no image says so rather than guessing at one", () => {
+    const both = JSON.parse(psql("select public.sarraf_receipt_both_sides('r-pa3',null)::text"));
+    if (both.linked !== false) throw new Error("an unlinked receipt claimed a document");
+    if (both.document !== null) throw new Error("a document was invented");
+    if (both.receipt.id !== "r-pa3") throw new Error("the receipt itself was withheld");
+  });
+
+  check("the size of the gap is a figure, not an impression", () => {
+    const gap = JSON.parse(psql("select public.sarraf_receipt_link_gap()::text"));
+    if (Number(gap.receipts_linked) !== 1) throw new Error(`${gap.receipts_linked} linked`);
+    if (!(Number(gap.documents_orphaned) >= 0)) throw new Error("the orphan count is unreadable");
+  });
+
+  check("a stranger cannot read somebody else's receipt through either side", () => {
+    psql(`create or replace function auth.uid() returns uuid language sql stable
+          as $fn$ select '9a97e400-0000-0000-0000-00000000000b'::uuid $fn$`);
+    let refused = false;
+    try { psql("select public.sarraf_receipt_both_sides('r-pa1',null)"); } catch { refused = true; }
+    let refusedDoc = false;
+    try { psql("select public.sarraf_receipt_both_sides(null,'doc-link')"); } catch { refusedDoc = true; }
+    asAdmin();
+    if (!refused || !refusedDoc) throw new Error("a stranger read evidence that was not theirs");
+  });
+
   let failed = 0;
   for (const [ok, name] of checks) { console.log(`${ok ? "PASS" : "FAIL"}  ${name}`); if (!ok) failed++; }
   console.log(failed

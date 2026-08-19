@@ -2640,6 +2640,26 @@ try {
     if (!refused || !refusedDoc) throw new Error("a stranger read evidence that was not theirs");
   });
 
+  // A table the repository does not know about is invisible in both directions — present in the
+  // database and unmaintained, or expected by the code and absent. The owner met the second
+  // kind by querying a table a schema read had listed days earlier and being told it does not
+  // exist.
+  check("a fresh database has every table the migrations create, and no other", () => {
+    const drift = psql(`select coalesce(string_agg(table_name || ' — ' || state, '; '), '')
+                        from public.sarraf_schema_tables()`).trim();
+    if (drift) throw new Error(drift);
+  });
+
+  check("one call answers for both tables and columns", () => {
+    const report = JSON.parse(psql("select public.sarraf_schema_report()::text"));
+    if (!Array.isArray(report.tables) || !Array.isArray(report.columns)) {
+      throw new Error("the report does not carry both halves");
+    }
+    if (report.tables.length || report.columns.length) {
+      throw new Error(JSON.stringify({ tables: report.tables, columns: report.columns }));
+    }
+  });
+
   let failed = 0;
   for (const [ok, name] of checks) { console.log(`${ok ? "PASS" : "FAIL"}  ${name}`); if (!ok) failed++; }
   console.log(failed

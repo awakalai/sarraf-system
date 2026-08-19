@@ -858,15 +858,19 @@ try {
   });
 
   check("a pending buy books a payable rather than moving cash", () => {
+    // 720 x 0.1972 is 141.984, and the row claimed 142 — outside the one-unit tolerance the
+    // total/rate agreement allows, so the insert was refused and tx-pend never existed. Three
+    // later checks then failed with "transaction not found", naming nothing that was wrong.
+    // A rate that divides cleanly says the same thing without the argument.
     psql(`insert into public.txs(id,type,cp_id,cur_id,amount,rate,against_id,total,status,date)
-          values ('tx-pend','buy','cust-1','cny',720,0.1972,'usd',142,'pending',now())`);
+          values ('tx-pend','buy','cust-1','cny',720,0.2,'usd',144.00,'pending',now())`);
     const acct = psql(`select account_id from journal_lines
                        where entry_id='je-tx-tx-pend' and side='credit' order by line_no limit 1`).trim();
     if (acct !== "acc-2300") throw new Error(`pending buy credited ${acct}, expected the payable`);
     const debt = psql(`select debtor_type||'|'||coalesce(debtor_id,'')||'|'||creditor_type||'|'||
       coalesce(creditor_id,'')||'|'||outstanding_principal
       from debts where source_transaction_id='tx-pend' and status='open'`).trim();
-    if (debt !== "zeman||customer|cust-1|142.0000000000")
+    if (debt !== "zeman||customer|cust-1|144.0000000000")
       throw new Error(`pending purchase debt is ${debt}`);
   });
 
@@ -917,7 +921,7 @@ try {
       throw new Error(`settlement posted ${accountPair}`);
     const cash = psql(`select amount from public.ledger
       where tx_id='tx-pend' and type='settlement' and reversal_of is null`).trim();
-    if (Number(cash) !== -142) throw new Error(`operational settlement cash is ${cash || "missing"}`);
+    if (Number(cash) !== -144) throw new Error(`operational settlement cash is ${cash || "missing"}`);
     if (!out.replace(/\s/g,"").includes('"status":"completed"')) throw new Error(out);
     const debtState = psql(`select status||'|'||outstanding_principal from debts
       where source_transaction_id='tx-pend' order by opened_at limit 1`).trim();
@@ -950,8 +954,13 @@ try {
   });
 
   check("a draft recognition becomes posted only after a real rate is supplied", () => {
+    // The ratio has to be supplied where the system reads it. receipt_daily_rates is the
+    // receipt lifecycle's own published rate; every valuation outside that lifecycle — this
+    // resolver included — reads currencies.rate, which is the single ratio of Phase 2. Both are
+    // set here so the case is unambiguous about which one made the draft postable.
     psql(`insert into public.receipt_daily_rates(id,currency,effective_date,rate_value,version,set_by,reason)
           values ('verify-rate-try','TRY',current_date,32,1,'u-a','verified TRY accounting rate')`);
+    psql("update public.currencies set rate = 32, rate_updated = now() where id = 'try'");
     const out = psql(`select public.sarraf_resolve_transaction_draft(
       'tx-norate','published verified TRY daily rate','cmd-resolve-try-1')::text`);
     const st = psql("select status from journal_entries where id='je-tx-tx-norate'").trim();
@@ -1497,8 +1506,10 @@ try {
 
   // An unpaid purchase must not pretend cash left the safe.
   check("an unpaid purchase brings the currency in and moves no cash", () => {
-    psql(`insert into public.txs(id,type,cur_id,amount,rate,against_id,total,status,date)
-          values ('tx-unpaid','buy','cny',1000,0.138889,'usd',138.89,'pending',now())`);
+    // A pending purchase opens a debt against somebody, so it must name a registered customer.
+    // Without one the insert is refused and the case never reaches what it is testing.
+    psql(`insert into public.txs(id,type,cp_id,cur_id,amount,rate,against_id,total,status,date)
+          values ('tx-unpaid','buy','cust-1','cny',1000,0.138889,'usd',138.89,'pending',now())`);
     psql("select public.sarraf_ensure_transaction_ledger('tx-unpaid')");
     const cny = psql("select amount from ledger where tx_id='tx-unpaid' and cur_id='cny'").trim();
     const usd = psql("select count(*) from ledger where tx_id='tx-unpaid' and cur_id='usd'").trim();
@@ -1544,17 +1555,24 @@ try {
   mustFail("an edit cannot break the agreement either",
     "update public.txs set total = 5000 where id='tx-mv'");
 
+  // batch_id is a foreign key and 'b-1' was never created, so both intake cases failed on the
+  // insert rather than on what they were meant to be testing.
+  psql(`insert into public.receipt_batches(id,customer_id,uploaded_by,direction,currency)
+        values ('b-intake','cust-1','u-a','in','CNY') on conflict (id) do nothing`);
+
   // A receipt already turned into a transaction cannot be turned into another one.
   check("a converted receipt is named as converted, not merely ineligible", () => {
-    psql(`insert into public.receipt_intake_items(id,batch_id,intake_status,counted,currency,net_amount,transaction_id)
-          values ('ri-1','b-1','accepted',true,'CNY',3400,'tx-mv')`);
+    // submitted_by is not null: an intake item is evidence somebody handed in, and a row that
+    // cannot say who did is not evidence of anything.
+    psql(`insert into public.receipt_intake_items(id,batch_id,submitted_by,direction,image_path,source_status,intake_status,counted,currency,amount,fee,net_amount,transaction_id)
+          values ('ri-1','b-intake','u-a','in','ingest/verify-intake-0001/receipt-ri-1.jpg','ok','accepted',true,'CNY',3400,0,3400,'tx-mv')`);
     const n = psql(`select count(*) from public.sarraf_receipt_already_converted('["ri-1"]'::jsonb)`).trim();
     if (n !== "1") throw new Error("an already-converted receipt was not reported");
   });
 
   check("an unconverted receipt is not reported as converted", () => {
-    psql(`insert into public.receipt_intake_items(id,batch_id,intake_status,counted,currency,net_amount)
-          values ('ri-2','b-1','accepted',true,'CNY',1000)`);
+    psql(`insert into public.receipt_intake_items(id,batch_id,submitted_by,direction,image_path,source_status,intake_status,counted,currency,amount,fee,net_amount)
+          values ('ri-2','b-intake','u-a','in','ingest/verify-intake-0001/receipt-ri-2.jpg','ok','accepted',true,'CNY',1000,0,1000)`);
     const n = psql(`select count(*) from public.sarraf_receipt_already_converted('["ri-2"]'::jsonb)`).trim();
     if (n !== "0") throw new Error("a free receipt was reported as converted");
   });
@@ -1570,10 +1588,15 @@ try {
   // The owner's report: "the customer-seller may only send their own sale receipts, not
   // purchase", and "the customer-seller and every other user must see the history and details
   // of their own receipts".
+  // A distinct auth_id. cust-r already holds 6666…, and auth_id is unique, so re-using it made
+  // `on conflict do nothing` swallow this insert whole — the seller was never created and the
+  // first row referencing them failed a foreign key several lines later, naming a table that had
+  // nothing to do with the mistake.
   psql(`insert into public.app_users(id,name,role,auth_id) values
-        ('cust-s','Seller','customer','66666666-6666-6666-6666-666666666666') on conflict do nothing`);
+        ('cust-s','Seller','customer','5e11e5aa-0000-0000-0000-00000000005e')
+        on conflict (id) do update set auth_id = excluded.auth_id`);
   const asSeller = () => psql(`create or replace function auth.uid() returns uuid language sql stable
-        as $fn$ select '66666666-6666-6666-6666-666666666666'::uuid $fn$`);
+        as $fn$ select '5e11e5aa-0000-0000-0000-00000000005e'::uuid $fn$`);
   const asAdmin = () => psql(`create or replace function auth.uid() returns uuid language sql stable
         as $fn$ select '11111111-1111-1111-1111-111111111111'::uuid $fn$`);
   asSeller();
@@ -1778,7 +1801,9 @@ try {
     if (s.calculation_status !== "pending_rate") throw new Error(`status is ${s.calculation_status}`);
     const c = s.currencies[0];
     if (c.usd.status !== "pending_rate") throw new Error("a USD figure was produced without a ratio");
-    if (c.native.gross_total.amount_decimal !== "500") throw new Error("the native breakdown was withheld");
+    // At the currency's own scale, as every other native figure now is: 500.00 beside 2447.00,
+    // not 500 beside 2447.00.
+    if (c.native.gross_total.amount_decimal !== "500.00") throw new Error("the native breakdown was withheld");
     if (JSON.stringify(c.usd).includes("amount_decimal")) throw new Error("a USD amount appeared anyway");
   });
 
@@ -1797,9 +1822,11 @@ try {
   });
 
   check("acting on a version that has moved is refused as stale, with 409", () => {
-    psql("update public.receipts set amount = 1300.20 where id='r-sum1'");
+    // net must stay equal to amount minus fee, so both move together. What the case is about
+    // is the summary version changing, not the row becoming inconsistent.
+    psql("update public.receipts set amount = 1300.20, net_amount = 1300.20 - fee where id='r-sum1'");
     const out = psql(`select public.zeman_probe_stale('b-sum', '${lockedVersion}')`).trim();
-    psql("update public.receipts set amount = 1000.03 where id='r-sum1'");
+    psql("update public.receipts set amount = 1000.03, net_amount = 1000.03 - fee where id='r-sum1'");
     if (out !== "PT409|stale_summary") throw new Error(`the refusal was ${out}`);
   });
 
@@ -1905,7 +1932,9 @@ try {
   });
 
   check("only the system owner may give up a debt", () => {
-    psql(`update public.app_users set admin_level='staff' where id='u-a'`);
+    // 'operator', not 'staff': admin_level is checked against owner|operator, and the
+    // point of the case is an administrator who is not the owner.
+    psql(`update public.app_users set admin_level='operator' where id='u-a'`);
     let denied = false;
     try { psql(`select public.sarraf_write_off_debt('d-wo2',null,'a perfectly long reason here','cmd-wo-4')`); }
     catch { denied = true; }
@@ -2006,9 +2035,11 @@ try {
   });
 
   check("a customer sees only the vouchers they are named on", () => {
-    psql(`update public.app_users set auth_id='88888888-8888-8888-8888-888888888888' where id='cust-1'`);
+    // A id of its own: inv-r already holds 8888…, and auth_id is unique, so borrowing it
+    // failed the update and took the check with it.
+    psql(`update public.app_users set auth_id='c0570001-0000-0000-0000-000000000001' where id='cust-1'`);
     psql(`create or replace function auth.uid() returns uuid language sql stable
-          as $fn$ select '88888888-8888-8888-8888-888888888888'::uuid $fn$`);
+          as $fn$ select 'c0570001-0000-0000-0000-000000000001'::uuid $fn$`);
     const mine = JSON.parse(psql("select public.sarraf_voucher_register(null,null,null,50)::text"));
     asAdmin();
     const all = JSON.parse(psql("select public.sarraf_voucher_register(null,null,null,50)::text"));
@@ -2292,6 +2323,264 @@ try {
     `select public.sarraf_vault_pending_resolve('cust-1','CNY',9999,true,null,'over confirming','cmd-pend-5')`);
 
   check("the books still reconcile after pending deposits", () => {
+    const out = psql("select (public.sarraf_trial_balance_check()->>'balanced')::text").trim();
+    if (out !== "true") throw new Error(psql("select public.sarraf_trial_balance_check()::text"));
+  });
+
+  // ── the schema this code was written against is the schema that exists ─────
+  //
+  // Two failures reached the owner that nothing here could have caught, because both were
+  // disagreements between the migrations and the live database rather than mistakes inside
+  // either. The legacy baseline declares the tables with `create table if not exists`, so a
+  // fresh database gets the declaration and a database that already had them keeps whatever it
+  // had. Every gate runs on a fresh one, which is why they all agreed with the declaration.
+  //
+  // sarraf_schema_drift is the comparison that was missing. Run here it proves a fresh database
+  // matches; run from the SQL editor it says the same of the live one.
+
+  check("a fresh database matches the shape the code expects", () => {
+    const drift = psql(`select coalesce(string_agg(
+      table_name || '.' || column_name || ' expected ' || expected || ' found ' || found, '; '), '')
+      from public.sarraf_schema_drift()`).trim();
+    if (drift) throw new Error(drift);
+  });
+
+  // `column "user_id" of relation "audit" does not exist` — saving a ratio, on the live system.
+  check("saving a ratio records who did it", () => {
+    psql(`select public.sarraf_save_rates(
+      '[{"id":"cny","rate":6.79}]'::jsonb, '[]'::jsonb, 'cmd-audit-1', 'ratio change', 'CNY 6.79')`);
+    const who = psql(`select coalesce(user_id,'<null>') from public.audit
+                      where action = 'ratio change' order by date desc limit 1`).trim();
+    if (who === "") throw new Error("the ratio change was not recorded at all");
+    if (who === "<null>") throw new Error("the change was recorded with nobody against it");
+  });
+
+  // `operator does not exist: text = date` — the duplicate check, on the live system. It is the
+  // check that decides whether an upload is new, so with it unable to run every receipt that
+  // reached the compound key was refused. Calling it is enough: the error was raised at plan
+  // time, before any row was examined.
+  check("the duplicate check runs on all four keys", () => {
+    psql(`select * from public.check_receipt_dupe(
+      'sha-none', 'REF-NONE', 'ORD-NONE', 'CNY', 1200, current_date, 'nobody')`);
+  });
+
+  // ── Task A: the details of an indirect trade reach the partner holding the money ──
+  //
+  // "the money is sent straight to a partner to hold... the seller uploads the receipt... the
+  //  app must put the details into an organised table: the receiver, the date, which platform
+  //  was used, and whether the fee is included... and the details of those receipts must go to
+  //  whichever partner the money was placed with."
+
+  psql(`insert into public.app_users(id,name,role,auth_id) values
+        ('part-a','Holding Partner','partner','9a97e400-0000-0000-0000-00000000000a'),
+        ('cust-a','Selling Customer','customer','c0570002-0000-0000-0000-000000000002')
+        on conflict (id) do update set auth_id = excluded.auth_id`);
+  psql(`insert into public.receipt_batches(id,customer_id,uploaded_by,partner_id,direction,currency,receipt_stage)
+        values ('b-partner','cust-a','cust-a','part-a','in','CNY','verified')`);
+  psql(`insert into public.receipts(id,batch_id,customer_id,uploaded_by,direction,amount,fee,
+          net_amount,currency,receiver,platform,tx_date,ref_no,status,counted,raw)
+        values
+        ('r-pa1','b-partner','cust-a','cust-a','in',1000,0,1000,'CNY','ئەحمەد','WeChat Pay',
+          '2026-08-10','PA-1','ok',true,'{}'),
+        ('r-pa2','b-partner','cust-a','cust-a','in',500,5,495,'CNY','ئەحمەد','Alipay',
+          '2026-08-11','PA-2','ok',true,'{}'),
+        ('r-pa3','b-partner','cust-a','cust-a','in',300,0,300,'CNY','سارا','支付宝',
+          '2026-08-12','PA-3','ok',true,'{}')`);
+  psql(`insert into public.receipt_batch_transactions(batch_id,transaction_id,partner_id,
+          item_count,amount,currency,created_by)
+        values ('b-partner','tx-buy','part-a',3,1795,'CNY','u-a')`);
+
+  const asPartnerA = () => psql(`create or replace function auth.uid() returns uuid language sql stable
+        as $fn$ select '9a97e400-0000-0000-0000-00000000000a'::uuid $fn$`);
+  const detail = () => JSON.parse(psql("select public.sarraf_partner_batch_detail('b-partner')::text"));
+
+  check("the details table names the receiver, the date and the platform", () => {
+    const rows = detail().rows;
+    if (rows.length !== 3) throw new Error(`${rows.length} rows`);
+    const one = rows.find((r) => r.ref_no === "PA-1");
+    if (one.receiver !== "ئەحمەد") throw new Error(`receiver is ${one.receiver}`);
+    if (one.tx_date !== "2026-08-10") throw new Error(`date is ${one.tx_date}`);
+    if (one.platform !== "wechat") throw new Error(`platform is ${one.platform}`);
+  });
+
+  // The same wallet is written several ways depending on which reader produced the row. A table
+  // nobody can total by platform is not the table that was asked for.
+  check("the same wallet spelled differently is still one platform", () => {
+    const rows = detail().rows;
+    if (rows.find((r) => r.ref_no === "PA-2").platform !== "alipay") throw new Error("Alipay missed");
+    if (rows.find((r) => r.ref_no === "PA-3").platform !== "alipay") throw new Error("支付宝 missed");
+    const alipay = detail().by_platform.find((p) => p.platform === "alipay");
+    if (Number(alipay.n) !== 2) throw new Error(`alipay counted ${alipay.n}`);
+  });
+
+  check("every receipt says whether it carries a fee", () => {
+    const rows = detail().rows;
+    if (rows.find((r) => r.ref_no === "PA-1").has_fee !== false) throw new Error("a free receipt claimed a fee");
+    if (rows.find((r) => r.ref_no === "PA-2").has_fee !== true) throw new Error("a fee was not reported");
+    const t = detail().totals[0];
+    if (Number(t.with_fee_count) !== 1 || Number(t.without_fee_count) !== 2) {
+      throw new Error(`${t.with_fee_count} with fee, ${t.without_fee_count} without`);
+    }
+  });
+
+  check("the totals are given both with the fee and without it", () => {
+    const t = detail().totals[0];
+    if (Number(t.with_fee) !== 1800) throw new Error(`with fee ${t.with_fee}`);
+    if (Number(t.without_fee) !== 1795) throw new Error(`without fee ${t.without_fee}`);
+    if (Number(t.fee) !== 5) throw new Error(`fee ${t.fee}`);
+  });
+
+  check("receipts are grouped by who was paid", () => {
+    const ahmed = detail().by_receiver.find((b) => b.receiver === "ئەحمەد");
+    if (Number(ahmed.n) !== 2) throw new Error(`${ahmed.n} receipts to the same recipient`);
+    if (Number(ahmed.with_fee) !== 1500) throw new Error(`with fee ${ahmed.with_fee}`);
+  });
+
+  // The point of the whole flow: the partner the money was placed with can read it.
+  check("the partner holding the money reads the details", () => {
+    asPartnerA();
+    const d = JSON.parse(psql("select public.sarraf_partner_batch_detail('b-partner')::text"));
+    asAdmin();
+    if (d.partner_id !== "part-a") throw new Error(`holder is ${d.partner_id}`);
+    if (d.is_indirect !== true) throw new Error("an indirect trade was not named as one");
+    if (d.rows.length !== 3) throw new Error(`the partner sees ${d.rows.length} rows`);
+    if (d.transaction_id !== "tx-buy") throw new Error(`transaction is ${d.transaction_id}`);
+  });
+
+  check("a partner who holds nothing of this batch is refused, not shown an empty table", () => {
+    psql(`insert into public.app_users(id,name,role,auth_id) values
+          ('part-b','Other Partner','partner','9a97e400-0000-0000-0000-00000000000b')
+          on conflict (id) do update set auth_id = excluded.auth_id`);
+    psql(`create or replace function auth.uid() returns uuid language sql stable
+          as $fn$ select '9a97e400-0000-0000-0000-00000000000b'::uuid $fn$`);
+    let refused = false;
+    try { psql("select public.sarraf_partner_batch_detail('b-partner')"); } catch { refused = true; }
+    asAdmin();
+    // An empty answer to "what is in this batch" reads as "nothing", which is a different and
+    // untrue statement.
+    if (!refused) throw new Error("another partner read a batch that was not theirs");
+  });
+
+  check("a partner lists what has been placed with them", () => {
+    asPartnerA();
+    const held = JSON.parse(psql("select public.sarraf_partner_holdings(null)::text"));
+    asAdmin();
+    if (Number(held.batch_count) !== 1) throw new Error(`${held.batch_count} batches`);
+    if (held.batches[0].batch_id !== "b-partner") throw new Error("the batch is not listed");
+    if (Number(held.by_currency[0].amount) !== 1795) throw new Error(`amount ${held.by_currency[0].amount}`);
+  });
+
+  check("a partner cannot list another partner's holdings by asking for them", () => {
+    asPartnerA();
+    const held = JSON.parse(psql("select public.sarraf_partner_holdings('part-b')::text"));
+    asAdmin();
+    // The parameter is ignored rather than refused, so one call serves both screens.
+    if (held.partner_id !== "part-a") throw new Error(`a partner read ${held.partner_id}`);
+  });
+
+  check("a batch nobody is holding is not called indirect", () => {
+    psql(`insert into public.receipt_batches(id,customer_id,uploaded_by,direction,currency)
+          values ('b-direct','cust-a','cust-a','in','CNY')`);
+    const d = JSON.parse(psql("select public.sarraf_partner_batch_detail('b-direct')::text"));
+    if (d.is_indirect !== false) throw new Error("a direct batch was named indirect");
+    if (d.partner_id !== null) throw new Error(`holder is ${d.partner_id}`);
+  });
+
+  // ── Task B: a direct trade is the owner's own, and never touches a partner ──
+  //
+  // "these are direct buying and selling where the money does not go to any partner. All the
+  //  details, profit and funds are recorded straight to the admin's own safe — so there is no
+  //  investor share in it, and it stays entirely out of the partner-custody logic."
+
+  const directPair = (pair, buyId, sellId, buyTotal, sellTotal) => `
+    public.sarraf_commit_transactions(
+      jsonb_build_array(
+        jsonb_build_object('id','${buyId}','type','buy','cp_id','cust-1','cur_id','cny',
+          'amount',1000,'rate',0.14,'against_id','usd','total',${buyTotal},'status','completed',
+          'direct',true,'own_money',true,'pair_id','${pair}','direct_role','buy'),
+        jsonb_build_object('id','${sellId}','type','sell','cp_id','cust-1','cur_id','cny',
+          'amount',1000,'rate',0.15,'against_id','usd','total',${sellTotal},'status','completed',
+          'direct',true,'own_money',true,'pair_id','${pair}','direct_role','sell')),
+      '[]'::jsonb, null, 'cmd-${pair}', 'direct trade', 'owner funded')`;
+
+  check("a direct trade is booked as a matched owner-funded pair", () => {
+    psql(`select ${directPair("pair-d1", "tx-d1b", "tx-d1s", 140, 150)}`);
+    const both = psql(`select string_agg(id||':'||direct::text||':'||own_money::text||':'||
+      coalesce(partner_id,'-')||':'||direct_role, ',' order by id)
+      from public.txs where pair_id='pair-d1'`).trim();
+    if (both !== "tx-d1b:true:true:-:buy,tx-d1s:true:true:-:sell") {
+      throw new Error(`the pair was booked as ${both}`);
+    }
+  });
+
+  check("the profit of a direct trade is the pair's own difference", () => {
+    const profit = psql("select profit from public.txs where id='tx-d1s'").trim();
+    if (Number(profit) !== 10) throw new Error(`direct profit is ${profit}, expected 150 - 140`);
+  });
+
+  // The whole point of the type: the money never leaves the owner's hands, so no partner may be
+  // named on it and no partner balance may move because of it.
+  mustFail("a direct trade cannot name a partner",
+    `select public.sarraf_commit_transactions(
+      jsonb_build_array(
+        jsonb_build_object('id','tx-d2b','type','buy','cp_id','cust-1','cur_id','cny','amount',10,
+          'rate',0.14,'against_id','usd','total',1.4,'status','completed','direct',true,
+          'own_money',true,'pair_id','pair-d2','direct_role','buy','partner_id','p-1'),
+        jsonb_build_object('id','tx-d2s','type','sell','cp_id','cust-1','cur_id','cny','amount',10,
+          'rate',0.15,'against_id','usd','total',1.5,'status','completed','direct',true,
+          'own_money',true,'pair_id','pair-d2','direct_role','sell')),
+      '[]'::jsonb, null, 'cmd-pair-d2', 'direct trade', 'owner funded')`);
+
+  // A single leg is not a direct trade. One half of a pair would leave the owner's safe holding
+  // currency that no sale ever accounted for.
+  mustFail("half of a direct pair is refused",
+    `select public.sarraf_commit_transactions(
+      jsonb_build_array(
+        jsonb_build_object('id','tx-d3b','type','buy','cp_id','cust-1','cur_id','cny','amount',10,
+          'rate',0.14,'against_id','usd','total',1.4,'status','completed','direct',true,
+          'own_money',true,'pair_id','pair-d3','direct_role','buy')),
+      '[]'::jsonb, null, 'cmd-pair-d3', 'direct trade', 'owner funded')`);
+
+  // Money that is not the owner's own is not a direct trade, whatever it is labelled.
+  mustFail("a direct trade must be funded by the owner's own money",
+    `select public.sarraf_commit_transactions(
+      jsonb_build_array(
+        jsonb_build_object('id','tx-d4b','type','buy','cp_id','cust-1','cur_id','cny','amount',10,
+          'rate',0.14,'against_id','usd','total',1.4,'status','completed','direct',true,
+          'own_money',false,'pair_id','pair-d4','direct_role','buy'),
+        jsonb_build_object('id','tx-d4s','type','sell','cp_id','cust-1','cur_id','cny','amount',10,
+          'rate',0.15,'against_id','usd','total',1.5,'status','completed','direct',true,
+          'own_money',false,'pair_id','pair-d4','direct_role','sell')),
+      '[]'::jsonb, null, 'cmd-pair-d4', 'direct trade', 'owner funded')`);
+
+  // And the reverse, so the two types cannot blur into each other from the standard side.
+  mustFail("an ordinary trade cannot carry the fields of a direct pair",
+    `select public.sarraf_commit_transactions(
+      jsonb_build_array(
+        jsonb_build_object('id','tx-d5','type','buy','cp_id','cust-1','cur_id','cny','amount',10,
+          'rate',0.14,'against_id','usd','total',1.4,'status','completed',
+          'own_money',true,'pair_id','pair-d5')),
+      '[]'::jsonb, null, 'cmd-pair-d5', 'ordinary trade', 'not direct')`);
+
+  check("a direct trade leaves every partner balance where it was", () => {
+    const before = psql("select coalesce(sum(available),0)::text from public.partner_accounts").trim();
+    psql(`select ${directPair("pair-d6", "tx-d6b", "tx-d6s", 140, 150)}`);
+    const after = psql("select coalesce(sum(available),0)::text from public.partner_accounts").trim();
+    if (before !== after) throw new Error(`partner balances moved from ${before} to ${after}`);
+  });
+
+  // "no investor share in it". The distribution reads txs.direct, so a direct sale must carry
+  // the flag the reader keys on — otherwise the owner's own trade would be shared out.
+  check("a direct sale is excluded from anything that shares profit", () => {
+    const shared = psql(`select count(*) from public.txs
+      where type='sell' and not deleted and coalesce(direct,false) and profit is not null`).trim();
+    if (Number(shared) < 1) throw new Error("no direct sale carries a profit to exclude");
+    const leaked = psql(`select count(*) from public.txs
+      where coalesce(direct,false) and partner_id is not null`).trim();
+    if (leaked !== "0") throw new Error(`${leaked} direct trades name a partner`);
+  });
+
+  check("the books still reconcile after direct trades", () => {
     const out = psql("select (public.sarraf_trial_balance_check()->>'balanced')::text").trim();
     if (out !== "true") throw new Error(psql("select public.sarraf_trial_balance_check()::text"));
   });

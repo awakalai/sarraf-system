@@ -53,6 +53,7 @@ const CashboxPanel = lazyNamed(() => import("./components/accounting/CashboxPane
 const OfficePayments = lazyNamed(() => import("./components/accounting/OfficePayments"), "OfficePayments");
 const PartnerAccounts = lazyNamed(() => import("./components/accounting/PartnerAccounts"), "PartnerAccounts");
 const PartnerHoldings = lazyNamed(() => import("./components/accounting/PartnerHoldings"), "PartnerHoldings");
+const ManagerCenter = lazyNamed(() => import("./components/accounting/ManagerCenter"), "ManagerCenter");
 const ReceiptReviewWorkspace = lazyNamed(() => import("./components/receipts/ReceiptReviewWorkspace"), "ReceiptReviewWorkspace");
 const ReceiptForwardingCenter = lazyNamed(() => import("./components/receipts/ReceiptForwardingCenter"), "ReceiptForwardingCenter");
 const ForwardedReceipts = lazyNamed(() => import("./components/receipts/ForwardedReceipts"), "ForwardedReceipts");
@@ -180,6 +181,7 @@ const ADMIN_CENTER_PAGE_IDS = new Set([
   "office-payments",
   "partner-accounts",
   "partner-holdings",
+  "manager-center",
   "receipt-review",
   "receipt-forwarding",
   "backup",
@@ -670,7 +672,7 @@ const Back = ({ onClick, t }) => (
   </button>
 );
 
-function AdminCenterHub({ lang = "ku", onNavigate }) {
+function AdminCenterHub({ lang = "ku", onNavigate, isManager = false }) {
   const label = (ku, en, ar) => lang === "en" ? en : lang === "ar" ? ar : ku;
   const sections = [
     {
@@ -678,6 +680,7 @@ function AdminCenterHub({ lang = "ku", onNavigate }) {
       items: [
         ["action-inbox", label("ئینباکسی کارەکان", "Action Inbox", "صندوق الإجراءات"), label("کار و فیش و بڕیارە چاوەڕوانەکان", "Pending work, receipts, and decisions", "الأعمال والإيصالات والقرارات المعلّقة"), Inbox],
         ["approvals", label("کۆنترۆڵ و پەسەندکردن", "Controls & Approvals", "التحكم والموافقات"), label("پەسەندکردنی دوو-ئەدمین و کۆنترۆڵی مەترسی", "Two-admin approval and risk controls", "موافقات إدارية مزدوجة وضوابط المخاطر"), ShieldCheck],
+        ["manager-center", label("ناوەندی ماناجەر", "Manager Centre", "مركز المدير"), label("پلەکان و گۆڕینی وشەی نهێنی — تەنها بۆ ماناجەر", "Ranks and password resets — managers only", "الرتب وإعادة تعيين كلمات المرور — للمدير فقط"), KeyRound, true],
         ["close", label("بەستنی ڕۆژ", "Day Close", "إغلاق اليوم"), label("ژماردن، جیاوازی و تۆماری کۆتایی ڕۆژ", "Counts, differences, and end-of-day records", "الجرد والفروقات وسجل نهاية اليوم"), ClipboardCheck],
       ],
     },
@@ -710,7 +713,10 @@ function AdminCenterHub({ lang = "ku", onNavigate }) {
       <H sub={label("هەموو ئامرازەکانی ئەدمین لە یەک شوێن؛ هیچ بەشێک لابراو نییە.", "Every admin tool in one place; no feature is removed.", "جميع أدوات الإدارة في مكان واحد؛ لم تتم إزالة أي قسم.")}>
         {label("ناوەندی بەڕێوەبردن", "Admin Center", "مركز الإدارة")}
       </H>
-      {sections.map((section) => (
+      {sections
+        .map((section) => ({ ...section, items: section.items.filter((it) => !it[4] || isManager) }))
+        .filter((section) => section.items.length > 0)
+        .map((section) => (
         <section key={section.title} aria-labelledby={`admin-center-${section.items[0][0]}`}>
           <h3 id={`admin-center-${section.items[0][0]}`} className="text-[12px] font-semibold mb-3" style={{ color: "var(--txt-2)" }}>
             {section.title}
@@ -3278,7 +3284,11 @@ export default function App() {
   if (!data || !calc) return <><Styles /><Splash t={tr("بارکردنی داتا...")} signOut={signOut} /></>;
 
   const isAdmin = profile.role === "admin";
-  const isOwner = isAdmin && profile.adminLevel === "owner";
+  // A manager outranks the business owner, so everything gated on isOwner admits them too.
+  // Written as a set rather than a comparison: the first place that says === "owner" is the
+  // place that locks the manager out of their own system.
+  const isOwner = isAdmin && ["owner", "manager"].includes(profile.adminLevel);
+  const isSystemManager = isAdmin && profile.adminLevel === "manager";
   const va = viewAs ? usr(viewAs) : null;
   const portalUser = !isAdmin ? profile : va;
   const navSectionLabel = (ku, en, ar) => lang === "en" ? en : lang === "ar" ? ar : ku;
@@ -3550,7 +3560,7 @@ export default function App() {
               onMakeTx={(b) => { setPendingBatch(b); setPage("newtx"); }} />}
             {page === "people" && <PeopleHub {...shared} accountMove={accountMove} accountTransfer={accountTransfer} profile={profile} detailId={detailId} setDetailId={setDetailId} onSave={saveTx} transfer={transfer} officePay={officePay} settle={settle} createUser={createUser} deleteUser={deleteUser} setUserRate={setUserRate} flash={flash} />}
             {page === "report" && <Report {...shared} />}
-            {page === "admin-center" && <AdminCenterHub lang={lang} onNavigate={setPage} />}
+            {page === "admin-center" && <AdminCenterHub lang={lang} onNavigate={setPage} isManager={isSystemManager} />}
             {ADMIN_CENTER_PAGE_IDS.has(page) && page !== "admin-center" && (
               <Back onClick={() => setPage("admin-center")} t={navSectionLabel("گەڕانەوە بۆ ناوەندی بەڕێوەبردن", "Back to Admin Center", "العودة إلى مركز الإدارة")} />
             )}
@@ -3580,6 +3590,9 @@ export default function App() {
             {page === "partner-holdings" && <DeferredPanel><PartnerHoldings client={supabase} lang={lang}
               isStaff={isAdmin || profile?.role === "office"}
               partners={(data?.users || []).filter((u) => u.role === "partner" && !u.deleted)} /></DeferredPanel>}
+            {page === "manager-center" && <DeferredPanel><ManagerCenter lang={lang}
+              users={data?.users || []} profile={profile} flash={flash}
+              request={adminUserRequest} onDone={loadAll} /></DeferredPanel>}
             {page === "cashbox" && <DeferredPanel><CashboxPanel client={supabase} lang={lang} flash={flash}
               customers={(data?.users || []).filter((u) => u.role === "customer" && !u.deleted)}
               rateFor={(code) => { const c = (data?.currencies || []).find((x) => x.code === code);

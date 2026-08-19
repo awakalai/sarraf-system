@@ -224,3 +224,51 @@
   border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surf-2);
 }
 .debt-vouchers strong { font-family: var(--mono, monospace); direction: ltr; unicode-bidi: embed; color: var(--txt); }
+
+/* ── the manager centre ──────────────────────────────────────────────────────
+   Four classes it needs that the debt centre never had. Appended here rather
+   than put in a file of their own: they belong to the same visual language and
+   a second stylesheet for four rules is a second place to keep in step. */
+
+.debt-subhead {
+  margin: 20px 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--txt-2);
+}
+
+.debt-note {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--txt-3);
+}
+
+.debt-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.debt-actions button,
+.debt-primary {
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm, 8px);
+  background: var(--surf);
+  color: var(--txt-2);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.debt-primary {
+  background: var(--pos);
+  border-color: var(--pos);
+  color: #fff;
+}
+
+.debt-actions button:disabled,
+.debt-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

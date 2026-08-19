@@ -60,12 +60,12 @@ try {
   // account receiving it.
   psql(`create or replace function auth.uid() returns uuid language sql stable
         as $fn$ select null::uuid $fn$`);
-  psql(`insert into public.app_users(id,name,role,admin_level,auth_id) values
-    ('adm','ئەدمین','admin','owner','${UID.admin}'),
-    ('cus','کڕیار فرۆشیار','customer',null,'${UID.customer}'),
-    ('par','هاوبەش','partner',null,'${UID.partner}'),
-    ('off','نووسینگە','office',null,'${UID.office}'),
-    ('oth','کڕیارێکی تر','customer',null,'${UID.other}')
+  psql(`insert into public.app_users(id,name,role,admin_level,auth_id,tenant_id) values
+    ('adm','ئەدمین','admin','owner','${UID.admin}','t-sarkhel'),
+    ('cus','کڕیار فرۆشیار','customer',null,'${UID.customer}','t-sarkhel'),
+    ('par','هاوبەش','partner',null,'${UID.partner}','t-sarkhel'),
+    ('off','نووسینگە','office',null,'${UID.office}','t-sarkhel'),
+    ('oth','کڕیارێکی تر','customer',null,'${UID.other}','t-sarkhel')
     on conflict (id) do nothing`);
   const be = (who) => psql(`create or replace function auth.uid() returns uuid language sql stable
     as $fn$ select '${UID[who]}'::uuid $fn$`);

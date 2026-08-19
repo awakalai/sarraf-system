@@ -85,6 +85,11 @@ port = ${PORT}
       create or replace function auth.uid() returns uuid language sql stable
         as $fn$ select nullif(current_setting('request.jwt.claim.sub', true),'')::uuid $fn$;
       grant usage on schema auth to authenticated, anon, service_role;
+      -- The sign-in table, as Supabase provides it. The manager's console reads the address to
+      -- answer "which login is this?" when somebody cannot get in.
+      create table if not exists auth.users (
+        id uuid primary key, email text, created_at timestamptz not null default now());
+      grant select on auth.users to authenticated, service_role;
       create schema if not exists storage;
       create table if not exists storage.objects (
         id uuid default gen_random_uuid(), bucket_id text not null, name text not null,
@@ -113,8 +118,8 @@ port = ${PORT}
       update public.currencies set buy_rate=1400, sell_rate=1420, rate=1410 where id='iqd';
       insert into public.currencies(id,code,name,buy_rate,sell_rate,rate)
       values ('xxx','XXX','Unrated',null,null,null) on conflict do nothing;
-      insert into public.app_users(id,name,role,auth_id)
-      values ('u-a','A','admin','11111111-1111-1111-1111-111111111111')
+      insert into public.app_users(id,name,role,auth_id,tenant_id)
+      values ('u-a','A','admin','11111111-1111-1111-1111-111111111111','t-sarkhel')
       on conflict (id) do update set auth_id=excluded.auth_id;
       create or replace function auth.uid() returns uuid language sql stable
         as $fn$ select '11111111-1111-1111-1111-111111111111'::uuid $fn$;

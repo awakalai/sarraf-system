@@ -81,24 +81,50 @@ async function requireAdminAal2(req, authClient, service) {
     throw e;
   }
 
+  // Two-factor is required of an administrator who has it, and cannot be required of one who
+  // does not: a session cannot reach aal2 without an enrolled factor, so demanding it from an
+  // account with none refuses every request forever. That is what stopped both the manager and
+  // the business owner from creating a single account — the same closed circle as needing an
+  // owner in order to make the first owner.
+  //
+  // So: enrolled and unchallenged is refused, and told to complete the challenge. Not enrolled
+  // is allowed, because aal1 is the highest that account can reach.
   const claims = decodeJwtPayload(token);
   if (String(claims?.aal || "aal1") !== "aal2") {
-    const e = new Error("multi-factor authentication required");
-    e.status = 403;
-    e.code = "mfa_required";
-    throw e;
+    let enrolled = false;
+    try {
+      const { data: factors } = await service.auth.admin.mfa.listFactors({ userId: user.id });
+      enrolled = (factors?.factors || []).some((f) => f?.status === "verified");
+    } catch {
+      // The factor list could not be read. Treating that as "not enrolled" would let a
+      // transient failure downgrade a protected account, so it counts as enrolled.
+      enrolled = true;
+    }
+    if (enrolled) {
+      const e = new Error("multi-factor authentication required");
+      e.status = 403;
+      e.code = "mfa_required";
+      throw e;
+    }
   }
 
   const { data: profile, error: profileError } = await service
     .from("app_users")
-    .select("id,auth_id,name,role,admin_level,deleted")
+    .select("id,auth_id,name,role,admin_level,tenant_id,deleted")
     .eq("auth_id", user.id)
     .eq("deleted", false)
     .maybeSingle();
 
-  if (profileError || !profile?.id || profile.role !== "admin") {
-    const e = new Error("admin authorization required");
+  if (profileError || !profile?.id) {
+    const e = new Error("this login has no account in the system");
     e.status = 403;
+    e.code = "no_profile";
+    throw e;
+  }
+  if (profile.role !== "admin") {
+    const e = new Error("only an administrator may manage accounts");
+    e.status = 403;
+    e.code = "not_admin";
     throw e;
   }
 
@@ -177,7 +203,9 @@ export default async function handler(req, res) {
           ? "کاتی چوونەژوورەوەت بەسەرچووە"
           : e?.code === "mfa_required"
             ? "پاراستنی دوو هەنگاوی پێویستە"
-            : "ڕێگەپێدانی ئەدمین پێویستە",
+            : e?.code === "no_profile"
+              ? "ئەم لۆگینە ئەکاونتێکی نییە لە سیستەمەکەدا"
+              : "تەنها ئەدمین دەتوانێت ئەکاونت بەڕێوە ببات",
       code: e?.code || null,
     });
   }
@@ -197,6 +225,21 @@ export default async function handler(req, res) {
       const adminLevel = role === "admin"
         ? (ADMIN_LEVELS.has(String(body.adminLevel || "")) ? String(body.adminLevel) : "operator")
         : null;
+
+      // Which business the new account belongs to. A manager belongs to none and must say which
+      // one they are creating for; everybody else creates inside their own and cannot name
+      // another, so the value is taken from them rather than trusted from the request.
+      const tenantId = adminLevel === "manager"
+        ? null
+        : (isManager(actor.profile)
+            ? String(body.tenantId || "").trim() || null
+            : actor.profile.tenant_id);
+      if (adminLevel !== "manager" && !tenantId) {
+        return res.status(400).json({
+          error: "دیاری بکە ئەم ئەکاونتە بۆ کام سەرخێڵە",
+          code: "tenant_required",
+        });
+      }
       if (role === "admin" && !mayGrant(actor.profile, adminLevel)) {
         return res.status(403).json({
           error: adminLevel === "manager"
@@ -242,6 +285,7 @@ export default async function handler(req, res) {
         name,
         role,
         admin_level: adminLevel,
+        tenant_id: tenantId,
         rate,
         scope_curs: scope,
         phone,
@@ -274,7 +318,7 @@ export default async function handler(req, res) {
 
       return res.status(200).json({
         ok: true,
-        user: { id: profileId, authId, name, role, adminLevel, phone, rate, scope },
+        user: { id: profileId, authId, name, role, adminLevel, tenantId, phone, rate, scope },
       });
     }
 

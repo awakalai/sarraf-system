@@ -2914,6 +2914,89 @@ try {
     if (stray.length) throw new Error(stray.map(([t, n]) => `${t}: ${n}`).join("; "));
   });
 
+  // ── the manager's console ──────────────────────────────────────────────────
+  //
+  // The one place entitled to look across businesses. Every function refuses anybody else in the
+  // database, so a screen is not what stands between a business owner and their competitors.
+
+  check("the manager lists every business, with what each holds", () => {
+    asManager();
+    const view = JSON.parse(psql("select public.sarraf_manager_tenants()::text"));
+    asAdmin();
+    const ids = (view.tenants || []).map((t) => t.id).sort();
+    if (!ids.includes("t-sarkhel") || !ids.includes("t-kurdistan")) {
+      throw new Error(`the businesses are ${ids.join(", ")}`);
+    }
+    const first = view.tenants.find((t) => t.id === "t-sarkhel");
+    if (!(Number(first.accounts) > 0)) throw new Error("a business in use reported no accounts");
+  });
+
+  mustFail("a business owner cannot list the businesses",
+    `select set_config('x','',true); select public.sarraf_manager_tenants()`);
+
+  check("a business owner is refused the list of businesses", () => {
+    asTenantB();
+    let refused = false;
+    try { psql("select public.sarraf_manager_tenants()"); } catch { refused = true; }
+    asAdmin();
+    if (!refused) throw new Error("a business owner read the list of businesses");
+  });
+
+  check("the manager creates a business, and it starts with settings of its own", () => {
+    asManager();
+    psql("select public.sarraf_manager_create_tenant('t-third','سێیەم','بۆ تاقیکردنەوە')");
+    asAdmin();
+    const settings = psql("select count(*) from public.control_settings where tenant_id='t-third'").trim();
+    const policy = psql("select count(*) from public.receipt_control_policy where tenant_id='t-third'").trim();
+    if (settings !== "1") throw new Error(`the new business has ${settings} settings rows`);
+    if (policy !== "1") throw new Error(`the new business has ${policy} receipt policies`);
+  });
+
+  // The id lives forever in every row the business owns, so it is checked rather than trusted.
+  check("a business id that would read differently elsewhere is refused", () => {
+    asManager();
+    for (const bad of ["AB", "a", "has space", "Upper", "semi;colon"]) {
+      let refused = false;
+      try { psql(`select public.sarraf_manager_create_tenant('${bad}','ناو')`); } catch { refused = true; }
+      if (!refused) { asAdmin(); throw new Error(`'${bad}' was accepted as a business id`); }
+    }
+    asAdmin();
+  });
+
+  check("a business is suspended, never deleted", () => {
+    asManager();
+    psql("select public.sarraf_manager_set_tenant_active('t-third',false,'stopped paying')");
+    const active = psql("select active from public.tenants where id='t-third'").trim();
+    const still = psql("select count(*) from public.tenants where id='t-third'").trim();
+    psql("select public.sarraf_manager_set_tenant_active('t-third',true,'paid again')");
+    const back = psql("select active from public.tenants where id='t-third'").trim();
+    asAdmin();
+    if (active !== "f") throw new Error("the business was not suspended");
+    if (still !== "1") throw new Error("the business was removed rather than suspended");
+    if (back !== "t") throw new Error("the suspension could not be lifted");
+  });
+
+  mustFail("suspending a business without saying why is refused",
+    `select public.sarraf_manager_set_tenant_active('t-third',false,'')`);
+
+  check("the manager sees every account and which business it is in", () => {
+    asManager();
+    const rows = psql(`select coalesce(string_agg(id || ':' || coalesce(tenant_id,'-'), ',' order by id), '')
+                       from public.sarraf_manager_accounts()`).trim();
+    asAdmin();
+    if (!rows.includes("mgr:-")) throw new Error("the manager is not listed as belonging to none");
+    if (!rows.includes("own-b:t-kurdistan")) throw new Error("the second business's owner is missing");
+    if (!rows.includes("cust-1:t-sarkhel")) throw new Error("the first business's customer is missing");
+  });
+
+  check("a business owner is refused every account", () => {
+    asTenantB();
+    let refused = false;
+    try { psql("select * from public.sarraf_manager_accounts()"); } catch { refused = true; }
+    asAdmin();
+    if (!refused) throw new Error("a business owner read every account in the installation");
+  });
+
   let failed = 0;
   for (const [ok, name] of checks) { console.log(`${ok ? "PASS" : "FAIL"}  ${name}`); if (!ok) failed++; }
   console.log(failed

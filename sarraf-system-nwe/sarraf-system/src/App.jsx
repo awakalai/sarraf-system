@@ -54,6 +54,7 @@ const OfficePayments = lazyNamed(() => import("./components/accounting/OfficePay
 const PartnerAccounts = lazyNamed(() => import("./components/accounting/PartnerAccounts"), "PartnerAccounts");
 const PartnerHoldings = lazyNamed(() => import("./components/accounting/PartnerHoldings"), "PartnerHoldings");
 const ManagerCenter = lazyNamed(() => import("./components/accounting/ManagerCenter"), "ManagerCenter");
+const ManagerConsole = lazyNamed(() => import("./components/accounting/ManagerConsole"), "ManagerConsole");
 const ReceiptReviewWorkspace = lazyNamed(() => import("./components/receipts/ReceiptReviewWorkspace"), "ReceiptReviewWorkspace");
 const ReceiptForwardingCenter = lazyNamed(() => import("./components/receipts/ReceiptForwardingCenter"), "ReceiptForwardingCenter");
 const ForwardedReceipts = lazyNamed(() => import("./components/receipts/ForwardedReceipts"), "ForwardedReceipts");
@@ -182,6 +183,7 @@ const ADMIN_CENTER_PAGE_IDS = new Set([
   "partner-accounts",
   "partner-holdings",
   "manager-center",
+  "manager-console",
   "receipt-review",
   "receipt-forwarding",
   "backup",
@@ -680,6 +682,7 @@ function AdminCenterHub({ lang = "ku", onNavigate, isManager = false }) {
       items: [
         ["action-inbox", label("ئینباکسی کارەکان", "Action Inbox", "صندوق الإجراءات"), label("کار و فیش و بڕیارە چاوەڕوانەکان", "Pending work, receipts, and decisions", "الأعمال والإيصالات والقرارات المعلّقة"), Inbox],
         ["approvals", label("کۆنترۆڵ و پەسەندکردن", "Controls & Approvals", "التحكم والموافقات"), label("پەسەندکردنی دوو-ئەدمین و کۆنترۆڵی مەترسی", "Two-admin approval and risk controls", "موافقات إدارية مزدوجة وضوابط المخاطر"), ShieldCheck],
+        ["manager-console", label("کۆنسۆڵی ماناجەر", "Manager Console", "وحدة تحكم المدير"), label("سەرخێڵەکان، ئەکاونتەکان و تەندروستیی سیستەم — تەنها بۆ ماناجەر", "Businesses, accounts and system health — managers only", "الأعمال والحسابات وصحة النظام"), Building2, true],
         ["manager-center", label("ناوەندی ماناجەر", "Manager Centre", "مركز المدير"), label("پلەکان و گۆڕینی وشەی نهێنی — تەنها بۆ ماناجەر", "Ranks and password resets — managers only", "الرتب وإعادة تعيين كلمات المرور — للمدير فقط"), KeyRound, true],
         ["close", label("بەستنی ڕۆژ", "Day Close", "إغلاق اليوم"), label("ژماردن، جیاوازی و تۆماری کۆتایی ڕۆژ", "Counts, differences, and end-of-day records", "الجرد والفروقات وسجل نهاية اليوم"), ClipboardCheck],
       ],
@@ -3593,6 +3596,8 @@ export default function App() {
             {page === "manager-center" && <DeferredPanel><ManagerCenter lang={lang}
               users={data?.users || []} profile={profile} flash={flash}
               request={adminUserRequest} onDone={loadAll} /></DeferredPanel>}
+            {page === "manager-console" && <DeferredPanel><ManagerConsole client={supabase}
+              lang={lang} isManager={isSystemManager} flash={flash} /></DeferredPanel>}
             {page === "cashbox" && <DeferredPanel><CashboxPanel client={supabase} lang={lang} flash={flash}
               customers={(data?.users || []).filter((u) => u.role === "customer" && !u.deleted)}
               rateFor={(code) => { const c = (data?.currencies || []).find((x) => x.code === code);
